@@ -1149,6 +1149,8 @@ function poolReleaseForPost(p){ // a draft got deleted → its content returns t
 }
 /* ---- BEFORE / AFTER JOBS: saved before+after pairings ---- */
 function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
+/* next "Job N" number, derived from existing job names so it always follows order */
+function nextBaNum(){let max=0;socBaJobs().forEach(j=>{const m=/^job\s+(\d+)$/i.exec((j.name||'').trim());if(m){const n=+m[1];if(n>max)max=n;}});return max+1;}
 function saveBaJob(j){const arr=socBaJobs();const i=arr.findIndex(x=>x.id===j.id);if(i>=0)arr[i]=j;else arr.unshift(j);ST.bajobs=arr;commit();}
 function delBaJob(id){ST.bajobs=socBaJobs().filter(j=>j.id!==id);commit();}
 /* builder: tag selected photos before/after, name it, save as a job */
@@ -1163,7 +1165,7 @@ function openBaBuilder(items){
   ov.onclick=e=>{if(e.target===ov)closeComposer()};
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
-  const num=(typeof ST.baSeq==='number')?ST.baSeq:(socBaJobs().length+1);
+  const num=nextBaNum();
   const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-numbered; edit it if you want (e.g. an address)</span></label>';
   const ni=el('input','cmp-in');ni.value='Job '+num;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
   const hint=el('div','cmp-field');hint.innerHTML='<label>Tap each photo to flag it Before or After</label>';
@@ -1186,7 +1188,6 @@ function openBaBuilder(items){
     const before=items.filter(m=>assign[m.id]==='before').map(m=>({id:m.id,name:m.name}));
     const after=items.filter(m=>assign[m.id]==='after').map(m=>({id:m.id,name:m.name}));
     if(!before.length||!after.length){toast('Flag at least one Before and one After.');return;}
-    ST.baSeq=num+1; // advance the auto-number for next time
     saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),before,after,createdAt:Date.now()});
     POOL_SEL.clear();closeComposer();toast('Saved — find it in the Before & After tab');rerenderCal();
   };
