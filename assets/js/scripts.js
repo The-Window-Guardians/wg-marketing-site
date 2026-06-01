@@ -1135,7 +1135,7 @@ async function poolAddFiles(fileList){
   for(const raw of files){
     const f=await normalizeImage(raw);
     const rec=await fileAdd(f,'',S.role,'pool');
-    pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available'});
+    pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()});
   }
   ST.pool=pool;commit();
   return files.length;
@@ -1248,7 +1248,7 @@ async function gdSyncNow(interactive){
       let file=new File([blob],f.name,{type:f.mime||blob.type});
       file=await normalizeImage(file);
       const rec=await fileAdd(file,'',S.role,'pool');
-      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder};
+      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder,addedAt:Date.now()+added};
       if(f.loc&&typeof f.loc.latitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
       pool.push(item);added++;
@@ -1269,7 +1269,9 @@ function clusterByLocation(items,radius){
     if(best){best.items.push(m);best.lat=(best.lat*(best.items.length-1)+m.lat)/best.items.length;best.lng=(best.lng*(best.items.length-1)+m.lng)/best.items.length;}
     else cl.push({lat:m.lat,lng:m.lng,items:[m]});
   });
-  return cl.sort((a,b)=>b.items.length-a.items.length);
+  // newest job first (by the most-recently-added photo in each)
+  cl.forEach(c=>c.items.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)));
+  return cl.sort((a,b)=>((b.items[0]&&b.items[0].addedAt)||0)-((a.items[0]&&a.items[0].addedAt)||0));
 }
 function gdStartPolling(){if(_gdTimer)return;_gdTimer=setInterval(()=>{if(!document.hidden)gdSyncNow(false);},60000);}
 /* best-effort silent reconnect when the page loads if Drive was connected before */
@@ -2817,6 +2819,7 @@ function ruthQueue(v){
 let POOL_SEL=new Set();
 let POOL_KIND='all'; // content filter: all | photos | videos
 let POOL_GROUP='off'; // off | job (group by location)
+let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
 function socLibrary(v){
   const cw=currentWeek();
@@ -2864,15 +2867,29 @@ function socLibrary(v){
 
   // ---- CONTENT POOL: tick pieces → make a post ----
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
-  const allAvail=poolAvailable();
-  const photos=allAvail.filter(m=>!isVidItem(m)), vids=allAvail.filter(isVidItem);
+  const isMain=m=>!m.folder||m.folder==='Drive'; // files sitting directly in the synced folder = main content
+  const poolAll=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
+  // source folders: Main + each Drive subfolder (e.g. your Before/After folder)
+  const subfolders=[...new Set(poolAll.filter(m=>!isMain(m)).map(m=>m.folder))];
+  if(POOL_SRC!=='main'&&subfolders.indexOf(POOL_SRC)===-1)POOL_SRC='main';
+  const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
+  const photos=srcItems.filter(m=>!isVidItem(m)), vids=srcItems.filter(isVidItem);
   if(POOL_KIND==='photos'&&!photos.length&&vids.length)POOL_KIND='all';
   if(POOL_KIND==='videos'&&!vids.length&&photos.length)POOL_KIND='all';
-  const avail = POOL_KIND==='photos'?photos : POOL_KIND==='videos'?vids : allAvail;
+  const avail = POOL_KIND==='photos'?photos : POOL_KIND==='videos'?vids : srcItems;
+  const allAvail=poolAll; // for resolving cross-filter selections when making a post
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>tap to preview · tap the ◯ corner to pick it for a post</small></div></div>`;
-  // controls: Photos/Videos filter + Group-by-job
+  // controls: Source (Main vs your subfolders) + Photos/Videos + Group-by-job
   const ctrls=el('div','poolctrls');
+  if(subfolders.length){ // only show the source picker once you have a subfolder (e.g. Before/After)
+    const srcSel=el('select','cmp-in');
+    const mainN=poolAll.filter(isMain).length;
+    const opts=[['main',`📁 Main content (${mainN})`]].concat(subfolders.map(f=>[f,`📁 ${f} (${poolAll.filter(m=>m.folder===f).length})`]));
+    opts.forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_SRC===v2)o.selected=true;srcSel.appendChild(o)});
+    srcSel.onchange=()=>{POOL_SRC=srcSel.value;rerenderCal()};
+    ctrls.appendChild(srcSel);
+  }
   const kindSel=el('select','cmp-in');
   [['all',`All (${allAvail.length})`],['photos',`📷 Photos (${photos.length})`],['videos',`🎬 Videos (${vids.length})`]].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_KIND===v2)o.selected=true;kindSel.appendChild(o)});
   kindSel.onchange=()=>{POOL_KIND=kindSel.value;rerenderCal()};
