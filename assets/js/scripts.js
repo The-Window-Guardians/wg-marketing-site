@@ -1127,6 +1127,7 @@ function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
    Lifecycle: available → used (attached to a post) → archived (post got posted). */
 function socPool(){return (ST&&Array.isArray(ST.pool))?ST.pool:[]}
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
+function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
 async function poolAddFiles(fileList){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov)$/i.test(f.name||''));
   if(!files.length)return 0;
@@ -1188,6 +1189,32 @@ function openBaBuilder(items){
     POOL_SEL.clear();closeComposer();toast('Saved — find it in the Before & After tab');rerenderCal();
   };
   foot.appendChild(sp);foot.appendChild(save);b.appendChild(foot);
+}
+/* manually drop a (usually no-location) photo into an existing job group */
+function openJobPicker(item){
+  const located=poolAvailable().filter(m=>(POOL_SRC==='main'?poolIsMain(m):m.folder===POOL_SRC)&&typeof m.lat==='number'&&m.id!==item.id);
+  const clusters=clusterByLocation(located,60);
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';
+  const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>Add to a job</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.onclick=e=>{if(e.target===ov)closeComposer()};
+  $('#cmpX').onclick=closeComposer;
+  const b=$('#cmpBody');
+  if(!clusters.length){
+    b.appendChild(el('div','muted','No location-based jobs in this folder yet to join. Pair this photo as a Before/After job instead, or sync more located photos first.'));
+    return;
+  }
+  b.appendChild(el('div','cmp-field','<label>Pick the job this photo belongs to — it’ll join that stack</label>'));
+  clusters.forEach((c,i)=>{
+    const opt=el('button','jobpick');
+    const thumb=el('img','jp-thumb');const first=c.items[0];if(first){if(first.thumb)thumb.src=first.thumb;else thumbInto(thumb,first.id);thumb.addEventListener('load',()=>thumb.style.display='block');}
+    opt.appendChild(thumb);
+    opt.appendChild(el('span','jp-label',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+    opt.onclick=()=>{item.lat=c.lat;item.lng=c.lng;item.locManual=true;commit();closeComposer();toast('Added to the job');rerenderCal();};
+    b.appendChild(opt);
+  });
 }
 /* Before & After jobs — a SECTION on Home (right with the content) */
 function baSection(v){
@@ -2998,8 +3025,10 @@ function socLibrary(v){
     });
     if(noloc.length){
       const d=el('details','jobgroup');
-      d.appendChild(el('summary','jobsum',`📍 No location · ${noloc.length} (can’t auto-group these)`));
-      const g=el('div','poolgrid');noloc.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
+      d.appendChild(el('summary','jobsum',`📍 No location · ${noloc.length} — tap “Add to a job” to file them`));
+      const g=el('div','poolgrid');
+      noloc.forEach(m=>{const cell=buildCell(m);const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);g.appendChild(cell);});
+      d.appendChild(g);
       poolCard.appendChild(d);
     }
     if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
