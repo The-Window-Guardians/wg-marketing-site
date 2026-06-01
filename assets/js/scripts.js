@@ -1153,10 +1153,11 @@ function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
 function nextBaNum(){let max=0;socBaJobs().forEach(j=>{const m=/^job\s+(\d+)$/i.exec((j.name||'').trim());if(m){const n=+m[1];if(n>max)max=n;}});return max+1;}
 function saveBaJob(j){const arr=socBaJobs();const i=arr.findIndex(x=>x.id===j.id);if(i>=0)arr[i]=j;else arr.unshift(j);ST.bajobs=arr;commit();}
 function delBaJob(id){ST.bajobs=socBaJobs().filter(j=>j.id!==id);commit();}
-/* builder: tag selected photos before/after, name it, save as a job */
+/* builder: group photos into a job; tagging before/after is OPTIONAL */
 function openBaBuilder(items){
   if(!items||!items.length)return;
-  const assign={}; items.forEach((m,i)=>assign[m.id]= i<Math.ceil(items.length/2)?'before':'after');
+  const role={}; items.forEach(m=>role[m.id]=''); // default: untagged
+  const lbl=r=>r==='before'?'BEFORE':r==='after'?'AFTER':'＋ tag';
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';
   const box=el('div','cmp-box');
@@ -1168,30 +1169,34 @@ function openBaBuilder(items){
   const num=nextBaNum();
   const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-numbered; edit it if you want (e.g. an address)</span></label>';
   const ni=el('input','cmp-in');ni.value='Job '+num;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
-  const hint=el('div','cmp-field');hint.innerHTML='<label>Tap each photo to flag it Before or After</label>';
+  const hint=el('div','cmp-field');hint.innerHTML='<label>Photos in this job <span class="muted" style="font-weight:600">— optional: tap a photo to flag it Before or After (Ruth will see the labels when she posts)</span></label>';
   const grid=el('div','bagrid');
   items.forEach(m=>{
     const cell=el('div','bacell');
     const img=el('img','poolimg');img.addEventListener('load',()=>img.style.display='block');
     if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);
     cell.appendChild(img);
-    const tog=el('button','batoggle '+assign[m.id], assign[m.id]==='before'?'BEFORE':'AFTER');
-    tog.onclick=()=>{assign[m.id]=assign[m.id]==='before'?'after':'before';tog.className='batoggle '+assign[m.id];tog.textContent=assign[m.id]==='before'?'BEFORE':'AFTER';};
+    const tog=el('button','batoggle '+(role[m.id]||'none'), lbl(role[m.id]));
+    tog.onclick=()=>{role[m.id]=role[m.id]===''?'before':role[m.id]==='before'?'after':'';tog.className='batoggle '+(role[m.id]||'none');tog.textContent=lbl(role[m.id]);};
     cell.appendChild(tog);
     grid.appendChild(cell);
   });
   hint.appendChild(grid);b.appendChild(hint);
   const foot=el('div','cmp-foot');
   const sp=el('div');sp.style.flex='1';
-  const save=el('button','btn-set primary','Save Before / After job');
+  const save=el('button','btn-set primary','Save job');
   save.onclick=()=>{
-    const before=items.filter(m=>assign[m.id]==='before').map(m=>({id:m.id,name:m.name}));
-    const after=items.filter(m=>assign[m.id]==='after').map(m=>({id:m.id,name:m.name}));
-    if(!before.length||!after.length){toast('Flag at least one Before and one After.');return;}
-    saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),before,after,createdAt:Date.now()});
-    POOL_SEL.clear();closeComposer();toast('Saved — find it in the Before & After tab');rerenderCal();
+    const jobItemsOut=items.map(m=>({id:m.id,name:m.name,role:role[m.id]||''}));
+    saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),items:jobItemsOut,createdAt:Date.now()});
+    POOL_SEL.clear();closeComposer();toast('Saved — see the Before & After jobs section');rerenderCal();
   };
   foot.appendChild(sp);foot.appendChild(save);b.appendChild(foot);
+}
+/* job photos as an ordered list with roles (supports legacy before/after jobs) */
+function jobItems(j){
+  if(Array.isArray(j.items))return j.items;
+  const out=[];(j.before||[]).forEach(m=>out.push({id:m.id,name:m.name,role:'before'}));(j.after||[]).forEach(m=>out.push({id:m.id,name:m.name,role:'after'}));
+  return out;
 }
 /* manually drop a (usually no-location) photo into an existing job group */
 function openJobPicker(item){
@@ -1224,20 +1229,28 @@ function baSection(v){
   const jobs=socBaJobs();
   const card=el('div','card pad');card.style.marginTop='12px';
   card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🔀</div><div><h3>Before &amp; After jobs</h3><small>${jobs.length?jobs.length+' saved · open one to post it':'pair a before + after in Your content above to start one'}</small></div></div>`;
-  if(!jobs.length){card.innerHTML+=`<p class="muted">None yet — tick a before + an after in Your content (location stacks make them easy to find), then tap “🔀 Make Before/After job.”</p>`;v.appendChild(card);return;}
+  if(!jobs.length){card.innerHTML+=`<p class="muted">None yet — tick photos in Your content (location stacks make them easy to find), then tap “🔀 Make Before/After job.”</p>`;v.appendChild(card);return;}
+  const col=(label,arr,cls)=>{const c=el('div','bacol '+cls);c.appendChild(el('div','balabel',label));const g=el('div','poolgrid');
+    arr.forEach(m=>{const cell=el('div','poolcell');const im=el('img','poolimg');im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);cell.appendChild(im);cell.appendChild(el('span','poolph','🖼️'));cell.onclick=()=>openMediaPreview(m.id,m.name);g.appendChild(cell);});
+    c.appendChild(g);return c;};
   jobs.forEach(j=>{
+    const its=jobItems(j);
+    const before=its.filter(x=>x.role==='before'), after=its.filter(x=>x.role==='after'), other=its.filter(x=>!x.role);
+    const counts=[];if(before.length)counts.push(before.length+' before');if(after.length)counts.push(after.length+' after');if(other.length)counts.push(other.length+' photo'+(other.length>1?'s':''));
     const jc=el('div','bajob');
-    jc.appendChild(el('div','bajob-h',`<b>${esc(j.name||'Before / After job')}</b> <span class="muted">· ${j.before.length} before · ${j.after.length} after</span>`));
-    const row=el('div','barow');
-    const col=(label,arr,cls)=>{const c=el('div','bacol '+cls);c.appendChild(el('div','balabel',label));const g=el('div','poolgrid');
-      arr.forEach(m=>{const cell=el('div','poolcell');const im=el('img','poolimg');im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);cell.appendChild(im);cell.appendChild(el('span','poolph','🖼️'));cell.onclick=()=>openMediaPreview(m.id,m.name);g.appendChild(cell);});
-      c.appendChild(g);return c;};
-    row.appendChild(col('BEFORE',j.before,'before'));
-    row.appendChild(col('AFTER',j.after,'after'));
-    jc.appendChild(row);
+    jc.appendChild(el('div','bajob-h',`<b>${esc(j.name||'Job')}</b> <span class="muted">· ${counts.join(' · ')||(its.length+' photos')}</span>`));
+    if(before.length||after.length){
+      const row=el('div','barow');
+      if(before.length)row.appendChild(col('BEFORE',before,'before'));
+      if(after.length)row.appendChild(col('AFTER',after,'after'));
+      jc.appendChild(row);
+      if(other.length)jc.appendChild(col('OTHER PHOTOS',other,'plain'));
+    }else{
+      jc.appendChild(col('PHOTOS',its,'plain'));
+    }
     const foot=el('div','rcactions');
-    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=j.before.concat(j.after);p.type='beforeafter';if(j.name)p.jobNote=j.name;openComposer(p,true);};
-    const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this before/after job?')){delBaJob(j.id);render();}};
+    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before.length||after.length)?'beforeafter':(its.length>1?'carousel':'photo');if(j.name)p.jobNote=j.name;openComposer(p,true);};
+    const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this job?')){delBaJob(j.id);render();}};
     foot.appendChild(post);foot.appendChild(del);jc.appendChild(foot);
     card.appendChild(jc);
   });
@@ -3093,6 +3106,14 @@ function readyCard(p){
   const mm=postMedia(p);
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
   if(mm[0]){const rcimg=card.querySelector('.rcimg');rcimg.style.cursor='pointer';rcimg.title='Tap to preview';rcimg.onclick=()=>openMediaPreview(mm[0].id,mm[0].name);}
+  // multi-media: show every photo in order with Before/After labels so Ruth posts them right
+  if(mm.length>1){
+    const body=card.querySelector('.rcbody');
+    const sf=el('div','rcfield');sf.innerHTML='<label>Photos — post in this order'+(mm.some(m=>m.role)?' (labels shown)':'')+'</label>';
+    const strip=el('div','rcstrip');
+    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
+    sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
+  }
   card.querySelector('[data-copy="cap"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.caption||'');toast('Caption copied')};
   card.querySelector('[data-copy="tags"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.hashtags||'');toast('Hashtags copied')};
   const foot=el('div','rcactions');
