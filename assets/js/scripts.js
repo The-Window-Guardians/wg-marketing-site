@@ -1208,33 +1208,68 @@ function gdRequest(){
   try{_gdClient.requestAccessToken({prompt: ST.driveConnected?'':'consent'});}
   catch(e){toast('Could not open Google sign-in — allow pop-ups for this site and retry.');}
 }
+/* recursive list of all media (image+video) with location/time/source-folder */
+async function gdListAllMedia(folderId,tok,folderName,out,depth){
+  if((depth||0)>6)return;
+  const q=encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  let pageToken='';
+  do{
+    const url=`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,imageMediaMetadata(time,location))&pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok)return;
+    const data=await r.json();
+    for(const f of (data.files||[])){
+      if(f.mimeType==='application/vnd.google-apps.folder') await gdListAllMedia(f.id,tok,f.name,out,(depth||0)+1);
+      else if(/^(image|video)\//.test(f.mimeType||'')||/\.(heic|heif|mov)$/i.test(f.name||'')) out.push({id:f.id,name:f.name,mime:f.mimeType,folder:folderName,loc:f.imageMediaMetadata&&f.imageMediaMetadata.location,time:f.imageMediaMetadata&&f.imageMediaMetadata.time});
+    }
+    pageToken=data.nextPageToken||'';
+  }while(pageToken);
+}
 async function gdSyncNow(interactive){
   if(_gdSyncing)return;_gdSyncing=true;
   try{
     const tok=await gdGetToken(!!interactive);
     if(!tok){if(interactive)toast('Google sign-in needed to sync.');return;}
-    const q=encodeURIComponent(`'${GDRIVE_FOLDER_ID}' in parents and trashed=false`);
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,mimeType)&pageSize=300`,{headers:{Authorization:'Bearer '+tok}});
-    if(!r.ok)throw new Error('list '+r.status);
-    const data=await r.json();
-    const files=(data.files||[]).filter(f=>/^(image|video)\//.test(f.mimeType||'')||/\.(heic|heif|mov)$/i.test(f.name||''));
-    const have=new Set(socPool().map(m=>m.driveId).filter(Boolean));
-    let added=0;
-    for(const f of files){
-      if(have.has(f.id))continue;
+    const list=[];await gdListAllMedia(GDRIVE_FOLDER_ID,tok,'Drive',list,0); // recurse subfolders, capture location
+    const pool=socPool();
+    const byDrive=new Map(pool.filter(m=>m.driveId).map(m=>[m.driveId,m]));
+    let added=0,backfilled=0;
+    for(const f of list){
+      const ex=byDrive.get(f.id);
+      if(ex){ // already have it — backfill location/folder/time if missing
+        if(f.loc&&typeof f.loc.latitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
+        if(f.folder&&!ex.folder)ex.folder=f.folder;
+        if(f.time&&!ex.taken)ex.taken=f.time;
+        continue;
+      }
       const dl=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
       if(!dl.ok)continue;
       const blob=await dl.blob();
-      let file=new File([blob],f.name,{type:f.mimeType||blob.type});
+      let file=new File([blob],f.name,{type:f.mime||blob.type});
       file=await normalizeImage(file);
       const rec=await fileAdd(file,'',S.role,'pool');
-      socPool().push({id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id});
-      added++;
+      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder};
+      if(f.loc&&typeof f.loc.latitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
+      if(f.time)item.taken=f.time;
+      pool.push(item);added++;
     }
-    if(added){commit();toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');render();}
-    else if(interactive)toast('Drive is in sync — nothing new.');
+    if(added||backfilled){ST.pool=pool;commit();render();}
+    if(added)toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');
+    else if(interactive)toast(backfilled?('Synced — location added to '+backfilled+' photos'):'Drive is in sync — nothing new.');
   }catch(e){if(interactive)toast('Drive sync hit a snag — try again.');}
   finally{_gdSyncing=false;}
+}
+/* distance + greedy location clustering (same property ≈ within radius metres) */
+function gdDist(aLat,aLng,bLat,bLng){const R=6371000,toR=d=>d*Math.PI/180;const dLa=toR(bLat-aLat),dLo=toR(bLng-aLng),la1=toR(aLat),la2=toR(bLat);const x=Math.sin(dLa/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+function clusterByLocation(items,radius){
+  const cl=[];
+  items.forEach(m=>{
+    if(typeof m.lat!=='number')return;
+    let best=null;for(const c of cl){if(gdDist(c.lat,c.lng,m.lat,m.lng)<=radius){best=c;break;}}
+    if(best){best.items.push(m);best.lat=(best.lat*(best.items.length-1)+m.lat)/best.items.length;best.lng=(best.lng*(best.items.length-1)+m.lng)/best.items.length;}
+    else cl.push({lat:m.lat,lng:m.lng,items:[m]});
+  });
+  return cl.sort((a,b)=>b.items.length-a.items.length);
 }
 function gdStartPolling(){if(_gdTimer)return;_gdTimer=setInterval(()=>{if(!document.hidden)gdSyncNow(false);},60000);}
 /* best-effort silent reconnect when the page loads if Drive was connected before */
@@ -2781,6 +2816,7 @@ function ruthQueue(v){
 }
 let POOL_SEL=new Set();
 let POOL_KIND='all'; // content filter: all | photos | videos
+let POOL_GROUP='off'; // off | job (group by location)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
 function socLibrary(v){
   const cw=currentWeek();
@@ -2835,33 +2871,56 @@ function socLibrary(v){
   const avail = POOL_KIND==='photos'?photos : POOL_KIND==='videos'?vids : allAvail;
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>tap to preview · tap the ◯ corner to pick it for a post</small></div></div>`;
-  // Photos / Videos filter
-  const kindWrap=el('div','poolkind');
+  // controls: Photos/Videos filter + Group-by-job
+  const ctrls=el('div','poolctrls');
   const kindSel=el('select','cmp-in');
   [['all',`All (${allAvail.length})`],['photos',`📷 Photos (${photos.length})`],['videos',`🎬 Videos (${vids.length})`]].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_KIND===v2)o.selected=true;kindSel.appendChild(o)});
   kindSel.onchange=()=>{POOL_KIND=kindSel.value;rerenderCal()};
-  kindWrap.appendChild(kindSel);poolCard.appendChild(kindWrap);
+  const groupSel=el('select','cmp-in');
+  [['off','Ungrouped'],['job','📍 Group by job (location)']].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_GROUP===v2)o.selected=true;groupSel.appendChild(o)});
+  groupSel.onchange=()=>{POOL_GROUP=groupSel.value;rerenderCal()};
+  ctrls.appendChild(kindSel);ctrls.appendChild(groupSel);poolCard.appendChild(ctrls);
+
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;};
+  const buildCell=(m)=>{
+    const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+    const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
+    const img=el('img','poolimg');
+    const ph=el('span','poolph',isVid?'🎬':'🖼️');
+    img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')m.thumb=img.src;});
+    if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);
+    cell.appendChild(img);cell.appendChild(ph);
+    if(isVid)cell.appendChild(el('span','poolplay','▶'));
+    const ck=el('span','poolck','✓');
+    ck.onclick=(e)=>{e.stopPropagation();if(POOL_SEL.has(m.id))POOL_SEL.delete(m.id);else POOL_SEL.add(m.id);cell.classList.toggle('sel');updateMakeBtn();};
+    cell.appendChild(ck);
+    cell.onclick=()=>openMediaPreview(m.id,m.name);
+    return cell;
+  };
   if(!avail.length){
     poolCard.innerHTML+=`<p class="muted">No content yet — drag some in above. It all lands here, ready to use.</p>`;
+  }else if(POOL_GROUP==='job'){
+    const located=avail.filter(m=>typeof m.lat==='number');
+    const noloc=avail.filter(m=>typeof m.lat!=='number');
+    const clusters=clusterByLocation(located,60);
+    poolCard.appendChild(el('div','muted',`Grouped by location — each stack is one job (same address). Open one and the before & after are together.`)).style.cssText='font-size:12px;margin:2px 0 8px';
+    clusters.forEach((c,i)=>{
+      const d=el('details','jobgroup');if(i<2)d.open=true;
+      d.appendChild(el('summary','jobsum',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      const g=el('div','poolgrid');c.items.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
+      poolCard.appendChild(d);
+    });
+    if(noloc.length){
+      const d=el('details','jobgroup');
+      d.appendChild(el('summary','jobsum',`📍 No location · ${noloc.length} (can’t auto-group these)`));
+      const g=el('div','poolgrid');noloc.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
+      poolCard.appendChild(d);
+    }
+    if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
   }else{
     const grid=el('div','poolgrid');
-    avail.forEach(m=>{
-      const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
-      const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
-      const img=el('img','poolimg');
-      const ph=el('span','poolph',isVid?'🎬':'🖼️');
-      img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')m.thumb=img.src;});
-      if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);   // images + decodable videos get a real frame
-      cell.appendChild(img);cell.appendChild(ph);
-      if(isVid)cell.appendChild(el('span','poolplay','▶'));   // corner badge so videos read as videos even with a thumbnail
-      const ck=el('span','poolck','✓');
-      ck.onclick=(e)=>{e.stopPropagation();if(POOL_SEL.has(m.id))POOL_SEL.delete(m.id);else POOL_SEL.add(m.id);cell.classList.toggle('sel');updateMakeBtn();};
-      cell.appendChild(ck);
-      cell.onclick=()=>openMediaPreview(m.id,m.name); // tap tile = preview/play
-      grid.appendChild(cell);
-    });
+    avail.forEach(m=>grid.appendChild(buildCell(m)));
     poolCard.appendChild(grid);
   }
   updateMakeBtn();
