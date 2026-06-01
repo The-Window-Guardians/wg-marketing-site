@@ -1163,8 +1163,9 @@ function openBaBuilder(items){
   ov.onclick=e=>{if(e.target===ov)closeComposer()};
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
-  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— optional, e.g. the address</span></label>';
-  const ni=el('input','cmp-in');ni.placeholder='123 Oak St, Newtown';nf.appendChild(ni);b.appendChild(nf);
+  const num=(typeof ST.baSeq==='number')?ST.baSeq:(socBaJobs().length+1);
+  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-numbered; edit it if you want (e.g. an address)</span></label>';
+  const ni=el('input','cmp-in');ni.value='Job '+num;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
   const hint=el('div','cmp-field');hint.innerHTML='<label>Tap each photo to flag it Before or After</label>';
   const grid=el('div','bagrid');
   items.forEach(m=>{
@@ -1185,7 +1186,8 @@ function openBaBuilder(items){
     const before=items.filter(m=>assign[m.id]==='before').map(m=>({id:m.id,name:m.name}));
     const after=items.filter(m=>assign[m.id]==='after').map(m=>({id:m.id,name:m.name}));
     if(!before.length||!after.length){toast('Flag at least one Before and one After.');return;}
-    saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim(),before,after,createdAt:Date.now()});
+    ST.baSeq=num+1; // advance the auto-number for next time
+    saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),before,after,createdAt:Date.now()});
     POOL_SEL.clear();closeComposer();toast('Saved — find it in the Before & After tab');rerenderCal();
   };
   foot.appendChild(sp);foot.appendChild(save);b.appendChild(foot);
