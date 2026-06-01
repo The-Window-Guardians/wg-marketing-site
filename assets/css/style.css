@@ -429,6 +429,11 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .batoggle.before{background:#2f6df6}
 .batoggle.after{background:var(--orange)}
 .batoggle.none{background:#0008;font-weight:700}
+/* tap-to-set Before/After pill on a photo inside a saved job */
+.poolcell .rolepill{position:absolute;left:0;right:0;bottom:0;border:none;text-align:center;font-size:10px;font-weight:800;letter-spacing:.04em;color:#fff;padding:3px 0;cursor:pointer;z-index:2}
+.rolepill.none{background:#000a}
+.rolepill.before{background:#2f6df6}
+.rolepill.after{background:var(--orange)}
 .bacol.plain{border-top:3px solid var(--line2)}
 /* before/after job cards (Home section) */
 .bajob{border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:10px;background:var(--bg)}

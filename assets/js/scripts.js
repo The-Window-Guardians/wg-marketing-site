@@ -1229,31 +1229,41 @@ function openJobPicker(item){
     b.appendChild(opt);
   });
 }
-/* render saved before/after jobs as collapsible stacks AT THE TOP of the content list */
+/* render saved before/after jobs as collapsible stacks AT THE TOP of the content list.
+   Photos show in one uniform grid; each has a Before/After pill you can tap to set/change. */
 function renderSavedJobs(container){
   const jobs=socBaJobs();
   if(!jobs.length)return;
-  const col=(label,arr,cls)=>{const c=el('div','bacol '+cls);c.appendChild(el('div','balabel',label));const g=el('div','poolgrid');
-    arr.forEach(m=>{const cell=el('div','poolcell');const im=el('img','poolimg');im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);cell.appendChild(im);cell.appendChild(el('span','poolph','🖼️'));cell.onclick=()=>openMediaPreview(m.id,m.name);g.appendChild(cell);});
-    c.appendChild(g);return c;};
   jobs.forEach(j=>{
     const its=jobItems(j);
-    const before=its.filter(x=>x.role==='before'), after=its.filter(x=>x.role==='after'), other=its.filter(x=>!x.role);
-    const counts=[];if(before.length)counts.push(before.length+' before');if(after.length)counts.push(after.length+' after');if(other.length)counts.push(other.length+' photo'+(other.length>1?'s':''));
+    const before=its.filter(x=>x.role==='before').length, after=its.filter(x=>x.role==='after').length, other=its.length-before-after;
+    const counts=[];if(before)counts.push(before+' before');if(after)counts.push(after+' after');if(other)counts.push(other+' photo'+(other>1?'s':''));
     const d=el('details','jobgroup savedjob');
     d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${counts.join(' · ')||(its.length+' photos')}`));
     const body=el('div','savedbody');
-    if(before.length||after.length){
-      const row=el('div','barow');
-      if(before.length)row.appendChild(col('BEFORE',before,'before'));
-      if(after.length)row.appendChild(col('AFTER',after,'after'));
-      body.appendChild(row);
-      if(other.length)body.appendChild(col('OTHER PHOTOS',other,'plain'));
-    }else{
-      body.appendChild(col('PHOTOS',its,'plain'));
-    }
+    const grid=el('div','poolgrid');
+    its.forEach(m=>{
+      const pm=socPool().find(x=>x.id===m.id)||{};
+      const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(pm.type||'');
+      const cell=el('div','poolcell');
+      const img=el('img','poolimg');img.addEventListener('load',()=>img.style.display='block');
+      if(pm.thumb)img.src=pm.thumb;
+      else if(isVid&&pm.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id)};img.src=pm.driveThumb;}
+      else thumbInto(img,m.id);
+      cell.appendChild(img);
+      // tap-to-cycle Before/After pill (edit the labels right here)
+      const pill=el('button','rolepill '+(m.role||'none'), m.role==='before'?'BEFORE':m.role==='after'?'AFTER':'＋ tag');
+      pill.title='Tap to set Before / After';
+      pill.onclick=(e)=>{e.stopPropagation();m.role=(!m.role)?'before':m.role==='before'?'after':'';pill.className='rolepill '+(m.role||'none');pill.textContent=m.role==='before'?'BEFORE':m.role==='after'?'AFTER':'＋ tag';saveBaJob(j);};
+      cell.appendChild(pill);
+      cell.onclick=()=>openMediaPreview(m.id,m.name); // tap the photo to preview
+      grid.appendChild(cell);
+    });
+    body.appendChild(grid);
+    const hint=el('div','muted','Tap a photo to preview · tap its pill to set Before / After');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
+    body.appendChild(hint);
     const foot=el('div','rcactions');
-    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before.length||after.length)?'beforeafter':(its.length>1?'carousel':'photo');if(j.name)p.jobNote=j.name;openComposer(p,true);};
+    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before||after)?'beforeafter':(its.length>1?'carousel':'photo');if(j.name)p.jobNote=j.name;openComposer(p,true);};
     const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this job?')){delBaJob(j.id);render();}};
     foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
     d.appendChild(body);
