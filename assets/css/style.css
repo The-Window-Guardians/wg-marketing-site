@@ -420,6 +420,23 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .jobgroup>summary::before{content:'▸';margin-right:8px;color:var(--orange);font-weight:800}
 .jobgroup[open]>summary::before{content:'▾'}
 .jobgroup .poolgrid{padding:0 13px 13px}
+/* before/after builder modal */
+.bagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:4px}
+.bacell{position:relative;aspect-ratio:1/1;border:1px solid var(--line2);border-radius:11px;overflow:hidden;background:linear-gradient(135deg,var(--bg),#e9eef6)}
+.bacell .poolimg{width:100%;height:100%;object-fit:cover;display:none}
+.batoggle{position:absolute;left:6px;bottom:6px;border:none;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;letter-spacing:.04em;color:#fff;cursor:pointer}
+.batoggle.before{background:#2f6df6}
+.batoggle.after{background:var(--orange)}
+/* before/after job cards (Home section) */
+.bajob{border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:10px;background:var(--bg)}
+.bajob-h{font-size:14px;margin-bottom:8px}
+.barow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.bacol{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--card)}
+.bacol.before{border-top:3px solid #2f6df6}
+.bacol.after{border-top:3px solid var(--orange)}
+.balabel{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--ink2);margin-bottom:6px}
+.bacol .poolgrid{grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}
+@media(max-width:560px){.barow{grid-template-columns:1fr}}
 .done-btn{background:var(--green)!important;color:#fff!important;font-weight:800;padding:10px 16px}
 .done-btn:hover{filter:brightness(1.05)}
 .btn-set[disabled]{opacity:.5;cursor:default}
