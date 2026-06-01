@@ -1244,6 +1244,42 @@ async function gdAutoResume(){
   const tok=await gdGetToken(false);
   if(tok){gdSyncNow(false);gdStartPolling();}
 }
+/* recursively list image metadata (no download) — used to test location grouping */
+async function gdListMeta(folderId,tok,folderName,out,depth){
+  if((depth||0)>6)return;
+  const q=encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  let pageToken='';
+  do{
+    const url=`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,imageMediaMetadata(time,location))&pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok)return;
+    const data=await r.json();
+    for(const f of (data.files||[])){
+      if(f.mimeType==='application/vnd.google-apps.folder') await gdListMeta(f.id,tok,f.name,out,(depth||0)+1);
+      else if(/^image\//.test(f.mimeType||'')) out.push({id:f.id,name:f.name,folder:folderName,loc:f.imageMediaMetadata&&f.imageMediaMetadata.location,time:f.imageMediaMetadata&&f.imageMediaMetadata.time});
+    }
+    pageToken=data.nextPageToken||'';
+  }while(pageToken);
+}
+async function gdScan(){
+  const tok=await gdGetToken(true);
+  if(!tok){toast('Sign in to scan.');return;}
+  toast('Scanning your Drive folder (no download)…');
+  try{
+    const out=[];await gdListMeta(GDRIVE_FOLDER_ID,tok,'Drive',out,0);
+    const photos=out.length;
+    const withLoc=out.filter(x=>x.loc&&typeof x.loc.latitude==='number').length;
+    const withTime=out.filter(x=>x.time).length;
+    const clusters=new Set(out.filter(x=>x.loc&&typeof x.loc.latitude==='number').map(x=>x.loc.latitude.toFixed(4)+','+x.loc.longitude.toFixed(4)));
+    const pct=photos?Math.round(withLoc/photos*100):0;
+    let verdict;
+    if(!photos)verdict='No photos found in the folder (did you drop your before/after folder inside the synced folder?).';
+    else if(pct>=50)verdict=`✅ Location grouping will work — about ${clusters.size} address-groups. I can build the auto-sort.`;
+    else if(withLoc>0)verdict=`⚠️ Only ${pct}% have location — Google kept it on some but stripped most. Auto-sort would be partial; the full fix is the backend AI.`;
+    else verdict='❌ No location on these photos — Google stripped it. Auto-sort by address isn’t possible; the real fix is the backend AI (or a quick manual pairing tool).';
+    alert(`Drive scan\n\nPhotos found: ${photos}\nWith location: ${withLoc} (${pct}%)\nWith date taken: ${withTime}\nApprox address-groups: ${clusters.size}\n\n${verdict}`);
+  }catch(e){toast('Scan failed — try Sync first, then Scan.');}
+}
 
 /* ============================================================
    SCRIPTED "SOCIAL MEDIA MANAGER" AI  (rule-based stand-in)
@@ -2778,6 +2814,9 @@ function socLibrary(v){
     const gd=el('button','btn-set','🔄 Sync Google Drive now');gd.style.marginTop='10px';
     gd.onclick=()=>gdSyncNow(true).then(()=>gdStartPolling());
     add.appendChild(gd);
+    const scan=el('button','btn-set','🔍 Scan for before/after grouping');scan.style.cssText='margin:10px 0 0 8px';
+    scan.onclick=()=>gdScan();
+    add.appendChild(scan);
     add.appendChild(el('div','muted',`🟢 Google Drive connected — tap Sync to pull new content; it keeps auto-syncing while this stays open.`)).style.cssText='font-size:12px;margin-top:8px';
   }else{
     const gd=el('button','btn-set','🟢 Connect Google Drive — auto-sync new content');gd.style.marginTop='10px';
