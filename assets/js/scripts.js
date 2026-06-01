@@ -1241,7 +1241,7 @@ function renderSavedJobs(container){
     const before=its.filter(x=>x.role==='before'), after=its.filter(x=>x.role==='after'), other=its.filter(x=>!x.role);
     const counts=[];if(before.length)counts.push(before.length+' before');if(after.length)counts.push(after.length+' after');if(other.length)counts.push(other.length+' photo'+(other.length>1?'s':''));
     const d=el('details','jobgroup savedjob');
-    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${counts.join(' · ')||(its.length+' photos')} · saved`));
+    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${counts.join(' · ')||(its.length+' photos')}`));
     const body=el('div','savedbody');
     if(before.length||after.length){
       const row=el('div','barow');
@@ -3041,7 +3041,6 @@ function socLibrary(v){
     const located=avail.filter(m=>typeof m.lat==='number');
     const noloc=avail.filter(m=>typeof m.lat!=='number');
     const clusters=clusterByLocation(located,60);
-    poolCard.appendChild(el('div','muted',`📍 stacks below are auto-grouped by location (not saved yet) — tick a before + after and tap “Make Before/After job” to save them up top.`)).style.cssText='font-size:12px;margin:8px 0';
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup');if(i<2)d.open=true;
       d.appendChild(el('summary','jobsum',`📍 Group ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
