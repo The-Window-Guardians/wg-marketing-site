@@ -1177,17 +1177,35 @@ function gdGetToken(interactive){
     try{_gdClient.requestAccessToken({prompt:interactive?'consent':''});}catch(e){resolve(null);}
   });
 }
-async function gdConnect(){
-  const ok=await loadGsi();
-  if(!ok){toast('Couldn’t reach Google — check your connection.');return;}
-  if(!_gdClient){_gdClient=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:GDRIVE_SCOPE,callback:()=>{}});}
-  const tok=await gdGetToken(true);
-  if(!tok){toast('Google sign-in was cancelled.');return;}
-  ST.driveConnected=true;commit();
-  toast('Google Drive connected — pulling your folder…');
-  await gdSyncNow(true);
-  gdStartPolling();
-  render();
+/* preload Google's script + client ahead of the click so the popup can open
+   synchronously inside the click gesture (browsers block popups opened after an await) */
+function gdInit(){
+  if(_gdClient)return Promise.resolve(true);
+  return loadGsi().then(ok=>{
+    if(ok&&window.google&&google.accounts&&google.accounts.oauth2){
+      _gdClient=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:GDRIVE_SCOPE,callback:()=>{}});
+      return true;
+    }
+    return false;
+  });
+}
+function gdConnect(){
+  if(_gdClient){gdRequest();return;} // ready → open popup immediately (inside the gesture)
+  gdInit().then(ok=>{ if(ok)gdRequest(); else toast('Couldn’t reach Google — check your connection, then tap Connect again.'); });
+}
+function gdRequest(){
+  _gdClient.callback=(resp)=>{
+    if(resp&&resp.access_token){
+      _gdToken=resp.access_token;_gdExp=Date.now()+((resp.expires_in||3600)*1000);
+      ST.driveConnected=true;commit();
+      toast('Google Drive connected — pulling your folder…');
+      gdSyncNow(false).then(()=>{gdStartPolling();render();});
+    }else{
+      toast('Google sign-in didn’t finish (cancelled or popup blocked).');
+    }
+  };
+  try{_gdClient.requestAccessToken({prompt: ST.driveConnected?'':'consent'});}
+  catch(e){toast('Could not open Google sign-in — allow pop-ups for this site and retry.');}
 }
 async function gdSyncNow(interactive){
   if(_gdSyncing)return;_gdSyncing=true;
@@ -1220,9 +1238,8 @@ async function gdSyncNow(interactive){
 function gdStartPolling(){if(_gdTimer)return;_gdTimer=setInterval(()=>{if(!document.hidden)gdSyncNow(false);},60000);}
 /* best-effort silent reconnect when the page loads if Drive was connected before */
 async function gdAutoResume(){
+  const ok=await gdInit();if(!ok)return;            // preload client so Connect opens instantly
   if(!ST||!ST.driveConnected||_gdTimer)return;
-  const ok=await loadGsi();if(!ok)return;
-  if(!_gdClient){_gdClient=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:GDRIVE_SCOPE,callback:()=>{}});}
   const tok=await gdGetToken(false);
   if(tok){gdSyncNow(false);gdStartPolling();}
 }
