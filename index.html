@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard · Window Guardians Marketing OS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body data-view="dashboard">
+
+<!-- LOGIN GATE -->
+<div id="gate">
+  <div class="gate-card">
+    <div class="eyebrow">Window Guardians · Marketing OS</div>
+    <h1>SEO Domination.<br><span>Who's here?</span></h1>
+    <p>Pick your name. The dashboard shows your jobs for the week first — but you can see everyone's.</p>
+    <div class="who" id="whoBtns"></div>
+    <div class="gate-foot">Q3 2026 · Jun 2 – Aug 18 · Every deliverable due that week's <b style="color:#cdd8ec">Tuesday 12pm</b></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><div class="logo">WG</div><div>Window Guardians<small>Marketing OS</small></div></div>
+    <div class="proj-pill">📍 SEO · Q3 2026 <span class="muted" style="opacity:.6">▾</span></div>
+    <div class="spacer"></div>
+    <div class="role-chip"><div class="av" id="tbAv"></div>
+      <select id="roleSel">
+        <option value="all">Everyone</option>
+        <option value="sebastian">Sebastian</option>
+        <option value="bogdan">Bogdan</option>
+        <option value="ruth">Ruth</option>
+      </select>
+    </div>
+    <button class="tb-btn" id="btnExport" title="Download a backup of all progress">⬇ Export</button>
+    <button class="tb-btn" id="btnImport" title="Restore from a backup file">⬆ Import</button>
+    <button class="tb-btn" id="btnPrint">🖨 Print</button>
+    <button class="tb-btn" id="btnReset" title="Wipe all progress to a clean Day One — use the morning you go live">↺ Reset</button>
+    <input type="file" id="importFile" accept="application/json" class="hidden">
+  </div>
+
+  <div class="mobnav" id="mobnav"></div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <nav class="nav" id="nav"></nav>
+    </aside>
+    <main class="main" id="view"></main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/jquery.min.js"></script>
+<script src="assets/js/scripts.js"></script>
+</body>
+</html>
