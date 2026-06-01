@@ -1239,7 +1239,7 @@ function renderSavedJobs(container){
     const before=its.filter(x=>x.role==='before').length, after=its.filter(x=>x.role==='after').length, other=its.length-before-after;
     const counts=[];if(before)counts.push(before+' before');if(after)counts.push(after+' after');if(other)counts.push(other+' photo'+(other>1?'s':''));
     const d=el('details','jobgroup savedjob');
-    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${counts.join(' · ')||(its.length+' photos')}`));
+    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${its.length} photo${its.length>1?'s':''}`));
     const body=el('div','savedbody');
     const grid=el('div','poolgrid');
     its.forEach(m=>{
