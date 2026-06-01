@@ -2251,25 +2251,41 @@ function deliverBox(wid,fromRole,dv,i){
     <div class="dbody">
     <div class="dneed">${esc(dv.need)}</div>
     <textarea class="dtext" placeholder="Type it here — paste the blogs, the details, or the list…">${esc((ST.deliv[key]&&ST.deliv[key].text)||'')}</textarea>
-    <div class="ddrop">📎 <b>Drag a doc / PDF / photo here</b> or click to attach</div>
+    <div class="ddrop">📎 <b>Drag images, video, a PDF or doc here</b> or click to attach</div>
     <input type="file" multiple class="hidden">
     <div class="dfiles"></div>
+    <div class="dlinkrow"><input class="dlinkin" type="url" placeholder="Paste a link — Google Doc, video URL, reference…"><button class="btn-set dlinkbtn">＋ Add link</button></div>
+    <div class="dlinks"></div>
     <div class="dsync">💾 Saved on <b>this device</b> for now — reaches ${PEOPLE[dv.to].name} once the backend sync is turned on.</div>
     </div>`;
   const ta=box.querySelector('.dtext'), drop=box.querySelector('.ddrop'),
-        inp=box.querySelector('input'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat');
-  const setStat=async()=>{const files=await filesForDeliv(key);
-    const has=((ST.deliv[key]&&ST.deliv[key].text&&ST.deliv[key].text.trim())||files.length);
+        inp=box.querySelector('input'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat'),
+        linkin=box.querySelector('.dlinkin'), linkbtn=box.querySelector('.dlinkbtn'), linksEl=box.querySelector('.dlinks');
+  const setStat=async()=>{const files=await filesForDeliv(key); const d=ST.deliv[key]||{};
+    const has=((d.text&&d.text.trim())||files.length||(d.links&&d.links.length));
     stat.textContent=has?'✓ Delivered':'⏳ Not sent yet'; stat.className='dstat'+(has?' on':'');};
-  ta.oninput=()=>{ if(!ST.deliv[key])ST.deliv[key]={text:'',files:[]}; ST.deliv[key].text=ta.value; };
+  ta.oninput=()=>{ if(!ST.deliv[key])ST.deliv[key]={text:'',files:[],links:[]}; ST.deliv[key].text=ta.value; };
   ta.onblur=()=>{commit();setStat()};
   drop.onclick=()=>inp.click();
   drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};
   drop.ondragleave=()=>drop.classList.remove('over');
   drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('over');for(const f of e.dataTransfer.files)await fileAdd(f,wid,fromRole,key);toast('Attached');refreshDFiles(fl,key,true,setStat);setStat()};
   inp.onchange=async e=>{for(const f of e.target.files)await fileAdd(f,wid,fromRole,key);e.target.value='';toast('Attached');refreshDFiles(fl,key,true,setStat);setStat()};
-  refreshDFiles(fl,key,true,setStat); setStat();
+  const addLink=()=>{let u2=(linkin.value||'').trim();if(!u2)return;if(!/^https?:\/\//i.test(u2))u2='https://'+u2;
+    if(!ST.deliv[key])ST.deliv[key]={text:'',files:[],links:[]}; if(!Array.isArray(ST.deliv[key].links))ST.deliv[key].links=[];
+    ST.deliv[key].links.push({url:u2}); linkin.value=''; commit(); renderDLinks(linksEl,key,true,setStat); setStat();};
+  linkbtn.onclick=addLink; linkin.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addLink();}};
+  refreshDFiles(fl,key,true,setStat); renderDLinks(linksEl,key,true,setStat); setStat();
   return box;
+}
+function linkLabel(u){try{const x=new URL(u);return x.hostname.replace(/^www\./,'')+(x.pathname&&x.pathname.length>1?x.pathname:'');}catch(e){return u}}
+function renderDLinks(el2,key,editable,onChange){
+  el2.innerHTML='';
+  const links=(ST.deliv[key]&&ST.deliv[key].links)||[];
+  links.forEach((lk,idx)=>{const row=el('div','dlink');
+    row.innerHTML=`<span class="fi">🔗</span><a class="ln" href="${esc(lk.url)}" target="_blank" rel="noopener noreferrer">${esc(lk.label||linkLabel(lk.url))}</a>${editable?'<button class="tbtn del">✕</button>':''}`;
+    if(editable){const d=row.querySelector('.del'); if(d)d.onclick=()=>{ST.deliv[key].links.splice(idx,1);commit();renderDLinks(el2,key,editable,onChange);if(onChange)onChange();};}
+    el2.appendChild(row);});
 }
 function inboxBox(item){
   const key=item.dkey, fr=item.fromRole;
@@ -2279,15 +2295,20 @@ function inboxBox(item){
     <div class="dbody">
     <div class="dneed">${esc(item.need)}</div>
     <div class="dintext"></div>
+    <div class="dlinks"></div>
     <div class="dfiles"></div>
     </div>`;
   const body=box.querySelector('.dintext'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat');
+  const linksEl=box.querySelector('.dlinks');
+  const nLinks=((ST.deliv[key]&&ST.deliv[key].links&&ST.deliv[key].links.length)||0);
+  renderDLinks(linksEl,key,false);
   if(txt.trim()){body.className='dintext has';body.textContent=txt;box.open=true;}
+  else if(nLinks){body.style.display='none';box.open=true;} // links/files speak for themselves
   else{body.className='dintext wait';body.textContent='⏳ Waiting on '+PEOPLE[fr].name+' — nothing delivered yet.';}
   filesForDeliv(key).then(files=>{
-    const has=(txt.trim()||files.length);
+    const has=(txt.trim()||files.length||nLinks);
     stat.textContent=has?'✓ Received':'⏳ Pending'; stat.className='dstat'+(has?' on':'');
-    if(files.length)box.open=true;
+    if(files.length||nLinks)box.open=true;
     if(!files.length)return;
     files.forEach(f=>{const row=el('div','dfile');
       row.innerHTML=`<span class="fi">${fileIcon(f.type)}</span><span class="fn">${esc(f.name)}</span><span class="fm">${humanSize(f.size)}</span><button class="tbtn dl">⬇</button>`;
@@ -2546,7 +2567,7 @@ function roleOptsFor(u){
   const mode=(u.progs&&u.progs.length===2)?'both':((u.progs&&u.progs[0])||'social');
   let roles;
   if(mode==='social') roles=[['editor','Creator — uploads photos/videos & makes posts'],['poster','Poster — only publishes approved posts']];
-  else if(mode==='seo') roles=[['editor','Editor — does the SEO work (blogs, fixes, reviews)']];
+  else if(mode==='seo') roles=[['editor','Builder — does the SEO work &amp; publishes (Bogdan)'],['contributor','Contributor — provides blogs, content &amp; info']];
   else roles=[['editor','Editor — full access to both dashboards']];
   return optList([owner].concat(roles), u.perm);
 }
@@ -2574,12 +2595,14 @@ function usersAdminCard(){
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
     const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{const v=e.target.value;setProgs(u,v);
-      if((v==='seo'||v==='both')&&u.perm==='poster')u.perm='editor'; // Poster is a Social-only role
+      const valid={social:['owner','editor','poster'],seo:['owner','editor','contributor'],both:['owner','editor']};
+      if((valid[v]||[]).indexOf(u.perm)<0)u.perm='editor'; // keep the role valid for the chosen dashboard
       commit();render();};
     row.querySelector('.uperm').onchange=e=>{const val=e.target.value,was=u.perm;
       if(was==='owner'&&val!=='owner'&&activeOwners().length<=1){toast('You need at least one Owner.');e.target.value='owner';return;}
       u.perm=val;
-      if(val==='poster')u.progs=['social'];                                 // Poster only exists on Social
+      if(val==='poster')u.progs=['social'];          // Poster is Social-only
+      else if(val==='contributor')u.progs=['seo'];   // Contributor is SEO-only
       else if(val!=='owner'&&(!u.progs||!u.progs.length))u.progs=(was==='owner'?['seo','social']:['social']);
       commit();render();};
     row.querySelector('.uactck').onchange=e=>{const on=e.target.checked;
