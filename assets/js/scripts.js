@@ -1169,12 +1169,13 @@ function gdTokenValid(){return _gdToken&&Date.now()<_gdExp-60000}
 function gdGetToken(interactive){
   return new Promise(resolve=>{
     if(gdTokenValid())return resolve(_gdToken);
+    if(!interactive)return resolve(null); // never pop Google sign-in unless the user asked
     if(!_gdClient)return resolve(null);
     _gdClient.callback=(resp)=>{
       if(resp&&resp.access_token){_gdToken=resp.access_token;_gdExp=Date.now()+((resp.expires_in||3600)*1000);resolve(_gdToken);}
       else resolve(null);
     };
-    try{_gdClient.requestAccessToken({prompt:interactive?'consent':''});}catch(e){resolve(null);}
+    try{_gdClient.requestAccessToken({prompt: ST.driveConnected?'':'consent'});}catch(e){resolve(null);}
   });
 }
 /* preload Google's script + client ahead of the click so the popup can open
@@ -2747,9 +2748,9 @@ function socLibrary(v){
   add.appendChild(drop);
   if(ST.driveConnected){
     const gd=el('button','btn-set','🔄 Sync Google Drive now');gd.style.marginTop='10px';
-    gd.onclick=()=>gdSyncNow(true);
+    gd.onclick=()=>gdSyncNow(true).then(()=>gdStartPolling());
     add.appendChild(gd);
-    add.appendChild(el('div','muted',`🟢 Google Drive connected — auto-syncing your folder while this is open.`)).style.cssText='font-size:12px;margin-top:8px';
+    add.appendChild(el('div','muted',`🟢 Google Drive connected — tap Sync to pull new content; it keeps auto-syncing while this stays open.`)).style.cssText='font-size:12px;margin-top:8px';
   }else{
     const gd=el('button','btn-set','🟢 Connect Google Drive — auto-sync new content');gd.style.marginTop='10px';
     gd.onclick=()=>gdConnect();
