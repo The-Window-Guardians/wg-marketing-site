@@ -2621,15 +2621,40 @@ function calWeeks(){ // current + next (rolling 2-week buffer)
   else if(WEEKS.length)out.push(WEEKS[WEEKS.length-1]);
   return out;
 }
+/* grab a single frame from a video blob as a JPEG data-URL (null if the browser
+   can't decode it — e.g. iPhone HEVC .mov). */
+function videoThumb(blob){
+  return new Promise((resolve)=>{
+    const url=URL.createObjectURL(blob);
+    const v=document.createElement('video');
+    v.muted=true;v.playsInline=true;v.preload='metadata';v.src=url;
+    let done=false;
+    const finish=(val)=>{if(done)return;done=true;try{URL.revokeObjectURL(url)}catch(e){}resolve(val)};
+    const grab=()=>{
+      try{const w=v.videoWidth,h=v.videoHeight; if(!w||!h)return finish(null);
+        const c=document.createElement('canvas');c.width=240;c.height=Math.round(240*h/w);
+        c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+        finish(c.toDataURL('image/jpeg',0.7));
+      }catch(e){finish(null)}
+    };
+    v.onloadeddata=()=>{try{v.currentTime=Math.min(0.1,(v.duration||1)/3)}catch(e){grab()}};
+    v.onseeked=grab; v.onerror=()=>finish(null);
+    setTimeout(()=>finish(null),5000);
+  });
+}
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(rec&&rec.blob&&/image/.test(rec.type)){
+    if(!rec||!rec.blob)return;
+    if(/image/.test(rec.type)){
       // show only once the browser actually decodes it; HEIC etc. that Chrome
       // can't render fail silently to the emoji placeholder instead of a broken icon
       img.onload=()=>{img.style.display='block'};
       img.onerror=()=>{img.style.display='none'};
       img.src=URL.createObjectURL(rec.blob);
+    } else if(/video/.test(rec.type)||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||'')){
+      const d=await videoThumb(rec.blob);
+      if(d){img.src=d;img.style.display='block';}
     }
   }catch(e){}
 }
@@ -2772,9 +2797,12 @@ function socLibrary(v){
     avail.forEach(m=>{
       const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
       const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
-      const img=el('img','poolimg');thumbInto(img,m.id);
-      cell.appendChild(img);
-      cell.appendChild(el('span','poolph',isVid?'▶':'🖼️'));
+      const img=el('img','poolimg');
+      const ph=el('span','poolph',isVid?'🎬':'🖼️');
+      img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')m.thumb=img.src;});
+      if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);   // images + decodable videos get a real frame
+      cell.appendChild(img);cell.appendChild(ph);
+      if(isVid)cell.appendChild(el('span','poolplay','▶'));   // corner badge so videos read as videos even with a thumbnail
       const ck=el('span','poolck','✓');
       ck.onclick=(e)=>{e.stopPropagation();if(POOL_SEL.has(m.id))POOL_SEL.delete(m.id);else POOL_SEL.add(m.id);cell.classList.toggle('sel');updateMakeBtn();};
       cell.appendChild(ck);
