@@ -47,6 +47,31 @@ const PEOPLE={
 const TEAM_ORDER=['bogdan','ruth','sebastian']; // full roster — used by the login gate + top bar (program rosters can be a subset)
 
 /* ============================================================
+   ACCOUNTS / LOGIN  (front-end prototype layer)
+   - S.users[] : the managed account list (id, name, perm, password hash, active)
+   - S.uid     : who is logged in (drives PERMISSIONS — cannot be changed by the
+                 "view as" dropdown, only by logging in)
+   - S.role    : the "view tasks as" filter only (Everyone / a person)
+   Permissions: 'owner' (full + admin) · 'editor' (build + approve) · 'poster' (Ruth-style: queue only).
+   NOTE: a browser-only password check is NOT real security — the developer wires
+   this to Firebase Auth (see FIREBASE_HANDOFF) so it's enforced server-side. Until
+   then, treat logins as a workflow convenience, not a lock.
+   ============================================================ */
+function hashPw(s){s=String(s||'');let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return 'h'+h.toString(36);}
+function userById(id){return (Array.isArray(S.users)?S.users.find(u=>u.id===id):null)||null;}
+function curUser(){return userById(S.uid);}
+function isPoster(){const u=curUser();return !!u&&u.perm==='poster';}
+function personOf(id){return PEOPLE[id] || userById(id) || {name:String(id||'?'),av:'?',c:'#64748b',bg:'#e5e7eb',role:''};}
+function activeOwners(){return (S.users||[]).filter(u=>u.perm==='owner'&&u.active!==false);}
+function ensureAuth(){ // seed the account list once, and map an existing role → uid so nobody gets logged out
+  if(!Array.isArray(S.users)||!S.users.length){
+    const perm={sebastian:'owner',bogdan:'editor',ruth:'poster'};
+    S.users=TEAM_ORDER.map(id=>({id,name:PEOPLE[id].name,title:PEOPLE[id].role,av:PEOPLE[id].av,c:PEOPLE[id].c,bg:PEOPLE[id].bg,perm:perm[id]||'editor',pass:hashPw('wgteam'),active:true,seeded:true}));
+  }
+  if(!S.uid && S.role && userById(S.role)) S.uid=S.role;
+}
+
+/* ============================================================
    SEO PROGRAM DATA  (Program 1 — the SEO/local game plan)
    Each "program" below (SEO, Social, …) is one sub-dashboard inside
    the Marketing hub. They share the same render engine; only the data
@@ -1654,6 +1679,7 @@ let S=Store.load()||freshState();
     }
     delete S.tasks; delete S.kpis; delete S.deliv;
   }
+  ensureAuth();
   // ensure every program slice exists, with all keys + the step-based shape
   Object.keys(PROGRAMS).forEach(id=>{
     const f=freshSlice(PROGRAMS[id]); const sl=S.prog[id]||(S.prog[id]=f);
@@ -1669,7 +1695,7 @@ let S=Store.load()||freshState();
     // drop any base64 video thumbs an earlier build wrote into the pool — they bloat localStorage (now cached in-memory via VTHUMB)
     if(Array.isArray(sl.pool))sl.pool.forEach(m=>{if(m&&typeof m.thumb==='string'&&m.thumb.slice(0,5)==='data:')delete m.thumb;});
   });
-  if(!S.role||(S.role!=='all'&&!PEOPLE[S.role]))S.role='all';
+  if(!S.role||(S.role!=='all'&&!PEOPLE[S.role]&&!userById(S.role)))S.role='all';
   if(!S.view)S.view='dashboard';
 })();
 bindProgram(); // set the live bindings for this page before anything renders
@@ -1739,7 +1765,7 @@ const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
 function toast(m){const t=$('#toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200)}
-function av(role,cls){const p=PEOPLE[role];return `<div class="${cls||'av'}" style="background:${p.bg};color:${p.c}">${p.av}</div>`}
+function av(role,cls){const p=personOf(role);return `<div class="${cls||'av'}" style="background:${p.bg};color:${p.c}">${p.av}</div>`}
 
 /* ---- dates / current week ---- */
 function todayMid(){const d=new Date();d.setHours(0,0,0,0);return d}
@@ -1867,7 +1893,7 @@ function isHub(){return (document.body&&document.body.dataset.program==='hub')||
    a program = overview + that program's pages). Shared/admin/owner always appended. */
 function navItems(){
   // Ruth on Social is locked to just her two screens — her own little app.
-  if(!isHub() && activeProgram()==='social' && S.role==='ruth'){
+  if(!isHub() && activeProgram()==='social' && isPoster()){
     return [{sec:'Social'},
       {ic:'📤',label:'Post queue',file:'social.html'},
       {ic:'📊',label:'Numbers',file:'social-scorecard.html'},
@@ -1943,8 +1969,8 @@ function roleNote(){return S.role==='all'?'':` · showing <b>${PEOPLE[S.role].na
 /* ---------- DASHBOARD ---------- */
 /* ---------- SOCIAL: a clean, metrics-first dashboard home ---------- */
 function viewSocialDashboard(v){
-  // Ruth's whole world: pick a ready post and run it.
-  if(S.role==='ruth'){
+  // A poster's whole world (e.g. Ruth): pick a ready post and run it.
+  if(isPoster()){
     v.appendChild(el('div','page-head',`<h2>Ready to Post</h2><p>Everything here is approved and good to go. Pick one, copy the caption + hashtags, post it, mark it done. New to a step? Check your <b>Guide</b>.</p>`));
     ruthQueue(v);
     return;
@@ -2443,7 +2469,7 @@ function viewRuthGuide(v){
   v.appendChild(ruthTipsCard());
 }
 function viewGuides(v){
-  if(activeProgram()==='social'&&S.role==='ruth')return viewRuthGuide(v);
+  if(activeProgram()==='social'&&isPoster())return viewRuthGuide(v);
   if(activeProgram()==='social')return viewSocialGuides(v);
   v.appendChild(el('div','page-head',`<h2>Guides & Playbooks</h2><p>Keep these open while you build. The blog guide is the weekly engine; the 8 reference cards are the "what each kind of SEO does, and what to ignore" library from your reference guide.</p>`));
   const g=BLOG_GUIDE;
@@ -2505,6 +2531,53 @@ async function exportBackup(){
     toast('Backup saved (posts, captions, notes, progress). Photos & videos are NOT in this file — they live in your Google Drive folder.'+(onlyDevice?(' ⚠ '+onlyDevice+' item'+(onlyDevice>1?'s':'')+' you uploaded directly aren’t in Drive — keep those originals safe.'):''));
   }catch(e){toast('Backup failed — try again.')}
 }
+/* owner-only: add/remove team logins, set passwords + permissions */
+function permOpts(sel){
+  return [['owner','Owner — full access + admin'],['editor','Editor — build & approve content'],['poster','Poster — only the post queue (like Ruth)']]
+    .map(([v,l])=>`<option value="${v}"${sel===v?' selected':''}>${l}</option>`).join('');
+}
+function usersAdminCard(){
+  const card=el('div','card pad');card.style.marginBottom='16px';
+  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👤</div><div><h3>Team &amp; logins</h3><small>Add people, set passwords &amp; permissions. Prototype — real security turns on with the backend.</small></div></div>`;
+  const wrap=el('div','usersadmin');
+  (S.users||[]).forEach(u=>{
+    const me=(u.id===S.uid);
+    const row=el('div','urow');
+    row.innerHTML=`<div class="uav">${av(u.id)}</div>
+      <div class="uinfo"><input class="uname cmp-in" value="${esc(u.name)}"><div class="ulogin muted">login: ${esc(u.id)}${u.seeded?' · <span style="color:var(--orange)">default password &ldquo;wgteam&rdquo;</span>':''}${me?' · <b>you</b>':''}</div></div>
+      <select class="uperm cmp-in">${permOpts(u.perm)}</select>
+      <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
+      <button class="btn-set upw">Set password</button>
+      <button class="btn-set danger urem">Remove</button>`;
+    row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
+    row.querySelector('.uperm').onchange=e=>{const val=e.target.value;
+      if(u.perm==='owner'&&val!=='owner'&&activeOwners().length<=1){toast('You need at least one Owner.');e.target.value='owner';return;}
+      u.perm=val;commit();render();};
+    row.querySelector('.uactck').onchange=e=>{const on=e.target.checked;
+      if(!on&&me){toast('You can’t deactivate yourself.');e.target.checked=true;return;}
+      if(!on&&u.perm==='owner'&&activeOwners().length<=1){toast('Can’t deactivate the only Owner.');e.target.checked=true;return;}
+      u.active=on;commit();};
+    row.querySelector('.upw').onclick=()=>{const v=prompt('New password for '+u.name+':');if(v==null)return;u.pass=hashPw(v);u.seeded=false;commit();render();toast('Password updated for '+u.name);};
+    row.querySelector('.urem').onclick=()=>{
+      if(me){toast('You can’t remove yourself.');return;}
+      if(u.perm==='owner'&&activeOwners().length<=1){toast('Can’t remove the only Owner.');return;}
+      if(!confirm('Remove '+u.name+'? They won’t be able to log in anymore.'))return;
+      S.users=(S.users||[]).filter(x=>x.id!==u.id);commit();render();toast('Removed '+u.name);};
+    wrap.appendChild(row);
+  });
+  card.appendChild(wrap);
+  const add=el('button','btn-set primary','＋ Add teammate');add.style.marginTop='12px';
+  add.onclick=()=>{
+    const name=prompt('New teammate’s name:');if(!name||!name.trim())return;
+    const pwd=prompt('Set a password for '+name.trim()+':')||'wgteam';
+    const COLORS=[['#7c3aed','#ede9fe'],['#0891b2','#cffafe'],['#c026d3','#fae8ff'],['#ca8a04','#fef9c3']];
+    const ci=COLORS[(S.users||[]).length%COLORS.length];
+    (S.users=S.users||[]).push({id:'u_'+Date.now().toString(36),name:name.trim(),title:'Team member',av:name.trim()[0].toUpperCase(),c:ci[0],bg:ci[1],perm:'editor',pass:hashPw(pwd),active:true});
+    commit();render();toast(name.trim()+' added — they can log in now.');
+  };
+  card.appendChild(add);
+  return card;
+}
 function viewSettings(v){
   v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, your data backup, the go-live runbook, and what unlocks after sync.</p>`));
 
@@ -2538,6 +2611,7 @@ function viewSettings(v){
   const eb=el('button','btn-set primary','⬇ Export backup (.json)');eb.onclick=exportBackup;
   data.appendChild(eb);
   v.appendChild(data);
+  if(isOwner())v.appendChild(usersAdminCard());
 
   const team=el('div','card pad');team.style.marginBottom='16px';
   team.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👥</div><div><h3>Team on this project</h3><small>Assigned by Sebastian</small></div></div>`;
@@ -3309,28 +3383,63 @@ function closeComposer(){const o=$('#cmpOv');if(o)o.remove()}
    ============================================================ */
 function renderGate(){
   const wrap=$('#whoBtns');if(!wrap)return;
-  wrap.innerHTML=TEAM_ORDER.map(r=>{const p=PEOPLE[r];
-    return `<button data-role="${r}">${av(r)}<div><div class="nm">${p.name}</div><div class="rl">${esc(p.role)}</div></div></button>`}).join('')
-    +`<button data-role="all" style="grid-column:1/-1;justify-content:center">👀 <div><div class="nm">Just looking — show everyone</div></div></button>`;
-  wrap.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.role=b.dataset.role;commit();enterApp()});
+  ensureAuth();
+  const users=()=>(S.users||[]).filter(u=>u.active!==false);
+  const showList=()=>{
+    wrap.innerHTML=users().map(u=>
+      `<button data-uid="${u.id}">${av(u.id)}<div><div class="nm">${esc(u.name)}</div><div class="rl">${esc(u.title||'')}</div></div></button>`).join('')
+      +`<button data-uid="__guest" style="grid-column:1/-1;justify-content:center">👀 <div><div class="nm">Just looking — browse only</div></div></button>`;
+    wrap.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.uid;
+      if(id==='__guest'){S.uid=null;S.role='all';commit();enterApp();return;}
+      showPw(userById(id));
+    });
+  };
+  const showPw=(u)=>{
+    if(!u){showList();return;}
+    wrap.innerHTML=`<div class="login-step">
+      <div class="login-who">${av(u.id)}<div><div class="nm">${esc(u.name)}</div><div class="rl">${esc(u.title||'')}</div></div></div>
+      <label class="login-lbl">Password</label>
+      <input type="password" id="gatePw" class="login-pw" placeholder="Enter your password" autocomplete="current-password">
+      <div class="login-actions"><button class="btn-set" id="gateBack">← Back</button><button class="btn-set primary" id="gateGo">Log in</button></div>
+      <div class="login-hint">Prototype login — real security turns on with the backend.</div>
+    </div>`;
+    const pw=$('#gatePw'); if(pw)pw.focus();
+    const go=()=>{ const val=($('#gatePw')||{}).value||''; if(!u.pass||hashPw(val)===u.pass){S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();} else toast('Incorrect password — try again.'); };
+    $('#gateGo').onclick=go; $('#gateBack').onclick=showList;
+    if(pw)pw.onkeydown=e=>{if(e.key==='Enter')go();};
+  };
+  showList();
+}
+function logout(){ S.uid=null; S.role='all'; commit(); const app=$('#app'); if(app)app.style.display='none'; const g=$('#gate'); if(g)g.classList.remove('hidden'); renderGate(); }
+function ensureLogoutBtn(){
+  const bar=document.querySelector('.topbar'); if(!bar)return;
+  let b=document.getElementById('btnLogout');
+  if(S.uid){ if(!b){b=el('button','tb-btn','⎋ Log out');b.id='btnLogout';b.title='Log out';b.onclick=logout;const before=document.getElementById('btnReset');bar.insertBefore(b,before||null);} }
+  else if(b){b.remove();}
 }
 function enterApp(){
   const gate=$('#gate');if(gate)gate.classList.add('hidden');
   const app=$('#app');if(app)app.style.display='block';
   const sel=$('#roleSel');
   if(sel){
-    if(S.role!=='all' && ORDER.indexOf(S.role)===-1) S.role='all';
-    sel.innerHTML='<option value="all">Everyone</option>'+ORDER.map(r=>`<option value="${r}">${PEOPLE[r].name}</option>`).join('');
-    sel.value=S.role;
+    if(isPoster()){ sel.style.display='none'; } // a poster (Ruth) can't switch views — locked to her own app
+    else{
+      sel.style.display='';
+      if(S.role!=='all' && ORDER.indexOf(S.role)===-1) S.role='all';
+      sel.innerHTML='<option value="all">Everyone</option>'+ORDER.map(r=>`<option value="${r}">${esc(personOf(r).name)}</option>`).join('');
+      sel.value=S.role;
+    }
   }
   const a=document.getElementById('tbAv');
   if(a){
-    if(S.role==='all'){a.style.background='#ffffff22';a.style.color='#fff';a.textContent='★'}
-    else{const p=PEOPLE[S.role];a.style.background=p.bg;a.style.color=p.c;a.textContent=p.av}
+    if(!S.uid && S.role==='all'){a.style.background='#ffffff22';a.style.color='#fff';a.textContent='★'}
+    else{const p=personOf(S.uid||S.role);a.style.background=p.bg;a.style.color=p.c;a.textContent=p.av}
   }
+  ensureLogoutBtn();
   buildNav();render();
 }
-function isOwner(){return S.role==='sebastian'}
+function isOwner(){const u=curUser();return !!u&&u.perm==='owner'}
 function navVisible(n){return !n.owner||isOwner()}
 function buildNav(){
   mountProgSwitcher();
@@ -3382,7 +3491,7 @@ function mountProgSwitcher(){
   const br=$('#btnReset');if(br)br.onclick=resetAll;
   const bi=$('#btnImport');if(bi)bi.onclick=()=>{const f=$('#importFile');if(f)f.click()};
   const fi=$('#importFile');if(fi)fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
-    r.onload=()=>{try{const d=JSON.parse(r.result);if(d.state){S=d.state;commit();enterApp();toast('Backup restored')}else toast('Not a valid backup')}catch(x){toast('Could not read that file')}};
+    r.onload=()=>{try{const d=JSON.parse(r.result);if(d.state){S=d.state;ensureAuth();commit();enterApp();toast('Backup restored')}else toast('Not a valid backup')}catch(x){toast('Could not read that file')}};
     r.readAsText(f);e.target.value='';};
 })();
 
@@ -3390,11 +3499,11 @@ async function resetAll(){
   if(!confirm('Start fresh for Day One?\n\nThis clears EVERYTHING you touched while testing:\n• every checked step\n• all KPI numbers\n• all notes & roll-overs\n• everything typed or uploaded into the “Deliver to…” boxes (text + files)\n\nUse this ONCE — the morning you go live (Tuesday). It cannot be undone.'))return;
   if(!confirm('Last check — really wipe it all to a clean Day One?'))return;
   try{const files=await fileList();for(const f of files)await fileDel(f.id);}catch(e){}
-  const role=S.role; S=freshState(); S.role=role; commit();
+  const role=S.role,users=S.users,uid=S.uid; S=freshState(); S.role=role; S.users=users; S.uid=uid; commit();
   enterApp(); toast('Reset to Day One — clean slate. Go win Tuesday.');
 }
 
 /* init */
 renderGate();
-// auto-skip gate if a role was already chosen on this device
-if(Store.load()&&S.role){enterApp()}
+// auto-skip gate only if someone is actually logged in on this device (guests re-pick)
+if(Store.load()&&S.uid){enterApp()}
