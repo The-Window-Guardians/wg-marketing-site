@@ -1328,13 +1328,13 @@ async function gdListAllMedia(folderId,tok,folderName,out,depth){
   const q=encodeURIComponent(`'${folderId}' in parents and trashed=false`);
   let pageToken='';
   do{
-    const url=`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,imageMediaMetadata(time,location))&pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
+    const url=`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,thumbnailLink,imageMediaMetadata(time,location))&pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
     const r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
     if(!r.ok)return;
     const data=await r.json();
     for(const f of (data.files||[])){
       if(f.mimeType==='application/vnd.google-apps.folder') await gdListAllMedia(f.id,tok,f.name,out,(depth||0)+1);
-      else if(/^(image|video)\//.test(f.mimeType||'')||/\.(heic|heif|mov)$/i.test(f.name||'')) out.push({id:f.id,name:f.name,mime:f.mimeType,folder:folderName,loc:f.imageMediaMetadata&&f.imageMediaMetadata.location,time:f.imageMediaMetadata&&f.imageMediaMetadata.time});
+      else if(/^(image|video)\//.test(f.mimeType||'')||/\.(heic|heif|mov)$/i.test(f.name||'')) out.push({id:f.id,name:f.name,mime:f.mimeType,folder:folderName,thumb:f.thumbnailLink,loc:f.imageMediaMetadata&&f.imageMediaMetadata.location,time:f.imageMediaMetadata&&f.imageMediaMetadata.time});
     }
     pageToken=data.nextPageToken||'';
   }while(pageToken);
@@ -1350,10 +1350,11 @@ async function gdSyncNow(interactive){
     let added=0,backfilled=0;
     for(const f of list){
       const ex=byDrive.get(f.id);
-      if(ex){ // already have it — backfill location/folder/time if missing
+      if(ex){ // already have it — backfill location/folder/time/thumb if missing
         if(f.loc&&typeof f.loc.latitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
         if(f.folder&&!ex.folder)ex.folder=f.folder;
         if(f.time&&!ex.taken)ex.taken=f.time;
+        if(f.thumb&&!ex.driveThumb){ex.driveThumb=f.thumb;backfilled++;}
         continue;
       }
       const dl=await fetch(`https://www.googleapis.com/drive/v3/files/${f.id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
@@ -1365,6 +1366,7 @@ async function gdSyncNow(interactive){
       const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder,addedAt:Date.now()+added};
       if(f.loc&&typeof f.loc.latitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
+      if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
       pool.push(item);added++;
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
@@ -3021,7 +3023,9 @@ function socLibrary(v){
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
     img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')m.thumb=img.src;});
-    if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);
+    if(m.thumb)img.src=m.thumb;
+    else if(isVid&&m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} // Google's video thumbnail (works for HEVC); fall back to a local frame-grab
+    else thumbInto(img,m.id);
     cell.appendChild(img);cell.appendChild(ph);
     if(isVid)cell.appendChild(el('span','poolplay','▶'));
     const ck=el('span','poolck','✓');
