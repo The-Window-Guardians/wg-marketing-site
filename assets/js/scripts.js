@@ -2537,11 +2537,18 @@ async function exportBackup(){
   }catch(e){toast('Backup failed — try again.')}
 }
 /* owner-only: add/remove team logins, set passwords, dashboards + permissions */
-function permOpts(sel){
-  return [['owner','Owner — full access + manage team'],
-          ['editor','Creator — upload photos/videos & make posts'],
-          ['poster','Poster — only publishes approved posts']]
-    .map(([v,l])=>`<option value="${v}"${sel===v?' selected':''}>${l}</option>`).join('');
+function optList(pairs,sel){return pairs.map(([v,l])=>`<option value="${v}"${sel===v?' selected':''}>${l}</option>`).join('');}
+/* role choices DEPEND on the assigned dashboard — each dashboard has its own jobs.
+   Social: Creator / Poster. SEO: Editor (the builder). "Poster" is a Social-only lock. */
+function roleOptsFor(u){
+  const owner=['owner','Owner — full access + manage team'];
+  if(u.perm==='owner') return optList([owner,['editor','Editor — full access to both dashboards']], u.perm);
+  const mode=(u.progs&&u.progs.length===2)?'both':((u.progs&&u.progs[0])||'social');
+  let roles;
+  if(mode==='social') roles=[['editor','Creator — uploads photos/videos & makes posts'],['poster','Poster — only publishes approved posts']];
+  else if(mode==='seo') roles=[['editor','Editor — does the SEO work (blogs, fixes, reviews)']];
+  else roles=[['editor','Editor — full access to both dashboards']];
+  return optList([owner].concat(roles), u.perm);
 }
 function progPick(u){ // which dashboard(s) this person works in
   if(u.perm==='owner') return '<span class="uprogstatic muted">All dashboards</span>';
@@ -2561,15 +2568,20 @@ function usersAdminCard(){
     row.innerHTML=`<div class="uav">${av(u.id)}</div>
       <div class="uinfo"><input class="uname cmp-in" value="${esc(u.name)}"><div class="ulogin muted">login: ${esc(u.id)}${u.seeded?' · <span style="color:var(--orange)">default password &ldquo;wgteam&rdquo;</span>':''}${me?' · <b>you</b>':''}</div></div>
       <div class="uprogwrap">${progPick(u)}</div>
-      <select class="uperm cmp-in">${permOpts(u.perm)}</select>
+      <select class="uperm cmp-in">${roleOptsFor(u)}</select>
       <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
       <button class="btn-set upw">Set password</button>
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
-    const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{setProgs(u,e.target.value);commit();render();};
-    row.querySelector('.uperm').onchange=e=>{const val=e.target.value;
-      if(u.perm==='owner'&&val!=='owner'&&activeOwners().length<=1){toast('You need at least one Owner.');e.target.value='owner';return;}
-      u.perm=val; if(val!=='owner'&&(!u.progs||!u.progs.length))u.progs=['social']; commit();render();};
+    const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{const v=e.target.value;setProgs(u,v);
+      if((v==='seo'||v==='both')&&u.perm==='poster')u.perm='editor'; // Poster is a Social-only role
+      commit();render();};
+    row.querySelector('.uperm').onchange=e=>{const val=e.target.value,was=u.perm;
+      if(was==='owner'&&val!=='owner'&&activeOwners().length<=1){toast('You need at least one Owner.');e.target.value='owner';return;}
+      u.perm=val;
+      if(val==='poster')u.progs=['social'];                                 // Poster only exists on Social
+      else if(val!=='owner'&&(!u.progs||!u.progs.length))u.progs=(was==='owner'?['seo','social']:['social']);
+      commit();render();};
     row.querySelector('.uactck').onchange=e=>{const on=e.target.checked;
       if(!on&&me){toast('You can’t deactivate yourself.');e.target.checked=true;return;}
       if(!on&&u.perm==='owner'&&activeOwners().length<=1){toast('Can’t deactivate the only Owner.');e.target.checked=true;return;}
