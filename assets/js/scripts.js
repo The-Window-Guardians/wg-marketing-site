@@ -24,11 +24,16 @@
 const KEY='wg_mktg_os_v2';
 const Store={
   load(){ try{return JSON.parse(localStorage.getItem(KEY))||null}catch(e){return null} },
-  save(s){ localStorage.setItem(KEY,JSON.stringify(s));
+  save(s){ try{ localStorage.setItem(KEY,JSON.stringify(s)); }
+    catch(e){ if(typeof toast==='function')toast('Storage is full — post & archive some content to free space.'); }
     /* SYNC HOOK (backend): also push `s` to MySQL here, e.g.
        POST state.php  { id:'seo_q3_2026', json:s, updated_at:NOW() } */
   }
 };
+/* in-memory video frame-grab cache — NEVER persisted (base64 frames would blow the ~5MB localStorage quota) */
+const VTHUMB={};
+/* a media item is "located" only when BOTH coords are real numbers (a half-set coord → NaN distance → broken clusters) */
+function hasLoc(m){return m&&typeof m.lat==='number'&&typeof m.lng==='number'}
 
 /* ---- People (3 active now; system is built to add more later) ---- */
 const PEOPLE={
@@ -1143,9 +1148,10 @@ async function poolAddFiles(fileList){
 }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'archived');}
-function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool
+function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
   const ids=new Set((p.media||[]).map(m=>m.id));
-  socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used')m.status='available'});
+  const jobIds=new Set();socBaJobs().forEach(j=>jobItems(j).forEach(x=>jobIds.add(x.id)));
+  socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used'&&!jobIds.has(m.id))m.status='available'});
 }
 /* ---- BEFORE / AFTER JOBS: saved before+after pairings ---- */
 function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
@@ -1178,7 +1184,7 @@ function openBaBuilder(items){
   items.forEach(m=>{
     const cell=el('div','bacell');
     const img=el('img','poolimg');img.addEventListener('load',()=>img.style.display='block');
-    if(m.thumb)img.src=m.thumb; else thumbInto(img,m.id);
+    if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else thumbInto(img,m.id);
     cell.appendChild(img);
     const tog=el('button','batoggle '+(role[m.id]||'none'), lbl(role[m.id]));
     tog.onclick=()=>{role[m.id]=role[m.id]===''?'before':role[m.id]==='before'?'after':'';tog.className='batoggle '+(role[m.id]||'none');tog.textContent=lbl(role[m.id]);};
@@ -1190,6 +1196,7 @@ function openBaBuilder(items){
   const sp=el('div');sp.style.flex='1';
   const save=el('button','btn-set primary','Save job');
   save.onclick=()=>{
+    save.disabled=true;
     const jobItemsOut=items.map(m=>({id:m.id,name:m.name,role:role[m.id]||''}));
     poolSetStatus(jobItemsOut.map(x=>x.id),'used'); // pull them out of Your content into the job
     saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),items:jobItemsOut,createdAt:Date.now()});
@@ -1205,7 +1212,7 @@ function jobItems(j){
 }
 /* manually drop a (usually no-location) photo into an existing job group */
 function openJobPicker(item){
-  const located=poolAvailable().filter(m=>(POOL_SRC==='main'?poolIsMain(m):m.folder===POOL_SRC)&&typeof m.lat==='number'&&m.id!==item.id);
+  const located=poolAvailable().filter(m=>(POOL_SRC==='main'?poolIsMain(m):m.folder===POOL_SRC)&&hasLoc(m)&&m.id!==item.id);
   const clusters=clusterByLocation(located,60);
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';
@@ -1222,7 +1229,7 @@ function openJobPicker(item){
   b.appendChild(el('div','cmp-field','<label>Pick the job this photo belongs to — it’ll join that stack</label>'));
   clusters.forEach((c,i)=>{
     const opt=el('button','jobpick');
-    const thumb=el('img','jp-thumb');const first=c.items[0];if(first){if(first.thumb)thumb.src=first.thumb;else thumbInto(thumb,first.id);thumb.addEventListener('load',()=>thumb.style.display='block');}
+    const thumb=el('img','jp-thumb');const first=c.items[0];if(first){if(VTHUMB[first.id])thumb.src=VTHUMB[first.id];else thumbInto(thumb,first.id);thumb.addEventListener('load',()=>thumb.style.display='block');}
     opt.appendChild(thumb);
     opt.appendChild(el('span','jp-label',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
     opt.onclick=()=>{item.lat=c.lat;item.lng=c.lng;item.locManual=true;commit();closeComposer();toast('Added to the job');rerenderCal();};
@@ -1247,7 +1254,7 @@ function renderSavedJobs(container){
       const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(pm.type||'');
       const cell=el('div','poolcell');
       const img=el('img','poolimg');img.addEventListener('load',()=>img.style.display='block');
-      if(pm.thumb)img.src=pm.thumb;
+      if(VTHUMB[m.id])img.src=VTHUMB[m.id];
       else if(isVid&&pm.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id)};img.src=pm.driveThumb;}
       else thumbInto(img,m.id);
       cell.appendChild(img);
@@ -1263,7 +1270,7 @@ function renderSavedJobs(container){
     const hint=el('div','muted','Tap a photo to preview · tap its pill to set Before / After');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
     body.appendChild(hint);
     const foot=el('div','rcactions');
-    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before||after)?'beforeafter':(its.length>1?'carousel':'photo');if(j.name)p.jobNote=j.name;openComposer(p,true);};
+    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before||after)?'beforeafter':(its.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
     const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this job?')){delBaJob(j.id);render();}};
     foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
     d.appendChild(body);
@@ -1353,7 +1360,8 @@ async function gdSyncNow(interactive){
   if(_gdSyncing)return;_gdSyncing=true;
   try{
     const tok=await gdGetToken(!!interactive);
-    if(!tok){if(interactive)toast('Google sign-in needed to sync.');return;}
+    if(!tok){if(interactive)toast('Google sign-in needed to sync.');else if(ST.driveConnected&&!ST.driveNeedsReconnect){ST.driveNeedsReconnect=true;commit();render();}return;}
+    if(ST.driveNeedsReconnect){ST.driveNeedsReconnect=false;commit();render();} // token is good again
     const list=[];await gdListAllMedia(GDRIVE_FOLDER_ID,tok,'Drive',list,0); // recurse subfolders, capture location
     const pool=socPool();
     const byDrive=new Map(pool.filter(m=>m.driveId).map(m=>[m.driveId,m]));
@@ -1361,7 +1369,7 @@ async function gdSyncNow(interactive){
     for(const f of list){
       const ex=byDrive.get(f.id);
       if(ex){ // already have it — backfill location/folder/time/thumb if missing
-        if(f.loc&&typeof f.loc.latitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
+        if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
         if(f.folder&&!ex.folder)ex.folder=f.folder;
         if(f.time&&!ex.taken)ex.taken=f.time;
         if(f.thumb&&!ex.driveThumb){ex.driveThumb=f.thumb;backfilled++;}
@@ -1374,7 +1382,7 @@ async function gdSyncNow(interactive){
       file=await normalizeImage(file);
       const rec=await fileAdd(file,'',S.role,'pool');
       const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder,addedAt:Date.now()+added};
-      if(f.loc&&typeof f.loc.latitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
+      if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
       pool.push(item);added++;
@@ -1390,7 +1398,7 @@ function gdDist(aLat,aLng,bLat,bLng){const R=6371000,toR=d=>d*Math.PI/180;const 
 function clusterByLocation(items,radius){
   const cl=[];
   items.forEach(m=>{
-    if(typeof m.lat!=='number')return;
+    if(!hasLoc(m))return;
     let best=null;for(const c of cl){if(gdDist(c.lat,c.lng,m.lat,m.lng)<=radius){best=c;break;}}
     if(best){best.items.push(m);best.lat=(best.lat*(best.items.length-1)+m.lat)/best.items.length;best.lng=(best.lng*(best.items.length-1)+m.lng)/best.items.length;}
     else cl.push({lat:m.lat,lng:m.lng,items:[m]});
@@ -1529,9 +1537,10 @@ function weekPosts(week){return socPosts().filter(p=>p.week===week)}
 /* consistency math */
 function weekGoalMet(week){return weekPosts(week).filter(p=>p.status==='posted').length>=SOC_WEEKLY_GOAL}
 function socRunway(){return socPosts().filter(p=>p.status==='approved').length} // approved posts waiting = days covered
-function socStreak(){ // consecutive past+current weeks that hit the 5-post goal, newest first
-  const cw=currentWeek();const upto=cw?cw.id:(WEEKS[WEEKS.length-1]&&WEEKS[WEEKS.length-1].id)||0;
-  let s=0;for(let id=upto;id>=1;id--){if(weekGoalMet(id))s++;else break;}return s;
+function socStreak(){ // consecutive COMPLETED weeks that hit the 5-post goal; the in-progress current week never breaks it
+  const cw=currentWeek();const cur=cw?cw.id:0;
+  const upto=cur||((WEEKS[WEEKS.length-1]&&WEEKS[WEEKS.length-1].id)||0);
+  let s=0;for(let id=upto;id>=1;id--){if(weekGoalMet(id))s++;else if(id===cur)continue;else break;}return s;
 }
 function aiSuggest(week){
   const posts=weekPosts(week);
@@ -1644,6 +1653,8 @@ let S=Store.load()||freshState();
     if(!Array.isArray(sl.posts))sl.posts=[];
     if(!Array.isArray(sl.pool))sl.pool=[];
     if(!Array.isArray(sl.bajobs))sl.bajobs=[];
+    // drop any base64 video thumbs an earlier build wrote into the pool — they bloat localStorage (now cached in-memory via VTHUMB)
+    if(Array.isArray(sl.pool))sl.pool.forEach(m=>{if(m&&typeof m.thumb==='string'&&m.thumb.slice(0,5)==='data:')delete m.thumb;});
   });
   if(!S.role||(S.role!=='all'&&!PEOPLE[S.role]))S.role='all';
   if(!S.view)S.view='dashboard';
@@ -2849,8 +2860,8 @@ async function thumbInto(img,mediaId){
     if(/image/.test(rec.type)){
       // show only once the browser actually decodes it; HEIC etc. that Chrome
       // can't render fail silently to the emoji placeholder instead of a broken icon
-      img.onload=()=>{img.style.display='block'};
-      img.onerror=()=>{img.style.display='none'};
+      img.onload=()=>{img.style.display='block';try{URL.revokeObjectURL(img.src)}catch(e){}};
+      img.onerror=()=>{img.style.display='none';try{URL.revokeObjectURL(img.src)}catch(e){}};
       img.src=URL.createObjectURL(rec.blob);
     } else if(/video/.test(rec.type)||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||'')){
       const d=await videoThumb(rec.blob);
@@ -2859,7 +2870,8 @@ async function thumbInto(img,mediaId){
   }catch(e){}
 }
 /* full-size preview: play a video / view a photo large */
-function closeMediaPreview(){const o=$('#mprevOv');if(o)o.remove();}
+let _mprevUrl=null;
+function closeMediaPreview(){const o=$('#mprevOv');if(o)o.remove();if(_mprevUrl){try{URL.revokeObjectURL(_mprevUrl)}catch(e){}_mprevUrl=null;}}
 async function openMediaPreview(mediaId,name){
   closeMediaPreview();
   const ov=el('div','mprev-ov');ov.id='mprevOv';
@@ -2871,7 +2883,7 @@ async function openMediaPreview(mediaId,name){
   try{const rec=await fileGet(mediaId);
     body.innerHTML='';
     if(!rec||!rec.blob){body.appendChild(el('div','muted','Preview unavailable.'));return;}
-    const url=URL.createObjectURL(rec.blob);
+    const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(name||'');
     if(isVid){
       const wrap=el('div');wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px';
@@ -2970,11 +2982,11 @@ function socLibrary(v){
   const drop=el('label','dropzone');
   drop.innerHTML=`<div class="dz-i">📥</div><div><b>Drag photos &amp; videos here</b><div class="muted" style="font-size:12.5px">or tap to choose — pick as many as you like</div></div>`;
   const inp=el('input');inp.type='file';inp.accept='image/*,video/*,.heic,.heif,.mov';inp.multiple=true;inp.className='hidden';
-  inp.onchange=async e=>{const n=await poolAddFiles(e.target.files);inp.value='';if(n){toast(n+' added to your content');rerenderCal();}};
+  inp.onchange=async e=>{const had=e.target.files&&e.target.files.length;const n=await poolAddFiles(e.target.files);inp.value='';if(n){toast(n+' added to your content');rerenderCal();}else if(had)toast('Those weren’t photos or videos — pick image/video files (HEIC & MOV are fine).');};
   drop.appendChild(inp);
   drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag')};
   drop.ondragleave=()=>drop.classList.remove('drag');
-  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('drag');const n=await poolAddFiles(e.dataTransfer.files);if(n){toast(n+' added to your content');rerenderCal();}};
+  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('drag');const n=await poolAddFiles(e.dataTransfer.files);if(n){toast(n+' added to your content');rerenderCal();}else toast('Nothing added — drop photo or video files (not a folder). HEIC & MOV are fine.');};
   add.appendChild(drop);
   if(ST.driveConnected){
     const gd=el('button','btn-set','🔄 Sync Google Drive now');gd.style.marginTop='10px';
@@ -2983,7 +2995,7 @@ function socLibrary(v){
     const scan=el('button','btn-set','🔍 Scan for before/after grouping');scan.style.cssText='margin:10px 0 0 8px';
     scan.onclick=()=>gdScan();
     add.appendChild(scan);
-    add.appendChild(el('div','muted',`🟢 Google Drive connected — tap Sync to pull new content; it keeps auto-syncing while this stays open.`)).style.cssText='font-size:12px;margin-top:8px';
+    add.appendChild(el('div','muted',ST.driveNeedsReconnect?`⚠️ Google sign-in expired — tap “Sync Google Drive now” above to reconnect. New Drive photos won’t appear until you do.`:`🟢 Google Drive connected — tap Sync to pull new content; it keeps auto-syncing while this stays open.`)).style.cssText='font-size:12px;margin-top:8px';
   }else{
     const gd=el('button','btn-set','🟢 Connect Google Drive — auto-sync new content');gd.style.marginTop='10px';
     gd.onclick=()=>gdConnect();
@@ -3032,8 +3044,8 @@ function socLibrary(v){
     const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
-    img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')m.thumb=img.src;});
-    if(m.thumb)img.src=m.thumb;
+    img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
+    if(VTHUMB[m.id])img.src=VTHUMB[m.id];
     else if(isVid&&m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} // Google's video thumbnail (works for HEVC); fall back to a local frame-grab
     else thumbInto(img,m.id);
     cell.appendChild(img);cell.appendChild(ph);
@@ -3048,8 +3060,8 @@ function socLibrary(v){
   if(!avail.length){
     if(!socBaJobs().length)poolCard.innerHTML+=`<p class="muted">No content yet — drag some in above. It all lands here, ready to use.</p>`;
   }else if(POOL_GROUP==='job'){
-    const located=avail.filter(m=>typeof m.lat==='number');
-    const noloc=avail.filter(m=>typeof m.lat!=='number');
+    const located=avail.filter(hasLoc);
+    const noloc=avail.filter(m=>!hasLoc(m));
     const clusters=clusterByLocation(located,60);
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup');if(i<2)d.open=true;
@@ -3073,7 +3085,7 @@ function socLibrary(v){
   }
   updateMakeBtn();
   makeBtn.onclick=()=>{
-    const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
+    const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;makeBtn.disabled=true;
     const p=newPost(wk);
     p.media=sel.map(m=>({id:m.id,name:m.name}));
     p.type=sel.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(sel[0].name||'')?'reel':'photo');
@@ -3126,7 +3138,7 @@ function readyCard(p){
     const body=card.querySelector('.rcbody');
     const sf=el('div','rcfield');sf.innerHTML='<label>Photos — post in this order'+(mm.some(m=>m.role)?' (labels shown)':'')+'</label>';
     const strip=el('div','rcstrip');
-    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
+    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
   card.querySelector('[data-copy="cap"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.caption||'');toast('Caption copied')};
@@ -3134,7 +3146,7 @@ function readyCard(p){
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
   dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(!rec)continue;const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u)}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
-  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=()=>{const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');rerenderCal()}};
+  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
