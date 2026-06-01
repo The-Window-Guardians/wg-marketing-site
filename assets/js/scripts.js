@@ -1152,7 +1152,11 @@ function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
 /* next "Job N" number, derived from existing job names so it always follows order */
 function nextBaNum(){let max=0;socBaJobs().forEach(j=>{const m=/^job\s+(\d+)$/i.exec((j.name||'').trim());if(m){const n=+m[1];if(n>max)max=n;}});return max+1;}
 function saveBaJob(j){const arr=socBaJobs();const i=arr.findIndex(x=>x.id===j.id);if(i>=0)arr[i]=j;else arr.unshift(j);ST.bajobs=arr;commit();}
-function delBaJob(id){ST.bajobs=socBaJobs().filter(j=>j.id!==id);commit();}
+function delBaJob(id){
+  const j=socBaJobs().find(x=>x.id===id);
+  if(j){const ids=new Set(jobItems(j).map(x=>x.id));socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used')m.status='available'});} // photos return to Your content
+  ST.bajobs=socBaJobs().filter(x=>x.id!==id);commit();
+}
 /* builder: group photos into a job; tagging before/after is OPTIONAL */
 function openBaBuilder(items){
   if(!items||!items.length)return;
@@ -1187,6 +1191,7 @@ function openBaBuilder(items){
   const save=el('button','btn-set primary','Save job');
   save.onclick=()=>{
     const jobItemsOut=items.map(m=>({id:m.id,name:m.name,role:role[m.id]||''}));
+    poolSetStatus(jobItemsOut.map(x=>x.id),'used'); // pull them out of Your content into the job
     saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),name:ni.value.trim()||('Job '+num),items:jobItemsOut,createdAt:Date.now()});
     POOL_SEL.clear();closeComposer();toast('Saved — see the Before & After jobs section');rerenderCal();
   };
