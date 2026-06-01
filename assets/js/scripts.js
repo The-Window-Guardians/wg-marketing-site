@@ -1153,6 +1153,19 @@ function poolReleaseForPost(p){ // a draft got deleted → its content returns t
   const jobIds=new Set();socBaJobs().forEach(j=>jobItems(j).forEach(x=>jobIds.add(x.id)));
   socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used'&&!jobIds.has(m.id))m.status='available'});
 }
+/* free storage once a post is posted: delete its media BLOBS from IndexedDB unless
+   another active (not-yet-posted) post or a saved job still needs them. The tiny pool
+   record is kept + marked purged so a Drive re-sync won't re-download posted content. */
+async function purgePostedMedia(post){
+  const ids=(postMedia(post)||[]).map(m=>m.id);
+  const keep=new Set();
+  socPosts().forEach(p=>{if(p.id!==post.id&&p.status!=='posted')postMedia(p).forEach(m=>keep.add(m.id));});
+  socBaJobs().forEach(j=>jobItems(j).forEach(x=>keep.add(x.id)));
+  for(const id of ids){ if(keep.has(id))continue;
+    try{await fileDel(id);}catch(e){}
+    const pm=socPool().find(x=>x.id===id); if(pm){pm.status='archived';pm.purged=true;} }
+  commit();
+}
 /* ---- BEFORE / AFTER JOBS: saved before+after pairings ---- */
 function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
 /* next "Job N" number, derived from existing job names so it always follows order */
@@ -1731,16 +1744,23 @@ function av(role,cls){const p=PEOPLE[role];return `<div class="${cls||'av'}" sty
 /* ---- dates / current week ---- */
 function todayMid(){const d=new Date();d.setHours(0,0,0,0);return d}
 function dueDate(w){const d=new Date(w.due+'T12:00:00');return d}
-function currentWeek(){
-  const now=new Date();
+/* the week a date falls in; past the 12-week plan it rolls forward with synthetic
+   "Ongoing" weeks so the cadence tracker + streak never stop working after Aug 2026 */
+function weekForDate(now){
   for(const w of WEEKS){if(dueDate(w).getTime()>=now.getTime())return w}
-  return null; // past end
+  const last=WEEKS[WEEKS.length-1]; if(!last)return null;
+  const lastDue=dueDate(last).getTime(), wkMs=7*24*3600*1000;
+  const n=Math.max(1,Math.ceil((now.getTime()-lastDue)/wkMs)); // 1,2,3… weeks past the last
+  const due=new Date(lastDue+n*wkMs).toISOString().slice(0,10);
+  const roles={}; Object.keys(last.roles||{}).forEach(r=>{roles[r]={est:(last.roles[r]||{}).est||'',sum:'Keep the weekly cadence going — 5 posts out, reviews flowing.',steps:[],handoff:''};});
+  return {id:last.id+n, phase:last.phase, due, title:'Ongoing — keep the cadence', roles, virtual:true};
 }
+function currentWeek(){return weekForDate(new Date());}
 function fmtDue(w){return new Date(w.due+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
 
 /* ---- progress math (step-based) ---- */
-function stepsOf(w,r){return (w.roles[r]&&w.roles[r].steps)||[]}
-function checkedOf(w,r){const s=ST.tasks[w.id+'.'+r].steps||{};return stepsOf(w,r).reduce((n,_,i)=>n+(s[i]?1:0),0)}
+function stepsOf(w,r){return (w&&w.roles&&w.roles[r]&&w.roles[r].steps)||[]}
+function checkedOf(w,r){const t=w&&ST.tasks[w.id+'.'+r];const s=(t&&t.steps)||{};return stepsOf(w,r).reduce((n,_,i)=>n+(s[i]?1:0),0)}
 function taskDone(w,r){const t=stepsOf(w,r).length;return t>0&&checkedOf(w,r)>=t}
 function weekPct(id){const w=WEEKS.find(x=>x.id===id);let d=0,t=0;ORDER.forEach(r=>{t+=stepsOf(w,r).length;d+=checkedOf(w,r)});return t?Math.round(d/t*100):0}
 function overallPct(role){let d=0,t=0;WEEKS.forEach(w=>ORDER.forEach(r=>{if(role&&role!=='all'&&r!==role)return;t+=stepsOf(w,r).length;d+=checkedOf(w,r)}));return t?Math.round(d/t*100):0}
@@ -2471,16 +2491,18 @@ function viewGuides(v){
 }
 
 /* ---------- SETTINGS / ADMIN ---------- */
-function exportBackup(){
+async function exportBackup(){
   try{
-    const payload={exported:new Date().toISOString(),project:'seo_q3_2026',state:S};
+    let fileMeta=[];try{fileMeta=await fileList();}catch(e){}
+    const payload={app:'wg_mktg_os',version:1,exported:new Date().toISOString(),project:'seo_q3_2026',state:S,fileMeta};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
     a.download='wg_marketing_backup_'+new Date().toISOString().slice(0,10)+'.json';
     document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-    toast('Backup downloaded — progress, KPIs & notes.');
+    const onlyDevice=socPool().filter(m=>!m.driveId&&m.status!=='archived').length;
+    toast('Backup saved (posts, captions, notes, progress). Photos & videos are NOT in this file — they live in your Google Drive folder.'+(onlyDevice?(' ⚠ '+onlyDevice+' item'+(onlyDevice>1?'s':'')+' you uploaded directly aren’t in Drive — keep those originals safe.'):''));
   }catch(e){toast('Backup failed — try again.')}
 }
 function viewSettings(v){
@@ -2511,7 +2533,8 @@ function viewSettings(v){
 
   const data=el('div','card pad');data.style.marginBottom='16px';
   data.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">💾</div><div><h3>Your data</h3><small>While you're local-only, keep your own backup</small></div></div>
-    <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 10px">Until the backend sync is on, everything lives only in this browser on this device. Download a backup before clearing your browser, switching computers, or any risky change. (Uploaded files in “Deliver to…” boxes are stored separately and aren't in this export.)</p>`;
+    <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 10px">Until the backend sync is on, everything lives only in this browser on this device. Download a backup before clearing your browser, switching computers, or any risky change.</p>
+    <div style="background:var(--orange-soft);border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px"><b>📷 Your photos &amp; videos are NOT in the backup file.</b> They live in your <b>Google Drive folder</b> — that is your media backup. Keep your content in Drive and it’s always safe. Anything you add by drag-drop (not from Drive) only exists on this device, so keep those originals too.</div>`;
   const eb=el('button','btn-set primary','⬇ Export backup (.json)');eb.onclick=exportBackup;
   data.appendChild(eb);
   v.appendChild(data);
@@ -3146,7 +3169,7 @@ function readyCard(p){
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
   dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(!rec)continue;const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u)}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
-  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');rerenderCal()}};
+  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
@@ -3354,7 +3377,7 @@ function mountProgSwitcher(){
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
     const u=URL.createObjectURL(blob);const a=document.createElement('a');
     a.href=u;a.download='WG_Marketing_OS_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u);
-    toast('Progress exported (files stay on this device)');
+    toast('Backup saved (posts, captions, notes, progress). Photos & videos stay in your Google Drive folder — that’s your media backup, not this file.');
   };
   const br=$('#btnReset');if(br)br.onclick=resetAll;
   const bi=$('#btnImport');if(bi)bi.onclick=()=>{const f=$('#importFile');if(f)f.click()};
