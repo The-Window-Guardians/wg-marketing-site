@@ -62,12 +62,17 @@ function userById(id){return (Array.isArray(S.users)?S.users.find(u=>u.id===id):
 function curUser(){return userById(S.uid);}
 function isPoster(){const u=curUser();return !!u&&u.perm==='poster';}
 function personOf(id){return PEOPLE[id] || userById(id) || {name:String(id||'?'),av:'?',c:'#64748b',bg:'#e5e7eb',role:''};}
+/* which dashboards an account may open (owner = all; everyone else = their assigned list) */
+function userProgs(u){ if(!u)return PROGRAM_ORDER.slice(); if(u.perm==='owner')return PROGRAM_ORDER.slice(); return (Array.isArray(u.progs)&&u.progs.length)?u.progs:['social']; }
+function canProg(id){ const u=curUser(); if(!u)return true; return userProgs(u).indexOf(id)>=0; }
 function activeOwners(){return (S.users||[]).filter(u=>u.perm==='owner'&&u.active!==false);}
 function ensureAuth(){ // seed the account list once, and map an existing role → uid so nobody gets logged out
   if(!Array.isArray(S.users)||!S.users.length){
     const perm={sebastian:'owner',bogdan:'editor',ruth:'poster'};
-    S.users=TEAM_ORDER.map(id=>({id,name:PEOPLE[id].name,title:PEOPLE[id].role,av:PEOPLE[id].av,c:PEOPLE[id].c,bg:PEOPLE[id].bg,perm:perm[id]||'editor',pass:hashPw('wgteam'),active:true,seeded:true}));
+    S.users=TEAM_ORDER.map(id=>({id,name:PEOPLE[id].name,title:PEOPLE[id].role,av:PEOPLE[id].av,c:PEOPLE[id].c,bg:PEOPLE[id].bg,perm:perm[id]||'editor',progs:(id==='bogdan'?['seo']:id==='ruth'?['social']:['seo','social']),pass:hashPw('wgteam'),active:true,seeded:true}));
   }
+  // backfill dashboard access on accounts created before the program-assignment feature
+  (S.users||[]).forEach(u=>{ if(u.perm!=='owner' && (!Array.isArray(u.progs)||!u.progs.length)) u.progs=(u.id==='bogdan'?['seo']:['social']); });
   if(!S.uid && S.role && userById(S.role)) S.uid=S.role;
 }
 
@@ -2531,28 +2536,40 @@ async function exportBackup(){
     toast('Backup saved (posts, captions, notes, progress). Photos & videos are NOT in this file — they live in your Google Drive folder.'+(onlyDevice?(' ⚠ '+onlyDevice+' item'+(onlyDevice>1?'s':'')+' you uploaded directly aren’t in Drive — keep those originals safe.'):''));
   }catch(e){toast('Backup failed — try again.')}
 }
-/* owner-only: add/remove team logins, set passwords + permissions */
+/* owner-only: add/remove team logins, set passwords, dashboards + permissions */
 function permOpts(sel){
-  return [['owner','Owner — full access + admin'],['editor','Editor — build & approve content'],['poster','Poster — only the post queue (like Ruth)']]
+  return [['owner','Owner — full access + manage team'],
+          ['editor','Creator — upload photos/videos & make posts'],
+          ['poster','Poster — only publishes approved posts']]
     .map(([v,l])=>`<option value="${v}"${sel===v?' selected':''}>${l}</option>`).join('');
 }
+function progPick(u){ // which dashboard(s) this person works in
+  if(u.perm==='owner') return '<span class="uprogstatic muted">All dashboards</span>';
+  const cur=(u.progs&&u.progs.length===2)?'both':((u.progs&&u.progs[0])||'social');
+  const o=[['social','📣 Social only'],['seo','📍 SEO only'],['both','Both dashboards']]
+    .map(([v,l])=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`).join('');
+  return `<select class="uprog cmp-in">${o}</select>`;
+}
+function setProgs(u,val){ u.progs = val==='both'?['seo','social'] : val==='seo'?['seo'] : ['social']; }
 function usersAdminCard(){
   const card=el('div','card pad');card.style.marginBottom='16px';
-  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👤</div><div><h3>Team &amp; logins</h3><small>Add people, set passwords &amp; permissions. Prototype — real security turns on with the backend.</small></div></div>`;
+  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👤</div><div><h3>Team &amp; logins</h3><small>Add people, pick each one's <b>dashboard</b> (Social or SEO) and <b>role</b>, set their password. Prototype — real security turns on with the backend.</small></div></div>`;
   const wrap=el('div','usersadmin');
   (S.users||[]).forEach(u=>{
     const me=(u.id===S.uid);
     const row=el('div','urow');
     row.innerHTML=`<div class="uav">${av(u.id)}</div>
       <div class="uinfo"><input class="uname cmp-in" value="${esc(u.name)}"><div class="ulogin muted">login: ${esc(u.id)}${u.seeded?' · <span style="color:var(--orange)">default password &ldquo;wgteam&rdquo;</span>':''}${me?' · <b>you</b>':''}</div></div>
+      <div class="uprogwrap">${progPick(u)}</div>
       <select class="uperm cmp-in">${permOpts(u.perm)}</select>
       <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
       <button class="btn-set upw">Set password</button>
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
+    const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{setProgs(u,e.target.value);commit();render();};
     row.querySelector('.uperm').onchange=e=>{const val=e.target.value;
       if(u.perm==='owner'&&val!=='owner'&&activeOwners().length<=1){toast('You need at least one Owner.');e.target.value='owner';return;}
-      u.perm=val;commit();render();};
+      u.perm=val; if(val!=='owner'&&(!u.progs||!u.progs.length))u.progs=['social']; commit();render();};
     row.querySelector('.uactck').onchange=e=>{const on=e.target.checked;
       if(!on&&me){toast('You can’t deactivate yourself.');e.target.checked=true;return;}
       if(!on&&u.perm==='owner'&&activeOwners().length<=1){toast('Can’t deactivate the only Owner.');e.target.checked=true;return;}
@@ -2572,8 +2589,9 @@ function usersAdminCard(){
     const pwd=prompt('Set a password for '+name.trim()+':')||'wgteam';
     const COLORS=[['#7c3aed','#ede9fe'],['#0891b2','#cffafe'],['#c026d3','#fae8ff'],['#ca8a04','#fef9c3']];
     const ci=COLORS[(S.users||[]).length%COLORS.length];
-    (S.users=S.users||[]).push({id:'u_'+Date.now().toString(36),name:name.trim(),title:'Team member',av:name.trim()[0].toUpperCase(),c:ci[0],bg:ci[1],perm:'editor',pass:hashPw(pwd),active:true});
-    commit();render();toast(name.trim()+' added — they can log in now.');
+    // default a new teammate to the Social dashboard as a Creator — adjust with the two dropdowns
+    (S.users=S.users||[]).push({id:'u_'+Date.now().toString(36),name:name.trim(),title:'Team member',av:name.trim()[0].toUpperCase(),c:ci[0],bg:ci[1],perm:'editor',progs:['social'],pass:hashPw(pwd),active:true});
+    commit();render();toast(name.trim()+' added as a Social Creator — change their dashboard/role with the dropdowns.');
   };
   card.appendChild(add);
   return card;
@@ -3436,6 +3454,12 @@ function enterApp(){
     if(!S.uid && S.role==='all'){a.style.background='#ffffff22';a.style.color='#fff';a.textContent='★'}
     else{const p=personOf(S.uid||S.role);a.style.background=p.bg;a.style.color=p.c;a.textContent=p.av}
   }
+  // keep a member inside the dashboard(s) they're assigned to
+  if(S.uid && !isOwner()){
+    const allowed=userProgs(curUser());
+    if(isHub()){ if(allowed.length<2){const home=(PROGRAMS[allowed[0]]||{}).home; if(home){location.href=home;return;}} }
+    else if(allowed.indexOf(activeProgram())<0){ const home=(PROGRAMS[allowed[0]]||{}).home; if(home&&currentFile()!==home){location.href=home;return;} }
+  }
   ensureLogoutBtn();
   buildNav();render();
 }
@@ -3467,8 +3491,9 @@ function mountProgSwitcher(){
   const pill=document.querySelector('.proj-pill'); if(!pill)return;
   const curId = isHub() ? 'all' : activeProgram();
   const curIco = isHub() ? '🛰️' : (PROGRAMS[activeProgram()] ? PROGRAMS[activeProgram()].icon : '📣');
-  const opts = [`<option value="all"${curId==='all'?' selected':''}>All dashboards</option>`]
-    .concat(PROGRAM_ORDER.filter(id=>PROGRAMS[id]).map(id=>
+  const allowed = PROGRAM_ORDER.filter(id=>PROGRAMS[id] && (isOwner()||!S.uid||canProg(id)));
+  const opts = ((isOwner()||!S.uid||allowed.length>1)?[`<option value="all"${curId==='all'?' selected':''}>All dashboards</option>`]:[])
+    .concat(allowed.map(id=>
       `<option value="${id}"${curId===id?' selected':''}>${esc(PROGRAMS[id].name)}</option>`)).join('');
   pill.classList.add('progswitch');pill.classList.remove('open');pill.style.display='';
   pill.innerHTML=`<span class="ps-ico">${curIco}</span><select class="ps-sel" title="Switch dashboard">${opts}</select>`;
