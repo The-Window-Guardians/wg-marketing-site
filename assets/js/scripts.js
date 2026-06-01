@@ -61,6 +61,7 @@ function hashPw(s){s=String(s||'');let h=5381;for(let i=0;i<s.length;i++)h=((h<<
 function userById(id){return (Array.isArray(S.users)?S.users.find(u=>u.id===id):null)||null;}
 function curUser(){return userById(S.uid);}
 function isPoster(){const u=curUser();return !!u&&u.perm==='poster';}
+function isContributor(){const u=curUser();return !!u&&u.perm==='contributor';} // SEO content provider: fills handoffs, can't check off the build work
 function personOf(id){return PEOPLE[id] || userById(id) || {name:String(id||'?'),av:'?',c:'#64748b',bg:'#e5e7eb',role:''};}
 /* which dashboards an account may open (owner = all; everyone else = their assigned list) */
 function userProgs(u){ if(!u)return PROGRAM_ORDER.slice(); if(u.perm==='owner')return PROGRAM_ORDER.slice(); return (Array.isArray(u.progs)&&u.progs.length)?u.progs:['social']; }
@@ -1988,6 +1989,7 @@ function viewSocialDashboard(v){
 function viewDashboard(v){
   if(activeProgram()==='social')return viewSocialDashboard(v);
   const cw=currentWeek();
+  if(isContributor()){const cb=el('div','card pad',`<b>👋 You're a Contributor.</b> Send blogs, content, images, videos &amp; links to the Builder by filling the <b>&ldquo;Deliver to&hellip;&rdquo;</b> boxes below. The Builder checks off the SEO work and updates the numbers.`);cb.style.cssText='border-top:3px solid var(--orange);margin-bottom:14px;font-size:13.5px';v.appendChild(cb);}
   const hero=el('div','hero');
   if(cw){
     hero.innerHTML=`<div class="duetag">Due Tue 12pm</div>
@@ -2215,16 +2217,20 @@ function taskEl(w,r){
     </div>`;
   const ol=d.querySelector('.steps');
   steps.forEach((s,i)=>{
-    const li=el('li','step'+(st.steps[i]?' on':''));
+    const li=el('li','step'+(st.steps[i]?' on':'')+(isContributor()?' ro':''));
     li.innerHTML=`<span class="sx">${st.steps[i]?'✓':(i+1)}</span><span class="stx">${s}</span>`;
-    li.onclick=()=>{
-      st.steps[i]=!st.steps[i];commit();
-      li.classList.toggle('on',!!st.steps[i]);
-      li.querySelector('.sx').textContent=st.steps[i]?'✓':(i+1);
-      d.querySelector('.tc-count').textContent=checkedOf(w,r)+'/'+total;
-      d.classList.toggle('done',taskDone(w,r));
-      syncBars();buildNav();
-    };
+    if(isContributor()){
+      li.onclick=()=>toast('Contributors provide content — the Builder checks off the work.');
+    }else{
+      li.onclick=()=>{
+        st.steps[i]=!st.steps[i];commit();
+        li.classList.toggle('on',!!st.steps[i]);
+        li.querySelector('.sx').textContent=st.steps[i]?'✓':(i+1);
+        d.querySelector('.tc-count').textContent=checkedOf(w,r)+'/'+total;
+        d.classList.toggle('done',taskDone(w,r));
+        syncBars();buildNav();
+      };
+    }
     ol.appendChild(li);
   });
   const ta=d.querySelector('.note');
@@ -2434,8 +2440,9 @@ function viewScorecard(v){
       <div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 6px"><b class="num" style="font-size:30px;font-weight:800">${cur}</b><span class="of" style="color:var(--faint);font-weight:700">/ ${kp.target} target</span><span class="pill" style="margin-left:auto">${p}%</span></div>
       <div class="bar"><i id="b_${kp.id}" style="width:${p}%"></i></div>
       <div style="margin-top:8px"><button class="tbtn" data-big="${kp.big}">+${kp.big} (a week’s worth)</button></div>`;
-    c.querySelectorAll('button[data-d]').forEach(b=>b.onclick=()=>bump(kp,+b.dataset.d));
-    c.querySelector('button[data-big]').onclick=()=>bump(kp,kp.big);
+    if(isContributor()){c.querySelectorAll('.stepper button,button[data-big]').forEach(b=>{b.disabled=true;b.title='Builders update the numbers';});}
+    else{c.querySelectorAll('button[data-d]').forEach(b=>b.onclick=()=>bump(kp,+b.dataset.d));
+      c.querySelector('button[data-big]').onclick=()=>bump(kp,kp.big);}
     grid.appendChild(c);
   });
   v.appendChild(grid);
@@ -2455,7 +2462,7 @@ function viewScorecard(v){
     </div>`;
   v.appendChild(tgt);
 }
-function bump(kp,d){ST.kpis[kp.id]=Math.max(0,ST.kpis[kp.id]+d);commit();
+function bump(kp,d){if(isContributor()){toast('Builders update the numbers — Contributors provide the content.');return;}ST.kpis[kp.id]=Math.max(0,ST.kpis[kp.id]+d);commit();
   const cur=ST.kpis[kp.id],p=Math.min(100,Math.round(cur/kp.target*100));
   const vv=document.getElementById('v_'+kp.id),bb=document.getElementById('b_'+kp.id);
   if(vv)vv.textContent=cur; if(bb)bb.style.width=p+'%';

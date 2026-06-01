@@ -639,3 +639,7 @@ textarea.cmp-in{resize:vertical}
 .dlink .fi{flex:0 0 auto}
 .dlink .ln{flex:1;color:#2a548f;text-decoration:none;font-size:13px;word-break:break-all}
 .dlink .ln:hover{text-decoration:underline}
+/* Contributor: build steps are read-only (they provide content, they don't check off work) */
+.step.ro{cursor:default;opacity:.75}
+.step.ro .sx{background:#e5e7eb;color:#9ca3af}
+.stepper button:disabled{opacity:.4;cursor:not-allowed}
