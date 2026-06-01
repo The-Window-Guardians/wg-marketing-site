@@ -2188,7 +2188,7 @@ function viewRuthGuide(v){
   how.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">✅</div><div><h3>How this works</h3><small>Three steps, every time</small></div></div>
     <div class="chk"><span class="b" style="color:var(--orange)">1</span><span>Open <b>Post queue</b> and pick a post that's ready.</span></div>
     <div class="chk"><span class="b" style="color:var(--orange)">2</span><span><b>Copy</b> the caption and hashtags, and <b>download</b> the photo(s)/video.</span></div>
-    <div class="chk"><span class="b" style="color:var(--orange)">3</span><span>Post it on each platform, set the location, then tap <b>✓ Mark posted</b>.</span></div>`;
+    <div class="chk"><span class="b" style="color:var(--orange)">3</span><span>Post it on each platform, set the location, then tap the green <b>✅ Mark as posted</b> button — it disappears from your list so you always know what’s left.</span></div>`;
   v.appendChild(how);
 
   // best times by day
@@ -2735,13 +2735,16 @@ let CAL_FILTER='all';
 /* Ruth's ready-to-post pool */
 function ruthQueue(v){
   const ready=socPosts().filter(p=>p.status==='approved').sort((a,b)=>(a.date||'~').localeCompare(b.date||'~'));
+  const posted=socPosts().filter(p=>p.status==='posted').length;
   const q=el('div','card pad');
-  q.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📤</div><div><h3>Ready to post</h3><small>${ready.length} approved · pick any to run</small></div></div>`;
-  if(!ready.length)q.innerHTML+=`<p class="muted">Nothing approved yet — the posts Sebastian approves show up here.</p>`;
+  q.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📤</div><div><h3>Ready to post</h3><small><b>${ready.length}</b> waiting to post${posted?` · <b>${posted}</b> posted ✓`:''}</small></div></div>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 6px">For each one: copy the caption + hashtags, download the photo/video, post it on your channels — then tap <b>✅ Mark as posted</b> and it leaves the list.</p>`;
+  if(!ready.length)q.innerHTML+=`<p class="muted">🎉 All caught up — nothing waiting. New posts Sebastian approves will show up here.</p>`;
   ready.forEach(p=>q.appendChild(readyCard(p)));
   v.appendChild(q);
 }
 let POOL_SEL=new Set();
+let POOL_KIND='all'; // content filter: all | photos | videos
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
 function socLibrary(v){
   const cw=currentWeek();
@@ -2785,9 +2788,20 @@ function socLibrary(v){
   gdAutoResume();
 
   // ---- CONTENT POOL: tick pieces → make a post ----
-  const avail=poolAvailable();
+  const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+  const allAvail=poolAvailable();
+  const photos=allAvail.filter(m=>!isVidItem(m)), vids=allAvail.filter(isVidItem);
+  if(POOL_KIND==='photos'&&!photos.length&&vids.length)POOL_KIND='all';
+  if(POOL_KIND==='videos'&&!vids.length&&photos.length)POOL_KIND='all';
+  const avail = POOL_KIND==='photos'?photos : POOL_KIND==='videos'?vids : allAvail;
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${avail.length} piece${avail.length===1?'':'s'} ready · tap to preview · tap the ◯ corner to pick it for a post</small></div></div>`;
+  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>tap to preview · tap the ◯ corner to pick it for a post</small></div></div>`;
+  // Photos / Videos filter
+  const kindWrap=el('div','poolkind');
+  const kindSel=el('select','cmp-in');
+  [['all',`All (${allAvail.length})`],['photos',`📷 Photos (${photos.length})`],['videos',`🎬 Videos (${vids.length})`]].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_KIND===v2)o.selected=true;kindSel.appendChild(o)});
+  kindSel.onchange=()=>{POOL_KIND=kindSel.value;rerenderCal()};
+  kindWrap.appendChild(kindSel);poolCard.appendChild(kindWrap);
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;};
   if(!avail.length){
@@ -2813,7 +2827,7 @@ function socLibrary(v){
   }
   updateMakeBtn();
   makeBtn.onclick=()=>{
-    const sel=avail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
+    const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
     const p=newPost(wk);
     p.media=sel.map(m=>({id:m.id,name:m.name}));
     p.type=sel.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(sel[0].name||'')?'reel':'photo');
@@ -2863,7 +2877,7 @@ function readyCard(p){
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
   dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(!rec)continue;const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u)}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
-  const done=el('button','btn-set primary','✓ Mark posted');done.onclick=()=>{const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);savePost(post);bumpPostsKpi();toast('Posted ✓ — content moved to archive');rerenderCal()}};
+  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=()=>{const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
