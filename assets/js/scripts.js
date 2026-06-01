@@ -1229,12 +1229,10 @@ function openJobPicker(item){
     b.appendChild(opt);
   });
 }
-/* Before & After jobs — a SECTION on Home (right with the content) */
-function baSection(v){
+/* render saved before/after jobs as collapsible stacks AT THE TOP of the content list */
+function renderSavedJobs(container){
   const jobs=socBaJobs();
-  const card=el('div','card pad');card.style.marginTop='12px';
-  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🔀</div><div><h3>Before &amp; After jobs</h3><small>${jobs.length?jobs.length+' saved · open one to post it':'pair a before + after in Your content above to start one'}</small></div></div>`;
-  if(!jobs.length){card.innerHTML+=`<p class="muted">None yet — tick photos in Your content (location stacks make them easy to find), then tap “🔀 Make Before/After job.”</p>`;v.appendChild(card);return;}
+  if(!jobs.length)return;
   const col=(label,arr,cls)=>{const c=el('div','bacol '+cls);c.appendChild(el('div','balabel',label));const g=el('div','poolgrid');
     arr.forEach(m=>{const cell=el('div','poolcell');const im=el('img','poolimg');im.addEventListener('load',()=>im.style.display='block');if(m.thumb)im.src=m.thumb;else thumbInto(im,m.id);cell.appendChild(im);cell.appendChild(el('span','poolph','🖼️'));cell.onclick=()=>openMediaPreview(m.id,m.name);g.appendChild(cell);});
     c.appendChild(g);return c;};
@@ -1242,24 +1240,25 @@ function baSection(v){
     const its=jobItems(j);
     const before=its.filter(x=>x.role==='before'), after=its.filter(x=>x.role==='after'), other=its.filter(x=>!x.role);
     const counts=[];if(before.length)counts.push(before.length+' before');if(after.length)counts.push(after.length+' after');if(other.length)counts.push(other.length+' photo'+(other.length>1?'s':''));
-    const jc=el('div','bajob');
-    jc.appendChild(el('div','bajob-h',`<b>${esc(j.name||'Job')}</b> <span class="muted">· ${counts.join(' · ')||(its.length+' photos')}</span>`));
+    const d=el('details','jobgroup savedjob');
+    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${counts.join(' · ')||(its.length+' photos')} · saved`));
+    const body=el('div','savedbody');
     if(before.length||after.length){
       const row=el('div','barow');
       if(before.length)row.appendChild(col('BEFORE',before,'before'));
       if(after.length)row.appendChild(col('AFTER',after,'after'));
-      jc.appendChild(row);
-      if(other.length)jc.appendChild(col('OTHER PHOTOS',other,'plain'));
+      body.appendChild(row);
+      if(other.length)body.appendChild(col('OTHER PHOTOS',other,'plain'));
     }else{
-      jc.appendChild(col('PHOTOS',its,'plain'));
+      body.appendChild(col('PHOTOS',its,'plain'));
     }
     const foot=el('div','rcactions');
     const post=el('button','btn-set primary','Make this post');post.onclick=()=>{const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before.length||after.length)?'beforeafter':(its.length>1?'carousel':'photo');if(j.name)p.jobNote=j.name;openComposer(p,true);};
     const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this job?')){delBaJob(j.id);render();}};
-    foot.appendChild(post);foot.appendChild(del);jc.appendChild(foot);
-    card.appendChild(jc);
+    foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
+    d.appendChild(body);
+    container.appendChild(d);
   });
-  v.appendChild(card);
 }
 
 /* ============================================================
@@ -3031,16 +3030,17 @@ function socLibrary(v){
     cell.onclick=()=>openMediaPreview(m.id,m.name);
     return cell;
   };
+  renderSavedJobs(poolCard); // your saved before/after jobs at the TOP of this list
   if(!avail.length){
-    poolCard.innerHTML+=`<p class="muted">No content yet — drag some in above. It all lands here, ready to use.</p>`;
+    if(!socBaJobs().length)poolCard.innerHTML+=`<p class="muted">No content yet — drag some in above. It all lands here, ready to use.</p>`;
   }else if(POOL_GROUP==='job'){
     const located=avail.filter(m=>typeof m.lat==='number');
     const noloc=avail.filter(m=>typeof m.lat!=='number');
     const clusters=clusterByLocation(located,60);
-    poolCard.appendChild(el('div','muted',`Grouped by location — each stack is one job (same address). Open one and the before & after are together.`)).style.cssText='font-size:12px;margin:2px 0 8px';
+    poolCard.appendChild(el('div','muted',`📍 stacks below are auto-grouped by location (not saved yet) — tick a before + after and tap “Make Before/After job” to save them up top.`)).style.cssText='font-size:12px;margin:8px 0';
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup');if(i<2)d.open=true;
-      d.appendChild(el('summary','jobsum',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      d.appendChild(el('summary','jobsum',`📍 Group ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
       const g=el('div','poolgrid');c.items.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
       poolCard.appendChild(d);
     });
@@ -3076,9 +3076,6 @@ function socLibrary(v){
   blank.onclick=()=>openComposer(newPost(wk),true);
   poolCard.appendChild(blank);
   v.appendChild(poolCard);
-
-  // Before & After jobs section (right here on Home, with the content)
-  baSection(v);
 
   // ---- POSTS: drafts + waiting queue (posted ones disappear into archive) ----
   const active=socPosts().filter(p=>p.status!=='posted');
