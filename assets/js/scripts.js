@@ -2324,9 +2324,27 @@ function seoItemRow(it,builder){
   const act=el('button','btn-set'+(provided?'':' primary'));
   if(builder){ act.textContent = provided ? 'Open' : 'Waiting'; if(!provided)act.disabled=true; act.onclick=()=>seoOpenItem(it,true); }
   else { act.textContent = provided ? 'Edit' : (it.type==='blog'?'Add':it.type==='media'?'Upload':'Fill in'); act.onclick=()=>seoOpenItem(it,false); }
+  if(!builder && !provided){ const dt=el('button','si-date','📅');dt.title='Change the due date';dt.onclick=()=>openDueEditor(it);row.appendChild(dt); }
   row.appendChild(act);
   return row;
 }
+/* small themed date editor — used for the plan start date + per-item due dates */
+function openDateModal(title,currentMs,onSave,resetLabel,onReset){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');box.style.maxWidth='360px';
+  box.innerHTML=`<div class="cmp-head"><h3>${esc(title)}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');const f=el('div','cmp-field');f.innerHTML='<label>Date</label>';const di=el('input','cmp-in');di.type='date';
+  try{di.value=new Date(currentMs).toISOString().slice(0,10);}catch(e){}
+  f.appendChild(di);bd.appendChild(f);
+  const foot=el('div','cmp-foot');
+  if(onReset){const r=el('button','btn-set',resetLabel||'Reset');r.onclick=()=>{onReset();closeComposer();render();toast('Reset to default');};foot.appendChild(r);}
+  const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!di.value){toast('Pick a date');return;} const ms=new Date(di.value+'T12:00:00').getTime(); onSave(ms); closeComposer(); render(); toast('Date updated'); };
+  foot.appendChild(save);bd.appendChild(foot);
+}
+function openStartEditor(){ openDateModal('When does the 90-day plan start?',seoStart(),function(ms){ST.seoStart=ms;commit();}); }
+function openDueEditor(it){ openDateModal('Due date — '+it.label,seoDueTs(it),function(ms){if(!ST.dueOverride)ST.dueOverride={};ST.dueOverride[it.id]=ms;commit();},'Use default',function(){if(ST.dueOverride)delete ST.dueOverride[it.id];commit();}); }
 function seoOpenItem(it,builder){ if(it.type==='town')return openTownFacts(it.town,builder); if(it.type==='media')return openSeoMedia(builder); if(it.type==='blog')return openSeoBlogs(builder); }
 function seoMonthCard(mo,builder){
   const card=el('div','card pad');card.style.marginTop='12px';
@@ -2347,6 +2365,7 @@ function seoBlogsCard(builder){
 function viewSeoDashboard(v){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return seoIsBuilder()?viewSeoBuilder(v):viewSeoProvider(v); }
 function viewSeoProvider(v){
   v.appendChild(el('div','page-head',`<h2>What to give Bogdan</h2><p>Each month, provide these so Bogdan never waits. Fill it in or upload right here — he gets it instantly. Anything past its date is flagged so you know to send it ASAP.</p>`));
+  const sMs=seoStart();const startRow=el('div','seostart');startRow.innerHTML=`<span>📅 90-day plan starts <b style="color:var(--ink)">${fmtShort(sMs)}, ${new Date(sMs).getFullYear()}</b></span>`;const chg=el('button','tbtn','Change');chg.onclick=()=>openStartEditor();startRow.appendChild(chg);v.appendChild(startRow);
   const over=seoAllItems().filter(seoItemOverdue);
   if(over.length){ const b=el('div','card pad');b.style.cssText='margin-bottom:4px;border-left:4px solid var(--red)';b.innerHTML=`<b style="color:var(--red)">⚠ ${over.length} item${over.length>1?'s':''} overdue</b> <span class="muted" style="font-size:13px">— Bogdan is waiting. Get ${over.length>1?'these':'this'} to him ASAP (marked “Rolled over” below).</span>`;v.appendChild(b); }
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
@@ -2399,6 +2418,7 @@ function openSeoMedia(builder){
   box.innerHTML=`<div class="cmp-head"><h3>Job photos for Bogdan</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
   const bd=$('#cmpBody');
+  if(!builder){const h=el('div','muted','General job photos Bogdan can reuse on any page or your Google profile. Photos for one specific blog go on that blog brief instead.');h.style.cssText='font-size:12.5px;margin-bottom:8px';bd.appendChild(h);}
   const f=el('div','cmp-field');f.innerHTML='<label>'+(builder?'Photos Sebastian uploaded — tap to download':'Drop your before/after + job photos here — Bogdan can use any of them')+'</label>';
   const grid=el('div','medgrid');f.appendChild(grid);bd.appendChild(f);
   const draw=()=>{ grid.innerHTML='';

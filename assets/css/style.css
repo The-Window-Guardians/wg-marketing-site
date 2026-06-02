@@ -705,3 +705,9 @@ textarea.cmp-in{resize:vertical}
 .cb.ok{background:#e1f1e8;color:#1f7a4d}
 .cb.wait{background:#fde7e7;color:#cf3b3b}
 .cb.none{background:var(--bg);color:var(--muted)}
+
+/* ---- SEO start-date row + per-item date button ---- */
+.seostart{display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--muted);margin:0 0 10px}
+.seostart .tbtn{margin-left:6px}
+.si-date{flex:0 0 auto;background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:5px 8px;font-size:13px;cursor:pointer;line-height:1}
+.si-date:hover{border-color:var(--orange)}
