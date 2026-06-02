@@ -3703,14 +3703,14 @@ function openComposer(idOrPost,isNew){
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this post?')){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal()}};foot.appendChild(del);}
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
   if(!isNew && p.status==='approved'){
-    const pull=el('button','btn-set','⏸ Pull back from Ruth');
+    const pull=el('button','btn-set','⏸ Pull back to drafts');
     pull.title='Stop this post and move it back to drafts so you can fix the photos, then approve again';
-    pull.onclick=()=>{ p.status='draft'; p.ruthNote=aiRuthNote(p); savePost(p); closeComposer(); rerenderCal(); toast('Pulled back to drafts — out of Ruth’s queue. Fix it, then Approve again.'); };
+    pull.onclick=()=>{ p.status='draft'; p.ruthNote=aiRuthNote(p); savePost(p); closeComposer(); rerenderCal(); toast('Pulled back to drafts — out of the posting queue. Fix it, then Approve again.'); };
     foot.appendChild(pull);
   }
-  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos to Ruth…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
-  const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve for Ruth');
-  appr.onclick=async()=>{const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}appr.disabled=true;toast('Sharing photos to Ruth…');const r=await publishPostMedia(p);p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast(r&&r.skipped?('Approved → Ruth’s queue ('+r.skipped+' item'+(r.skipped>1?'s':'')+' couldn’t be shared)'):'Approved → Ruth’s queue ✓');};
+  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
+  const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve & send to queue');
+  appr.onclick=async()=>{const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}appr.disabled=true;toast('Sharing photos to the team…');const r=await publishPostMedia(p);p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast(r&&r.skipped?('Approved → posting queue ('+r.skipped+' item'+(r.skipped>1?'s':'')+' couldn’t be shared)'):'Approved → posting queue ✓');};
   foot.appendChild(save);foot.appendChild(appr);b.appendChild(foot);
 }
 function closeComposer(){const o=$('#cmpOv');if(o)o.remove()}
