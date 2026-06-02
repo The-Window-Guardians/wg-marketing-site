@@ -677,3 +677,9 @@ textarea.cmp-in{resize:vertical}
 .conf-body{font-size:14px;color:var(--muted);line-height:1.55}
 .conf-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
 .conf-foot .btn-set{min-width:96px;justify-content:center}
+
+/* ---- SEO playbook check rows ---- */
+.seochk{display:flex;align-items:flex-start;gap:9px;padding:7px 8px;border-radius:9px;font-size:13.5px;color:var(--ink2);cursor:pointer;border:1px solid transparent}
+.seochk:hover{background:var(--bg)}
+.seochk.on{color:var(--muted);text-decoration:line-through}
+.seochk input{margin-top:2px;width:16px;height:16px;flex:0 0 auto;accent-color:var(--orange)}

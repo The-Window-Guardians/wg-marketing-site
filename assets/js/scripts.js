@@ -2221,8 +2221,131 @@ function viewSocialDashboard(v){
   v.appendChild(cadenceBanner());
   socLibrary(v);
 }
+/* ============================================================
+   SEO DASHBOARD — content hand-off + 90-day playbook.
+   Replaces the weekly cadence as the SEO home. Sebastian/provider drops
+   blog briefs (topic + town + keyword + notes + photos); Bogdan the
+   builder pulls them and works an ordered 90-day plan (check off + notes).
+   ============================================================ */
+const SEO_TARGET='Publish 12 local blogs, optimize your Google Business Profile, build ~20 citations, and earn 15 new Google reviews — aiming for the Map Pack (top 3) in your core towns.';
+const SEO_BLOG_GOAL=12;
+const SEO_PLAYBOOK=[
+  {id:'gbp',icon:'📍',title:'Google Business Profile',sub:'Your #1 local ranking lever — get this perfect first.',
+   tasks:['Claim & verify the profile','Primary + all relevant secondary categories','Full services list with descriptions','Service-area towns added','15+ photos (logo, team, before/afters)','Hours, phone, website, booking link','Turn on messaging']},
+  {id:'pages',icon:'🌐',title:'Core website pages',sub:'A clear page for every service Google can rank.',
+   tasks:['A page per service (windows, roofing, siding, doors…)','Consistent name/address/phone in the footer','Title tag + meta description per page','Internal links between services','Fast + mobile-clean']},
+  {id:'towns',icon:'🏘️',title:'Town pages',sub:'One genuinely-local page per target town.',
+   tasks:['A page per core town (Langhorne, Newtown, Yardley…)','Real local detail — not templated','Town in the title, H1 and first paragraph','Local job photos + reviews on the page','Linked from the menu/footer']},
+  {id:'blogs',icon:'✍️',title:'Blogs',sub:'Publish the briefs from your content folders below.',
+   tasks:['Publish the 12 blog briefs','Keyword in title + first line + one H2','Town named naturally','Before/after photos with alt text','Internal link to the matching service page','Clear call-to-action + meta description']},
+  {id:'citations',icon:'📒',title:'Citations',sub:'Get listed consistently across the web.',
+   tasks:['~20 directories (Yelp, BBB, Angi, Houzz, Nextdoor…)','EXACT same name/address/phone everywhere','Categories + description filled in','Link back to the site']},
+  {id:'reviews',icon:'⭐',title:'Reviews engine',sub:'Steady new Google reviews = trust + ranking.',
+   tasks:['Same-day review request after every finished job','15+ new Google reviews','Reply to every review within 48h','Showcase reviews on the site']},
+  {id:'links',icon:'🔗',title:'Local links',sub:'A few quality local backlinks.',
+   tasks:['Suppliers / manufacturers','Local associations / chamber','Local press or sponsorships','Partner cross-links']}
+];
+const SEO_KEYWORD_HINTS=['window replacement {town}','{town} roofing company','siding contractor {town}','patio doors {town}','best windows near me'];
+function seoBlogs(){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return ST.blogs; }
+function seoPB(){ if(!ST.pb||typeof ST.pb!=='object')ST.pb={}; return ST.pb; }
+function seoPbStep(id){ const pb=seoPB(); if(!pb[id]||typeof pb[id]!=='object')pb[id]={tasks:{},note:''}; if(!pb[id].tasks)pb[id].tasks={}; return pb[id]; }
+function seoBlogsDone(){ return seoBlogs().filter(b=>b.status==='done').length; }
+function seoPbProgress(){ let t=0,d=0; SEO_PLAYBOOK.forEach(s=>{ const st=seoPbStep(s.id); s.tasks.forEach((_,i)=>{t++; if(st.tasks[i])d++;}); }); return t?Math.round(d/t*100):0; }
+function viewSeoDashboard(v){
+  if(!Array.isArray(ST.blogs))ST.blogs=[];
+  v.appendChild(el('div','page-head',`<h2>SEO — 90-Day Plan</h2><p>${esc(SEO_TARGET)}</p>`));
+  const done=seoBlogsDone(), pbPct=seoPbProgress();
+  const prog=el('div','card pad');prog.style.marginTop='4px';
+  prog.innerHTML=`<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+    <div><div class="cadnum"><b>${done}</b> / ${SEO_BLOG_GOAL}</div><div class="muted" style="font-size:12.5px">blogs published</div></div>
+    <div style="flex:1;min-width:200px"><div class="muted" style="font-size:12.5px;margin-bottom:5px">Playbook ${pbPct}% done</div><div class="bar green"><i style="width:${pbPct}%"></i></div></div>
+  </div>`;
+  v.appendChild(prog);
+  // ---- THE PLAYBOOK (ordered, check off + note) ----
+  const pbCard=el('div','card pad');pbCard.style.marginTop='12px';
+  pbCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>The Plan — do it in order</h3><small>Work top to bottom. Check off as you go; leave notes for the team.</small></div></div>`;
+  SEO_PLAYBOOK.forEach(step=>{
+    const st=seoPbStep(step.id);
+    const doneN=()=>step.tasks.filter((_,i)=>st.tasks[i]).length;
+    const d=el('details','jobgroup'); if(step.id==='gbp')d.open=true;
+    const summ=el('summary','jobsum',`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length}`);d.appendChild(summ);
+    const body=el('div');body.style.cssText='padding:2px 10px 12px';
+    body.appendChild(el('div','muted',esc(step.sub))).style.cssText='font-size:12.5px;margin:0 0 8px';
+    step.tasks.forEach((t,i)=>{
+      const row=el('label','seochk'+(st.tasks[i]?' on':''));
+      const cb=el('input');cb.type='checkbox';cb.checked=!!st.tasks[i];
+      cb.onchange=()=>{ st.tasks[i]=cb.checked; row.classList.toggle('on',cb.checked); commit(); summ.textContent=`${step.icon} ${step.title} · ${doneN()}/${step.tasks.length}`; };
+      row.appendChild(cb);row.appendChild(el('span','',esc(t)));
+      body.appendChild(row);
+    });
+    const note=el('textarea','cmp-in');note.rows=2;note.placeholder='Notes / questions for the team…';note.value=st.note||'';note.style.marginTop='8px';
+    note.oninput=()=>{st.note=note.value;};note.onblur=()=>commit();
+    body.appendChild(note);d.appendChild(body);pbCard.appendChild(d);
+  });
+  v.appendChild(pbCard);
+  // ---- CONTENT HAND-OFF (blog briefs) ----
+  const handoff=el('div','card pad');handoff.style.marginTop='12px';
+  handoff.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📁</div><div><h3>Blog briefs for the builder</h3><small>Each blog is a folder: topic, town, keyword, your notes + the photos. Bogdan builds from these.</small></div></div>`;
+  const addBtn=el('button','btn-set primary','＋ New blog brief');addBtn.onclick=()=>openBlogEditor(null,true);
+  handoff.appendChild(addBtn);
+  const blogs=seoBlogs().slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(!blogs.length){ handoff.appendChild(el('p','muted','No blog briefs yet. Tap “＋ New blog brief” to hand Bogdan his first one.')); }
+  else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b)));handoff.appendChild(list); }
+  v.appendChild(handoff);
+}
+function seoStatusPill(s){const m={todo:['To do','draft'],building:['Building','approved'],done:['Done','posted']}[s||'todo']||['To do','draft'];return `<span class="pst ${m[1]}">${m[0]}</span>`;}
+function seoBlogCard(b){
+  const card=el('div','postcard');card.style.position='relative';
+  const mm=b.media||[];
+  card.innerHTML=`<div class="pcimg"><img alt="" style="display:none"><span class="pcph">✍️</span>${mm.length?`<span class="pccount">📎 ${mm.length}</span>`:''}</div>
+    <div class="pcbody">
+      <div class="pcmeta">${seoStatusPill(b.status)}${b.town?`<span class="pchip">📍 ${esc(b.town)}</span>`:''}</div>
+      <div class="pctown" style="font-weight:700;color:var(--ink)">${esc(b.title||'Untitled blog')}</div>
+      <div class="pccap">${b.keyword?'🔑 '+esc(b.keyword):'<span class="muted">No keyword yet</span>'}</div>
+    </div>`;
+  if(mm[0])thumbInto(card.querySelector('img'),mm[0].id);
+  const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();render();toast('Brief deleted');}};
+  card.appendChild(rm);
+  card.onclick=()=>openBlogEditor(b,false);
+  return card;
+}
+function openBlogEditor(blog,isNew){
+  const b = isNew ? {id:'blog_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),title:'',town:SOC_TOWNS[0],keyword:'',notes:'',links:[],media:[],status:'todo',builderNote:'',createdAt:Date.now()} : Object.assign({},blog);
+  if(!Array.isArray(b.media))b.media=[]; if(!Array.isArray(b.links))b.links=[];
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>${isNew?'New blog brief':'Edit blog brief'}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');
+  const field=(label,hint)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+label+(hint?' <span class="muted" style="font-weight:600">— '+hint+'</span>':'')+'</label>';return f;};
+  const tf=field('Blog topic / title','what it’s about');const ti=el('input','cmp-in');ti.value=b.title;ti.placeholder='e.g. 5 signs your Langhorne home needs new windows';ti.oninput=()=>b.title=ti.value;tf.appendChild(ti);bd.appendChild(tf);
+  const tw=field('Target town');const ts=el('select','cmp-in');SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===b.town)o.selected=true;ts.appendChild(o)});ts.onchange=()=>b.town=ts.value;tw.appendChild(ts);bd.appendChild(tw);
+  const kf=field('Target keyword','what people Google');const ki=el('input','cmp-in');ki.value=b.keyword;ki.placeholder='e.g. window replacement Langhorne';ki.oninput=()=>b.keyword=ki.value;kf.appendChild(ki);
+  const chips=el('div');chips.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-top:6px';
+  SEO_KEYWORD_HINTS.forEach(h=>{const kw=h.replace('{town}',b.town||'your town');const c=el('button','sugopt',esc(kw));c.style.cssText='font-size:11.5px;padding:3px 9px';c.onclick=()=>{ki.value=kw;b.keyword=kw;};chips.appendChild(c);});
+  kf.appendChild(chips);bd.appendChild(kf);
+  const nf=field('Your notes / rough copy','tell Bogdan what to say — bullets are fine');const na=el('textarea','cmp-in');na.rows=4;na.value=b.notes;na.placeholder='e.g. full window job in Langhorne, customer hated the drafts, installed Okna, before/after photos attached…';na.oninput=()=>b.notes=na.value;nf.appendChild(na);bd.appendChild(nf);
+  const pf=field('Photos','before/after + job shots');const media=el('div','mediabox');
+  const renderMedia=()=>{ media.innerHTML=''; const grid=el('div','medgrid');
+    b.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}b.media.splice(i,1);renderMedia();};cell.appendChild(img);cell.appendChild(x);grid.appendChild(cell);});
+    const drop=el('label','meddrop'+(b.media.length?' small':''),b.media.length?'＋ Add more':'📷 Add photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
+    inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing photos…');for(const f of files){try{const ref=await hfAdd('blog_'+b.id,f);b.media.push(ref);}catch(_){toast('A photo could not be added')}}renderMedia();toast(files.length+' photo'+(files.length>1?'s':'')+' added');};
+    drop.appendChild(inp);grid.appendChild(drop);media.appendChild(grid); };
+  renderMedia();pf.appendChild(media);bd.appendChild(pf);
+  const lf=field('Links to include','optional');const lwrap=el('div');const renderLinks=()=>{lwrap.innerHTML='';(b.links||[]).forEach((l,i)=>{const row=el('div');row.style.cssText='display:flex;gap:8px;align-items:center;margin:4px 0';row.innerHTML='<a href="'+esc(l.url)+'" target="_blank" style="font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(l.url)+'</a>';const x=el('button','tbtn','✕');x.onclick=()=>{b.links.splice(i,1);renderLinks();};row.appendChild(x);lwrap.appendChild(row);});};renderLinks();
+  const lrow=el('div');lrow.style.cssText='display:flex;gap:8px;margin-top:4px';const li=el('input','cmp-in');li.placeholder='https://…';const lb=el('button','btn-set','Add');lb.onclick=()=>{const u=li.value.trim();if(!u)return;if(!/^https?:\/\//.test(u)){toast('Start the link with http');return;}b.links.push({url:u});li.value='';renderLinks();};lrow.appendChild(li);lrow.appendChild(lb);
+  lf.appendChild(lwrap);lf.appendChild(lrow);bd.appendChild(lf);
+  const sf=field('Status');const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((b.status||'todo')===val)o.selected=true;ss.appendChild(o)});ss.onchange=()=>b.status=ss.value;sf.appendChild(ss);bd.appendChild(sf);
+  const bf=field('Builder note (Bogdan)','questions / status back to Sebastian');const bn=el('textarea','cmp-in');bn.rows=2;bn.value=b.builderNote||'';bn.oninput=()=>b.builderNote=bn.value;bf.appendChild(bn);bd.appendChild(bf);
+  const foot=el('div','cmp-foot');
+  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();closeComposer();render();toast('Brief deleted');}};foot.appendChild(del);}
+  const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
+  foot.appendChild(save);bd.appendChild(foot);
+}
 function viewDashboard(v){
   if(activeProgram()==='social')return viewSocialDashboard(v);
+  if(activeProgram()==='seo')return viewSeoDashboard(v);
   const cw=currentWeek();
   if(isContributor()){const cb=el('div','card pad',`<b>👋 You're a Contributor.</b> Send blogs, content, images, videos &amp; links to the Builder by filling the <b>&ldquo;Deliver to&hellip;&rdquo;</b> boxes below. The Builder checks off the SEO work and updates the numbers.`);cb.style.cssText='border-top:3px solid var(--orange);margin-bottom:14px;font-size:13.5px';v.appendChild(cb);}
   const hero=el('div','hero');
