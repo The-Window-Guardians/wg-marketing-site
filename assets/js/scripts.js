@@ -1217,6 +1217,19 @@ function exifGps(file){
     }catch(e){resolve(null)}
   });
 }
+/* exifr (vendored) reads GPS from BOTH iPhone HEIC and JPEG — lazy-loaded on first use */
+let _exifrLib=null;
+function loadExifr(){
+  if(window.exifr)return Promise.resolve(true);
+  if(_exifrLib)return _exifrLib;
+  _exifrLib=new Promise(function(res){const s=document.createElement('script');s.src='assets/js/exifr.js';s.onload=function(){res(true)};s.onerror=function(){res(false)};document.head.appendChild(s);});
+  return _exifrLib;
+}
+async function readGps(file){
+  try{ await loadExifr(); if(window.exifr){ const g=await exifr.gps(file); if(g&&typeof g.latitude==='number'&&typeof g.longitude==='number')return {lat:g.latitude,lng:g.longitude}; } }catch(e){}
+  try{ const g2=await exifGps(file); if(g2)return g2; }catch(e){} // fallback for plain JPEG
+  return null;
+}
 async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
@@ -1227,7 +1240,7 @@ async function poolAddFiles(fileList,folder){
     if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
     if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
       try{
-        const geo=await exifGps(raw);            // location BEFORE compressing (compression strips it)
+        const geo=await readGps(raw);            // location BEFORE compressing (exifr reads HEIC + JPEG)
         const norm=await normalizeImage(raw);    // HEIC -> JPEG if needed
         const dataUrl=await imgToWebp(norm);     // Full-HD WebP @80%
         const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
