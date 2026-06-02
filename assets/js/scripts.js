@@ -1717,7 +1717,7 @@ function commit(){Store.save(S);publishFeed();if(typeof fbStateSave==='function'
    The session (S.uid / S.role / S.view) stays local to each device.
    Media stays in Google Drive; only records sync here.
    ============================================================ */
-var _fbSync={on:false,unsub:null,applying:false,t:null,lastSavedAt:0};
+var _fbSync={on:false,unsub:null,applying:false,t:null,lastSavedAt:0,appliedAt:0};
 function fbStateRef(){return WG_DB.collection('workspaces').doc('wg').collection('state').doc('main');}
 function fbApplyRemote(data){
   if(!data)return;
@@ -1725,6 +1725,7 @@ function fbApplyRemote(data){
   if(data.prog&&typeof data.prog==='object')S.prog=data.prog;
   if(Array.isArray(data.users))S.users=data.users;
   ensureAuth(); bindProgram();      // re-seed/guard + rebind ST to the (possibly new) S.prog
+  if(data.updatedAt)_fbSync.appliedAt=data.updatedAt;
   _fbSync.applying=false;
   try{Store.save(S);}catch(e){}      // refresh the local cache
 }
@@ -1734,13 +1735,13 @@ async function fbSyncStart(){
   try{
     const snap=await ref.get();
     if(snap.exists&&snap.data()){ fbApplyRemote(snap.data()); }
-    else { _fbSync.lastSavedAt=Date.now(); await ref.set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser.email||'')}); }
+    else { _fbSync.lastSavedAt=Date.now(); _fbSync.appliedAt=_fbSync.lastSavedAt; await ref.set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser.email||'')}); }
     _fbSync.on=true;
     if(_fbSync.unsub)_fbSync.unsub();
     _fbSync.unsub=ref.onSnapshot(function(d){
       if(!d.exists||_fbSync.applying)return;
       const data=d.data(); if(!data)return;
-      if(data.updatedAt&&data.updatedAt===_fbSync.lastSavedAt)return;        // ignore the echo of our own write
+      if(data.updatedAt&&_fbSync.appliedAt&&data.updatedAt<=_fbSync.appliedAt)return; // ignore our own echo AND any snapshot older/equal to what we already have (never wipe fresh local changes like a Drive sync)
       if(document.getElementById('cmpOv')||document.getElementById('mprevOv'))return; // don't disrupt an open editor
       fbApplyRemote(data);
       if(typeof render==='function')render();
@@ -1751,7 +1752,7 @@ async function fbSyncStart(){
 function fbStateSave(){
   if(!_fbSync.on||_fbSync.applying||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
   clearTimeout(_fbSync.t);
-  _fbSync.t=setTimeout(function(){ try{ _fbSync.lastSavedAt=Date.now();
+  _fbSync.t=setTimeout(function(){ try{ _fbSync.lastSavedAt=Date.now(); _fbSync.appliedAt=_fbSync.lastSavedAt;
     fbStateRef().set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''}); }catch(e){} },400);
 }
 /* ---- Handoff PHOTOS that sync to the teammate: compress to Full-HD WebP @80%, store
