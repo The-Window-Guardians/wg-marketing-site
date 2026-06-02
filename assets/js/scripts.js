@@ -1238,9 +1238,12 @@ async function poolAddFiles(fileList,folder){
         if(folder)item.folder=folder;            // e.g. 'Before & After' — keeps it in its own group
         pool.push(item); VTHUMB[id]=dataUrl;     // cache so it shows instantly
       }catch(e){ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }
-    } else { // video (or offline) -> local; Google Drive stays the path for sharing video
+    } else { // video (or offline image) -> local
       const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
-      const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it);
+      const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
+      const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
+      it.folder = isVideo ? 'Videos' : (folder||''); // videos always go to their own bulk area
+      pool.push(it);
     }
   }
   ST.pool=pool;commit();
@@ -3334,7 +3337,7 @@ function socLibrary(v){
   };
   const btnrow=el('div');btnrow.style.cssText='display:flex;flex-wrap:wrap;align-items:center';
   btnrow.appendChild(mkUp('📷 Upload photos','image/*,.heic,.heif','',null));
-  btnrow.appendChild(mkUp('🔀 Upload before/after','image/*,.heic,.heif','Before & After',()=>{POOL_SRC='Before & After';POOL_GROUP='job';}));
+  btnrow.appendChild(mkUp('🔀 Upload before/after','image/*,.heic,.heif','Before & After',()=>{POOL_SEL.clear();POOL_SRC='Before & After';}));
   btnrow.appendChild(mkUp('🎬 Upload video','video/*,.mov','',null));
   add.appendChild(btnrow);
   // optional: Google Drive bulk import (tucked small)
@@ -3360,30 +3363,23 @@ function socLibrary(v){
   const subfolders=[...new Set(poolAll.filter(m=>!isMain(m)).map(m=>m.folder))];
   if(POOL_SRC!=='main'&&subfolders.indexOf(POOL_SRC)===-1)POOL_SRC='main';
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
-  const photos=srcItems.filter(m=>!isVidItem(m)), vids=srcItems.filter(isVidItem);
-  if(POOL_KIND==='photos'&&!photos.length&&vids.length)POOL_KIND='all';
-  if(POOL_KIND==='videos'&&!vids.length&&photos.length)POOL_KIND='all';
-  const avail = POOL_KIND==='photos'?photos : POOL_KIND==='videos'?vids : srcItems;
-  const allAvail=poolAll; // for resolving cross-filter selections when making a post
+  const avail=srcItems;
+  const allAvail=poolAll; // for resolving selections when making a post
+  const grouped = (POOL_SRC!=='main' && POOL_SRC!=='Videos'); // before/after (and Drive subfolders) auto-group by GPS; Content + Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>tap to preview · tap the ◯ corner to pick it for a post</small></div></div>`;
-  // controls: Source (Main vs your subfolders) + Photos/Videos + Group-by-job
+  const sub = POOL_SRC==='main'?'Your everyday photos, newest first.':POOL_SRC==='Videos'?'Your videos.':'Grouped by job location — tap a photo to set Before / After.';
+  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub} Tap the ◯ corner to pick for a post.</small></div></div>`;
+  // controls: just the area switcher (Content · Before & After · Videos)
   const ctrls=el('div','poolctrls');
-  if(subfolders.length){ // only show the source picker once you have a subfolder (e.g. Before/After)
+  if(subfolders.length){
     const srcSel=el('select','cmp-in');
     const mainN=poolAll.filter(isMain).length;
-    const opts=[['main',`📁 Main content (${mainN})`]].concat(subfolders.map(f=>[f,`📁 ${f} (${poolAll.filter(m=>m.folder===f).length})`]));
+    const opts=[['main',`📷 Content (${mainN})`]].concat(subfolders.map(f=>[f,`${f==='Before & After'?'🔀':f==='Videos'?'🎬':'📁'} ${f} (${poolAll.filter(m=>m.folder===f).length})`]));
     opts.forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_SRC===v2)o.selected=true;srcSel.appendChild(o)});
-    srcSel.onchange=()=>{POOL_SRC=srcSel.value;rerenderCal()};
+    srcSel.onchange=()=>{POOL_SEL.clear();POOL_SRC=srcSel.value;rerenderCal()};
     ctrls.appendChild(srcSel);
   }
-  const kindSel=el('select','cmp-in');
-  [['all',`All (${allAvail.length})`],['photos',`📷 Photos (${photos.length})`],['videos',`🎬 Videos (${vids.length})`]].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_KIND===v2)o.selected=true;kindSel.appendChild(o)});
-  kindSel.onchange=()=>{POOL_KIND=kindSel.value;rerenderCal()};
-  const groupSel=el('select','cmp-in');
-  [['off','Ungrouped'],['job','📍 Group by job (location)']].forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_GROUP===v2)o.selected=true;groupSel.appendChild(o)});
-  groupSel.onchange=()=>{POOL_GROUP=groupSel.value;rerenderCal()};
-  ctrls.appendChild(kindSel);ctrls.appendChild(groupSel);poolCard.appendChild(ctrls);
+  poolCard.appendChild(ctrls);
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;};
@@ -3404,16 +3400,16 @@ function socLibrary(v){
     cell.onclick=()=>openMediaPreview(m.id,m.name);
     return cell;
   };
-  renderSavedJobs(poolCard); // your saved before/after jobs at the TOP of this list
+  if(grouped)renderSavedJobs(poolCard); // saved before/after jobs only show in the Before & After area
   if(!avail.length){
-    if(!socBaJobs().length)poolCard.innerHTML+=`<p class="muted">No content yet — drag some in above. It all lands here, ready to use.</p>`;
-  }else if(POOL_GROUP==='job'){
+    if(!(grouped&&socBaJobs().length))poolCard.innerHTML+=`<p class="muted">${POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos”.':'Nothing here yet — add with “🔀 Upload before/after”.'}</p>`;
+  }else if(grouped){
     const located=avail.filter(hasLoc);
     const noloc=avail.filter(m=>!hasLoc(m));
     const clusters=clusterByLocation(located,60);
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup');if(i<2)d.open=true;
-      d.appendChild(el('summary','jobsum',`📍 Group ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      d.appendChild(el('summary','jobsum',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
       const g=el('div','poolgrid');c.items.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
       poolCard.appendChild(d);
     });
