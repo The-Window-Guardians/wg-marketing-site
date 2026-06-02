@@ -1733,12 +1733,9 @@ const PROGRAMS={
   seo:{id:'seo',name:'SEO Dashboard',short:'SEO',icon:'📍',tag:'SEO · Q3 2026',
     blurb:'Own the Bucks County map pack — fix the geo-targeting, build genuinely-local town pages, and run the reviews + blog engine.',
     home:'index.html',planFile:'plan.html',scorecardFile:'scorecard.html',
-    nav:[ {ic:'🏠',label:'Dashboard',file:'index.html'},
-          {ic:'🗓️',label:'The Plan',file:'plan.html',plan:true},
-          {ic:'🎯',label:'Scorecard',file:'scorecard.html'},
-          {ic:'📚',label:'Guides',file:'guides.html'},
-          {ic:'♟️',label:'Strategy',file:'strategy.html'},
-          {ic:'🔎',label:'The Audit',file:'audit.html'} ],
+    nav:[ {ic:'🏠',label:'Home',file:'index.html'},
+          {ic:'🎯',label:'Progress',file:'scorecard.html'},
+          {ic:'📚',label:'Guide',file:'guides.html'} ],
     order:SEO_ORDER,engine:SEO_ENGINE,phases:SEO_PHASES,weeks:SEO_WEEKS,deliveries:SEO_DELIVERIES,kpis:SEO_KPIS,
     shipLine:'the week ships when the 3 blogs go out, reviews get requested + answered, and the build lands — all by Tuesday 12pm.',
     nudge:{
@@ -2254,19 +2251,169 @@ function seoPbProgress(){ let t=0,d=0; SEO_PLAYBOOK.forEach(s=>{ const st=seoPbS
 /* the build-side view (Bogdan = editor): receives briefs + works the plan, doesn't author content.
    owner can preview a teammate via the top-bar dropdown. */
 function seoIsBuilder(){ const me=curUser(); const eff=(me&&me.perm==='owner')?userById(S.role):me; return !!(eff&&eff.perm==='editor'); }
-function viewSeoDashboard(v){
-  if(!Array.isArray(ST.blogs))ST.blogs=[];
+/* ===== 90-day PROVIDE PLAN: what Sebastian owes Bogdan, by month, with soft due dates + rollover ===== */
+const SEO_PLAN=[
+ {m:1,title:'Month 1 — Foundation',goal:'Lock the basics and your first two towns so Google starts trusting the site.',
+  items:[
+   {id:'photos1',type:'media',label:'A first batch of job photos',why:'Bogdan uses these on the Google profile, service + town pages',target:8,day:10},
+   {id:'town_Langhorne',type:'town',town:'Langhorne',label:'Langhorne local details',why:'Builds a real Langhorne town page (not templated)',day:12},
+   {id:'town_Newtown',type:'town',town:'Newtown',label:'Newtown local details',why:'Builds the Newtown town page',day:24},
+   {id:'blogs1',type:'blog',label:'3 blog briefs',why:'Your first 3 local blog posts',target:3,day:26}
+  ]},
+ {m:2,title:'Month 2 — Expand the map',goal:'More town pages live and the blog engine running.',
+  items:[
+   {id:'town_Yardley',type:'town',town:'Yardley',label:'Yardley local details',why:'Builds the Yardley town page',day:38},
+   {id:'photos2',type:'media',label:'More job photos',why:'Fresh photos for the new pages',target:16,day:42},
+   {id:'town_LowerMakefield',type:'town',town:'Lower Makefield',label:'Lower Makefield local details',why:'Builds the Lower Makefield page',day:48},
+   {id:'town_Richboro',type:'town',town:'Richboro',label:'Richboro local details',why:'Builds the Richboro page',day:55},
+   {id:'blogs2',type:'blog',label:'4 more blog briefs (7 total)',why:'Keep the blog cadence going',target:7,day:58}
+  ]},
+ {m:3,title:'Month 3 — Authority + reviews',goal:'Finish the towns and push reviews + local links.',
+  items:[
+   {id:'town_Holland',type:'town',town:'Holland',label:'Holland local details',why:'Builds the Holland page',day:70},
+   {id:'town_Feasterville',type:'town',town:'Feasterville',label:'Feasterville local details',why:'Builds the Feasterville page',day:80},
+   {id:'blogs3',type:'blog',label:'5 more blog briefs (12 total)',why:'Hit the 12-blog target',target:12,day:86}
+  ]}
+];
+function seoStart(){ if(!ST.seoStart){ST.seoStart=Date.now();commit();} return ST.seoStart; }
+function seoDueTs(it){ const o=(ST.dueOverride&&ST.dueOverride[it.id])||0; return o||(seoStart()+(it.day||30)*86400000); }
+function fmtShort(ts){ try{return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});}catch(e){return '';} }
+function seoTownFacts(){ if(!ST.townFacts||typeof ST.townFacts!=='object')ST.townFacts={}; return ST.townFacts; }
+function seoMediaPool(){ if(!Array.isArray(ST.seoMedia))ST.seoMedia=[]; return ST.seoMedia; }
+function seoAllItems(){ return SEO_PLAN.reduce((a,mo)=>a.concat(mo.items.map(it=>Object.assign({month:mo.m},it))),[]); }
+function seoItemProvided(it){
+  if(it.type==='town') return !!((seoTownFacts()[it.town]||'').trim());
+  if(it.type==='media') return seoMediaPool().length >= (it.target||1);
+  if(it.type==='blog') return seoBlogs().length >= (it.target||1);
+  return false;
+}
+function seoItemProgress(it){ if(it.type==='media')return {have:seoMediaPool().length,need:it.target}; if(it.type==='blog')return {have:seoBlogs().length,need:it.target}; return null; }
+function seoItemOverdue(it){ return !seoItemProvided(it) && Date.now() > seoDueTs(it); }
+function seoPlaybookCard(){
+  const pbCard=el('div','card pad');pbCard.style.marginTop='12px';
+  pbCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>The Plan — do it in order</h3><small>Work top to bottom. Check off as you go; leave notes for the team.</small></div></div>`;
+  SEO_PLAYBOOK.forEach(step=>{
+    const st=seoPbStep(step.id);
+    const doneN=()=>step.tasks.filter((_,i)=>st.tasks[i]).length;
+    const d=el('details','jobgroup'); if(step.id==='gbp')d.open=true;
+    const summ=el('summary','jobsum',`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length}`);d.appendChild(summ);
+    const body=el('div');body.style.cssText='padding:2px 10px 12px';
+    body.appendChild(el('div','muted',esc(step.sub))).style.cssText='font-size:12.5px;margin:0 0 8px';
+    step.tasks.forEach((t,i)=>{
+      const row=el('label','seochk'+(st.tasks[i]?' on':''));
+      const cb=el('input');cb.type='checkbox';cb.checked=!!st.tasks[i];
+      cb.onchange=()=>{ st.tasks[i]=cb.checked; row.classList.toggle('on',cb.checked); commit(); summ.textContent=`${step.icon} ${step.title} · ${doneN()}/${step.tasks.length}`; };
+      row.appendChild(cb);row.appendChild(el('span','',esc(t)));
+      body.appendChild(row);
+    });
+    const note=el('textarea','cmp-in');note.rows=2;note.placeholder='Notes / questions for the team…';note.value=st.note||'';note.style.marginTop='8px';
+    note.oninput=()=>{st.note=note.value;};note.onblur=()=>commit();
+    body.appendChild(note);d.appendChild(body);pbCard.appendChild(d);
+  });
+  return pbCard;
+}
+function seoItemRow(it,builder){
+  const provided=seoItemProvided(it), overdue=seoItemOverdue(it), prog=seoItemProgress(it);
+  const icon=it.type==='town'?'🏘️':it.type==='media'?'📷':'✍️';
+  const row=el('div','seoitem'+(provided?' done':overdue?' over':''));
+  const stat = provided ? '<span class="pst posted">✅ Provided</span>'
+    : overdue ? '<span class="pst" style="background:#fde7e7;color:#cf3b3b">⚠ Rolled over — ASAP</span>'
+    : `<span class="pst draft">⏳ Due ${fmtShort(seoDueTs(it))}</span>`;
+  const progTxt = prog ? ` <span class="muted" style="font-size:12px">(${Math.min(prog.have,prog.need)}/${prog.need})</span>` : '';
+  row.innerHTML=`<div class="si-ic">${icon}</div><div class="si-main"><div class="si-t">${esc(it.label)}${progTxt}</div><div class="si-why">${esc(it.why)}</div></div><div class="si-stat">${stat}</div>`;
+  const act=el('button','btn-set'+(provided?'':' primary'));
+  if(builder){ act.textContent = provided ? 'Open' : 'Waiting'; if(!provided)act.disabled=true; act.onclick=()=>seoOpenItem(it,true); }
+  else { act.textContent = provided ? 'Edit' : (it.type==='blog'?'Add':it.type==='media'?'Upload':'Fill in'); act.onclick=()=>seoOpenItem(it,false); }
+  row.appendChild(act);
+  return row;
+}
+function seoOpenItem(it,builder){ if(it.type==='town')return openTownFacts(it.town,builder); if(it.type==='media')return openSeoMedia(builder); if(it.type==='blog')return openSeoBlogs(builder); }
+function seoMonthCard(mo,builder){
+  const card=el('div','card pad');card.style.marginTop='12px';
+  const total=mo.items.length, done=mo.items.filter(seoItemProvided).length;
+  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">${mo.m}</div><div><h3>${esc(mo.title)}</h3><small>${esc(mo.goal)}</small></div><span class="pill" style="margin-left:auto">${done}/${total}</span></div>`;
+  mo.items.forEach(it=>card.appendChild(seoItemRow(it,builder)));
+  return card;
+}
+function seoBlogsCard(builder){
+  const c=el('div','card pad');c.style.marginTop='12px';
+  c.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">✍️</div><div><h3>${builder?'Blog briefs to build':'Your blog briefs'}</h3><small>${builder?'Open each for topic, keyword, notes + photos to download.':'Topic + town + keyword + your notes + photos. Bogdan builds from these.'}</small></div></div>`;
+  if(!builder){ const a=el('button','btn-set primary','＋ New blog brief');a.onclick=()=>openBlogEditor(null,true);c.appendChild(a); }
+  const blogs=seoBlogs().slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(!blogs.length){ c.appendChild(el('p','muted', builder?'No briefs yet.':'No briefs yet — tap “＋ New blog brief”.')); }
+  else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b,builder)));c.appendChild(list); }
+  return c;
+}
+function viewSeoDashboard(v){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return seoIsBuilder()?viewSeoBuilder(v):viewSeoProvider(v); }
+function viewSeoProvider(v){
+  v.appendChild(el('div','page-head',`<h2>What to give Bogdan</h2><p>Each month, provide these so Bogdan never waits. Fill it in or upload right here — he gets it instantly. Anything past its date is flagged so you know to send it ASAP.</p>`));
+  const over=seoAllItems().filter(seoItemOverdue);
+  if(over.length){ const b=el('div','card pad');b.style.cssText='margin-bottom:4px;border-left:4px solid var(--red)';b.innerHTML=`<b style="color:var(--red)">⚠ ${over.length} item${over.length>1?'s':''} overdue</b> <span class="muted" style="font-size:13px">— Bogdan is waiting. Get ${over.length>1?'these':'this'} to him ASAP (marked “Rolled over” below).</span>`;v.appendChild(b); }
+  SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
+  v.appendChild(seoBlogsCard(false));
+}
+function viewSeoBuilder(v){
+  v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>What Sebastian has given you, what’s still coming, and the plan to work through. Open anything marked ✅ to use it.</p>`));
+  const items=seoAllItems();
+  const waiting=items.filter(it=>!seoItemProvided(it));
+  if(waiting.length){ const wb=el('div','card pad');wb.innerHTML=`<div class="sec-title"><div class="chip" style="background:#fde7e7">⏳</div><div><h3>Waiting on Sebastian</h3><small>${waiting.length} item${waiting.length>1?'s':''} not provided yet — they appear here the moment they land.</small></div></div>`;waiting.forEach(it=>wb.appendChild(seoItemRow(it,true)));v.appendChild(wb); }
+  const ready=items.filter(seoItemProvided);
+  const rb=el('div','card pad');rb.style.marginTop='12px';rb.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>Ready to build</h3><small>${ready.length?'Open each to read the details + download the photos.':'Nothing provided yet — check back soon.'}</small></div></div>`;ready.forEach(it=>rb.appendChild(seoItemRow(it,true)));v.appendChild(rb);
+  v.appendChild(seoBlogsCard(true));
+  v.appendChild(seoPlaybookCard());
+}
+function viewSeoProgress(v){
+  v.appendChild(el('div','page-head',`<h2>Progress</h2><p>${esc(SEO_TARGET)}</p>`));
+  const blogs=seoBlogsDone(), pb=seoPbProgress();
+  const towns=Object.keys(seoTownFacts()).filter(t=>(seoTownFacts()[t]||'').trim()).length;
+  const photos=seoMediaPool().length;
+  const grid=el('div','grid cols-3');grid.style.marginTop='4px';
+  const stat=(n,of,lab)=>{const c=el('div','card pad kpi');c.innerHTML=`<div class="eyebrow" style="color:var(--faint)">${lab}</div><div style="margin:4px 0 8px"><b class="num">${n}</b>${of?` <span class="of">/ ${of}</span>`:''}</div>`;return c;};
+  grid.appendChild(stat(blogs,12,'Blogs published'));grid.appendChild(stat(towns,7,'Town details provided'));grid.appendChild(stat(photos,'','Job photos provided'));
+  v.appendChild(grid);
+  const pbc=el('div','card pad');pbc.style.marginTop='16px';pbc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>Playbook ${pb}% complete</h3><small>Across all 7 build steps.</small></div></div><div class="bar green" style="margin-top:6px"><i style="width:${pb}%"></i></div>`;v.appendChild(pbc);
+  const over=seoAllItems().filter(seoItemOverdue);
+  const ob=el('div','card pad');ob.style.marginTop='16px';
+  ob.innerHTML=`<div class="sec-title"><div class="chip" style="background:${over.length?'#fde7e7':'var(--green-soft)'}">${over.length?'⚠':'✅'}</div><div><h3>${over.length?over.length+' item(s) overdue':'Nothing overdue'}</h3><small>${over.length?'Provide these to Bogdan ASAP.':'You’re on schedule — nice.'}</small></div></div>`;
+  over.forEach(it=>{const r=el('div','muted','• '+esc(it.label));r.style.cssText='font-size:13px;margin:2px 0';ob.appendChild(r);});
+  v.appendChild(ob);
+}
+function openTownFacts(town,builder){
+  closeComposer();
+  const facts=seoTownFacts();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>${esc(town)} — local details</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');
+  if(builder){ const f=el('div','cmp-field');f.innerHTML='<label>Local details from Sebastian</label>';f.appendChild(el('div','robox',esc(facts[town]||'— not provided yet —')));bd.appendChild(f); return; }
+  const f=el('div','cmp-field');f.innerHTML=`<label>3–5 real, local things about ${esc(town)} <span class="muted" style="font-weight:600">— neighborhoods, landmarks, what the homes are like, why folks there call you</span></label>`;
+  const ta=el('textarea','cmp-in');ta.rows=6;ta.value=facts[town]||'';ta.placeholder='e.g. lots of 1980s colonials near Flowers Mill; older windows fogging up; close to Core Creek Park; customers love same-week installs…';
+  f.appendChild(ta);bd.appendChild(f);
+  const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const save=el('button','btn-set primary','Save details');save.onclick=()=>{seoTownFacts()[town]=ta.value;commit();closeComposer();render();toast(ta.value.trim()?'Saved — Bogdan has it':'Saved');};
+  foot.appendChild(save);bd.appendChild(foot);
+}
+function openSeoMedia(builder){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>Job photos for Bogdan</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');
+  const f=el('div','cmp-field');f.innerHTML='<label>'+(builder?'Photos Sebastian uploaded — tap to download':'Drop your before/after + job photos here — Bogdan can use any of them')+'</label>';
+  const grid=el('div','medgrid');f.appendChild(grid);bd.appendChild(f);
+  const draw=()=>{ grid.innerHTML='';
+    seoMediaPool().forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);
+      if(builder){cell.style.cursor='pointer';cell.title='Download';cell.appendChild(el('span','meddl','⬇'));cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();toast('Downloading');}else toast('Photo not ready yet');};}
+      else{const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}seoMediaPool().splice(i,1);commit();draw();};cell.appendChild(x);}
+      grid.appendChild(cell);});
+    if(!builder){const drop=el('label','meddrop'+(seoMediaPool().length?' small':''),seoMediaPool().length?'＋ Add more':'📷 Upload job photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
+      inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing…');for(const fl of files){try{const ref=await hfAdd('seomedia',fl);seoMediaPool().push(ref);}catch(_){}}commit();draw();toast(files.length+' photo'+(files.length>1?'s':'')+' added');};
+      drop.appendChild(inp);grid.appendChild(drop);} };
+  draw();
+}
+function openSeoBlogs(builder){ if(!builder){ openBlogEditor(null,true); return; } const b=seoBlogs().find(x=>x.status!=='done')||seoBlogs()[0]; if(b)openBlogBuilder(b); else toast('No briefs provided yet'); }
+function __seoLegacyUnused(v){
   const builder=seoIsBuilder();
-  v.appendChild(el('div','page-head', builder
-    ? `<h2>Your Build Queue</h2><p>Everything Sebastian hands you lives here. Work the plan top to bottom, build each brief, and mark it done.</p>`
-    : `<h2>SEO — 90-Day Plan</h2><p>${esc(SEO_TARGET)}</p>`));
-  const done=seoBlogsDone(), pbPct=seoPbProgress();
-  const prog=el('div','card pad');prog.style.marginTop='4px';
-  prog.innerHTML=`<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
-    <div><div class="cadnum"><b>${done}</b> / ${SEO_BLOG_GOAL}</div><div class="muted" style="font-size:12.5px">blogs published</div></div>
-    <div style="flex:1;min-width:200px"><div class="muted" style="font-size:12.5px;margin-bottom:5px">Playbook ${pbPct}% done</div><div class="bar green"><i style="width:${pbPct}%"></i></div></div>
-  </div>`;
-  v.appendChild(prog);
   // ---- THE PLAYBOOK (ordered, check off + note) ----
   const pbCard=el('div','card pad');pbCard.style.marginTop='12px';
   pbCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>The Plan — do it in order</h3><small>Work top to bottom. Check off as you go; leave notes for the team.</small></div></div>`;
@@ -2824,6 +2971,7 @@ function viewPlan(v){
 
 /* ---------- SCORECARD ---------- */
 function viewScorecard(v){
+  if(activeProgram()==='seo')return viewSeoProgress(v);
   v.appendChild(el('div','page-head',`<h2>KPI Scorecard</h2><p>The numbers that prove it’s working. Tap +/− to update as results land. End-of-August targets baked in.</p>`));
   const grid=el('div','grid cols-2');
   KPIS.forEach(kp=>{
