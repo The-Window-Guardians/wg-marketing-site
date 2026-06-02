@@ -3223,7 +3223,10 @@ function viewSocialAudit(v){
    Ruth executes). Week-ahead planner + post composer + Ruth's
    ready-to-post queue + the scripted assistant.
    ============================================================ */
-function rerenderCal(){const v=$('#view');if(!v)return;v.innerHTML='';if(currentView()==='upload'){viewUploader(v);return;}viewCalendar(v);}
+/* Re-render whatever screen we're actually on (Home, Calendar, Upload, …) — NOT always
+   the calendar. Composer actions call this; forcing the calendar made the Home dashboard
+   look "stuck" after approve/pull-back because Home never redrew. */
+function rerenderCal(){ render(); }
 function calWeeks(){ // current + next (rolling 2-week buffer)
   const cw=currentWeek(); const out=[];
   if(cw){out.push(cw);const nx=WEEKS.find(w=>w.id===cw.id+1);if(nx)out.push(nx);}
