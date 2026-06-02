@@ -1335,7 +1335,7 @@ function renderSavedJobs(container){
 const GDRIVE_CLIENT_ID='922689253691-f58pv9jg0194es7ve9avc0di1ssan4i6.apps.googleusercontent.com';
 const GDRIVE_FOLDER_ID='1hRescZ95VEr_mVPm8AkRAsq-gqDdoIFq';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.readonly';
-let _gdToken=null,_gdExp=0,_gdClient=null,_gdTimer=null,_gdSyncing=false;
+let _gdToken=null,_gdExp=0,_gdClient=null,_gdTimer=null,_gdSyncing=false,_gdListErr=0;
 function loadGsi(){
   if(window.google&&google.accounts&&google.accounts.oauth2)return Promise.resolve(true);
   return new Promise(res=>{
@@ -1396,7 +1396,7 @@ async function gdListAllMedia(folderId,tok,folderName,out,depth){
   do{
     const url=`https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,mimeType,thumbnailLink,imageMediaMetadata(time,location))&pageSize=1000`+(pageToken?`&pageToken=${pageToken}`:'');
     const r=await fetch(url,{headers:{Authorization:'Bearer '+tok}});
-    if(!r.ok)return;
+    if(!r.ok){_gdListErr=r.status;return;} // capture HTTP error (404 folder-not-found, 403 no-access)
     const data=await r.json();
     for(const f of (data.files||[])){
       if(f.mimeType==='application/vnd.google-apps.folder') await gdListAllMedia(f.id,tok,f.name,out,(depth||0)+1);
@@ -1411,7 +1411,8 @@ async function gdSyncNow(interactive){
     const tok=await gdGetToken(!!interactive);
     if(!tok){if(interactive)toast('Google sign-in needed to sync.');else if(ST.driveConnected&&!ST.driveNeedsReconnect){ST.driveNeedsReconnect=true;commit();render();}return;}
     if(ST.driveNeedsReconnect){ST.driveNeedsReconnect=false;commit();render();} // token is good again
-    const list=[];await gdListAllMedia(GDRIVE_FOLDER_ID,tok,'Drive',list,0); // recurse subfolders, capture location
+    const list=[]; _gdListErr=0; await gdListAllMedia(GDRIVE_FOLDER_ID,tok,'Drive',list,0); // recurse subfolders, capture location
+    if(_gdListErr){ if(interactive)toast(_gdListErr===404?'Drive: that content folder wasn’t found for this Google account (404). Tap Connect and choose the account that OWNS the folder.':_gdListErr===403?'Drive: this Google account can’t access the folder (403). Connect the account that owns it.':('Drive couldn’t read the folder (error '+_gdListErr+'). Try Sync again shortly.')); return; }
     const pool=socPool();
     const byDrive=new Map(pool.filter(m=>m.driveId).map(m=>[m.driveId,m]));
     let added=0,backfilled=0;
@@ -1438,7 +1439,7 @@ async function gdSyncNow(interactive){
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
     if(added)toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');
-    else if(interactive)toast(backfilled?('Synced — location added to '+backfilled+' photos'):'Drive is in sync — nothing new.');
+    else if(interactive){ if(list.length===0)toast('Connected to Google, but found 0 photos/videos in that folder. Tap Connect and pick the Google account that OWNS your content folder — and make sure the folder actually has photos in it.'); else toast(backfilled?('Synced — location added to '+backfilled+' photos'):('Drive is in sync — '+list.length+' item'+(list.length>1?'s':'')+' already here.')); }
   }catch(e){if(interactive)toast('Drive sync hit a snag — try again.');}
   finally{_gdSyncing=false;}
 }
