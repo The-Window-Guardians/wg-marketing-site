@@ -2763,7 +2763,7 @@ function progPick(u){ // which dashboard(s) this person works in
 function setProgs(u,val){ u.progs = val==='both'?['seo','social'] : val==='seo'?['seo'] : ['social']; }
 function usersAdminCard(){
   const card=el('div','card pad');card.style.marginBottom='16px';
-  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👤</div><div><h3>Team &amp; logins</h3><small>Add people, pick each one's <b>dashboard</b> (Social or SEO) and <b>role</b>, set their password. Prototype — real security turns on with the backend.</small></div></div>`;
+  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">👤</div><div><h3>Team &amp; logins</h3><small>Add people and pick each one's <b>dashboard</b> (Social or SEO) and <b>role</b>. ${window.WG_FB_READY?'Everyone sets their own password with the <b>🔑 Password</b> button in the top bar — to reset someone\'s, use Firebase → Authentication.':'Set their password below.'}</small></div></div>`;
   const wrap=el('div','usersadmin');
   (S.users||[]).forEach(u=>{
     const me=(u.id===S.uid);
@@ -2773,7 +2773,7 @@ function usersAdminCard(){
       <div class="uprogwrap">${progPick(u)}</div>
       <select class="uperm cmp-in">${roleOptsFor(u)}</select>
       <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
-      <button class="btn-set upw">Set password</button>
+      ${window.WG_FB_READY?'':'<button class="btn-set upw">Set password</button>'}
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
     const em=row.querySelector('.uemail'); if(em)em.onchange=e=>{u.email=e.target.value.trim();commit();toast('Saved')};
@@ -2792,7 +2792,7 @@ function usersAdminCard(){
       if(!on&&me){toast('You can’t deactivate yourself.');e.target.checked=true;return;}
       if(!on&&u.perm==='owner'&&activeOwners().length<=1){toast('Can’t deactivate the only Owner.');e.target.checked=true;return;}
       u.active=on;commit();};
-    row.querySelector('.upw').onclick=()=>{const v=prompt('New password for '+u.name+':');if(v==null)return;u.pass=hashPw(v);u.seeded=false;commit();render();toast('Password updated for '+u.name);};
+    const _upw=row.querySelector('.upw'); if(_upw)_upw.onclick=()=>{const v=prompt('New password for '+u.name+':');if(v==null)return;u.pass=hashPw(v);u.seeded=false;commit();render();toast('Password updated for '+u.name);};
     row.querySelector('.urem').onclick=()=>{
       if(me){toast('You can’t remove yourself.');return;}
       if(u.perm==='owner'&&activeOwners().length<=1){toast('Can’t remove the only Owner.');return;}
@@ -3669,6 +3669,46 @@ function ensureLogoutBtn(){
   if(S.uid){ if(!b){b=el('button','tb-btn','⎋ Log out');b.id='btnLogout';b.title='Log out';b.onclick=logout;const before=document.getElementById('btnReset');bar.insertBefore(b,before||null);} }
   else if(b){b.remove();}
 }
+/* self-service password change (Firebase) — available to everyone in the top bar */
+function ensurePwBtn(){
+  const bar=document.querySelector('.topbar'); if(!bar)return;
+  let b=document.getElementById('btnPw');
+  if(window.WG_FB_READY&&WG_AUTH.currentUser){ if(!b){b=el('button','tb-btn','🔑 Password');b.id='btnPw';b.title='Change your password';b.onclick=openPwChange;const before=document.getElementById('btnLogout')||document.getElementById('btnReset');bar.insertBefore(b,before||null);} }
+  else if(b){b.remove();}
+}
+function openPwChange(){
+  if(!window.WG_FB_READY||!WG_AUTH.currentUser){toast('Log in first.');return;}
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>Change your password</h3><button class="cmp-x" id="cmpX">✕</button></div>
+    <div class="cmp-body">
+      <div class="cmp-field"><label>Current password</label><input type="password" class="cmp-in" id="pwCur" autocomplete="current-password"></div>
+      <div class="cmp-field"><label>New password <span class="muted" style="font-weight:600">— at least 6 characters, only you know it</span></label><input type="password" class="cmp-in" id="pwNew" autocomplete="new-password"></div>
+      <div class="cmp-field"><label>Confirm new password</label><input type="password" class="cmp-in" id="pwNew2" autocomplete="new-password"></div>
+      <div class="cmp-foot"><div style="flex:1"></div><button class="btn-set primary" id="pwSave">Update password</button></div>
+    </div>`;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.onclick=e=>{if(e.target===ov)closeComposer()};
+  $('#cmpX').onclick=closeComposer;
+  $('#pwSave').onclick=async()=>{
+    const cur=($('#pwCur')||{}).value||'', n1=($('#pwNew')||{}).value||'', n2=($('#pwNew2')||{}).value||'';
+    if(!cur||!n1){toast('Fill in all three boxes.');return;}
+    if(n1.length<6){toast('New password needs at least 6 characters.');return;}
+    if(n1!==n2){toast('The two new passwords don’t match.');return;}
+    const btn=$('#pwSave'); btn.disabled=true;
+    try{
+      const cred=firebase.auth.EmailAuthProvider.credential(WG_AUTH.currentUser.email,cur);
+      await WG_AUTH.currentUser.reauthenticateWithCredential(cred);
+      await WG_AUTH.currentUser.updatePassword(n1);
+      closeComposer(); toast('✅ Password changed. Use your new password next time you log in.');
+    }catch(e){ btn.disabled=false; const code=(e&&e.code)||'';
+      if(code==='auth/wrong-password'||code==='auth/invalid-credential')toast('Your current password is wrong — try again.');
+      else if(code==='auth/weak-password')toast('Pick a stronger password (6+ characters).');
+      else toast('Couldn’t change password — '+((e&&e.message)||'try again.'));
+    }
+  };
+  setTimeout(()=>{const f=$('#pwCur');if(f)f.focus();},50);
+}
 function enterApp(){
   const gate=$('#gate');if(gate)gate.classList.add('hidden');
   const app=$('#app');if(app)app.style.display='block';
@@ -3693,7 +3733,7 @@ function enterApp(){
     if(isHub()){ if(allowed.length<2){const home=(PROGRAMS[allowed[0]]||{}).home; if(home){location.href=home;return;}} }
     else if(allowed.indexOf(activeProgram())<0){ const home=(PROGRAMS[allowed[0]]||{}).home; if(home&&currentFile()!==home){location.href=home;return;} }
   }
-  ensureLogoutBtn();
+  ensureLogoutBtn(); ensurePwBtn();
   buildNav();render();
 }
 function isOwner(){const u=curUser();return !!u&&u.perm==='owner'}
