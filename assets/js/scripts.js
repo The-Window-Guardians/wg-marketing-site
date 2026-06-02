@@ -1217,7 +1217,7 @@ function exifGps(file){
     }catch(e){resolve(null)}
   });
 }
-async function poolAddFiles(fileList){
+async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   if(files.some(isHeic))toast('iPhone photos — preparing…');
@@ -1235,11 +1235,12 @@ async function poolAddFiles(fileList){
         await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:'image/webp',dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
         const item={id:id,name:name,type:'image/webp',status:'available',cloud:true,addedAt:Date.now()};
         if(geo){item.lat=geo.lat;item.lng=geo.lng;}
+        if(folder)item.folder=folder;            // e.g. 'Before & After' — keeps it in its own group
         pool.push(item); VTHUMB[id]=dataUrl;     // cache so it shows instantly
-      }catch(e){ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}); }
+      }catch(e){ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }
     } else { // video (or offline) -> local; Google Drive stays the path for sharing video
       const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
-      pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()});
+      const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it);
     }
   }
   ST.pool=pool;commit();
@@ -3311,28 +3312,40 @@ function socLibrary(v){
     v.appendChild(ai);
   }
 
-  // ---- ADD CONTENT (drag-drop / upload / Google Drive) ----
+  // ---- ADD CONTENT (regular photos · before/after · video · optional Drive) ----
   const add=el('div','card pad');add.style.marginTop='12px';
-  add.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⬆️</div><div><h3>Add content</h3><small>Drag photos &amp; videos in, or upload — as many as you want. iPhone HEIC is fine.</small></div></div>`;
+  add.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⬆️</div><div><h3>Add content</h3><small>Upload straight from your phone or computer — it syncs to the whole team. iPhone HEIC is fine.</small></div></div>`;
   const drop=el('label','dropzone');
-  drop.innerHTML=`<div class="dz-i">📥</div><div><b>Drag photos &amp; videos here</b><div class="muted" style="font-size:12.5px">or tap to choose — pick as many as you like</div></div>`;
-  const inp=el('input');inp.type='file';inp.accept='image/*,video/*,.heic,.heif,.mov';inp.multiple=true;inp.className='hidden';
-  inp.onchange=async e=>{const had=e.target.files&&e.target.files.length;const n=await poolAddFiles(e.target.files);inp.value='';if(n){toast(n+' added to your content');rerenderCal();}else if(had)toast('Those weren’t photos or videos — pick image/video files (HEIC & MOV are fine).');};
-  drop.appendChild(inp);
+  drop.innerHTML=`<div class="dz-i">📥</div><div><b>Drag photos here</b><div class="muted" style="font-size:12.5px">or use the buttons below</div></div>`;
+  const dropInp=el('input');dropInp.type='file';dropInp.accept='image/*,video/*,.heic,.heif,.mov';dropInp.multiple=true;dropInp.className='hidden';
+  dropInp.onchange=async e=>{const had=e.target.files&&e.target.files.length;const n=await poolAddFiles(e.target.files,'');dropInp.value='';if(n){toast(n+' added to your content');rerenderCal();}else if(had)toast('Pick photo or video files (HEIC & MOV are fine).');};
+  drop.appendChild(dropInp);
   drop.ondragover=e=>{e.preventDefault();drop.classList.add('drag')};
   drop.ondragleave=()=>drop.classList.remove('drag');
-  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('drag');const n=await poolAddFiles(e.dataTransfer.files);if(n){toast(n+' added to your content');rerenderCal();}else toast('Nothing added — drop photo or video files (not a folder). HEIC & MOV are fine.');};
+  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('drag');const n=await poolAddFiles(e.dataTransfer.files,'');if(n){toast(n+' added to your content');rerenderCal();}else toast('Nothing added — drop photo or video files (not a folder).');};
   add.appendChild(drop);
+  // clear, separate upload options — before/after stays in its own group
+  const mkUp=(label,accept,folder,after)=>{
+    const b=el('button','btn-set',label);b.style.cssText='margin:10px 8px 0 0';
+    const i=el('input');i.type='file';i.accept=accept;i.multiple=true;i.className='hidden';
+    i.onchange=async e=>{const had=e.target.files&&e.target.files.length;const n=await poolAddFiles(e.target.files,folder);i.value='';if(n){toast(n+(folder?' before/after photo'+(n>1?'s':'')+' added — kept separate ✓':' added to your content'));if(after)after();rerenderCal();}else if(had)toast('Pick the right file type (photos, or HEIC/MOV).');};
+    b.onclick=()=>i.click();
+    const w=el('span');w.style.cssText='display:inline-flex';w.appendChild(b);w.appendChild(i);return w;
+  };
+  const btnrow=el('div');btnrow.style.cssText='display:flex;flex-wrap:wrap;align-items:center';
+  btnrow.appendChild(mkUp('📷 Upload photos','image/*,.heic,.heif','',null));
+  btnrow.appendChild(mkUp('🔀 Upload before/after','image/*,.heic,.heif','Before & After',()=>{POOL_SRC='Before & After';POOL_GROUP='job';}));
+  btnrow.appendChild(mkUp('🎬 Upload video','video/*,.mov','',null));
+  add.appendChild(btnrow);
+  // optional: Google Drive bulk import (tucked small)
   if(ST.driveConnected){
-    const gd=el('button','btn-set','🔄 Sync Google Drive now');gd.style.marginTop='10px';
+    add.appendChild(el('div','muted',ST.driveNeedsReconnect?'⚠️ Google sign-in expired — tap Sync to reconnect.':'Optional — bulk-import from your Google Drive folder:')).style.cssText='font-size:11.5px;margin-top:16px';
+    const gd=el('button','btn-set','🔄 Sync Google Drive');gd.style.cssText='margin-top:4px;font-size:12.5px;padding:6px 10px';
     gd.onclick=()=>gdSyncNow(true).then(()=>gdStartPolling());
     add.appendChild(gd);
-    const scan=el('button','btn-set','🔍 Scan for before/after grouping');scan.style.cssText='margin:10px 0 0 8px';
-    scan.onclick=()=>gdScan();
-    add.appendChild(scan);
-    add.appendChild(el('div','muted',ST.driveNeedsReconnect?`⚠️ Google sign-in expired — tap “Sync Google Drive now” above to reconnect. New Drive photos won’t appear until you do.`:`🟢 Google Drive connected — tap Sync to pull new content; it keeps auto-syncing while this stays open.`)).style.cssText='font-size:12px;margin-top:8px';
   }else{
-    const gd=el('button','btn-set','🟢 Connect Google Drive — auto-sync new content');gd.style.marginTop='10px';
+    add.appendChild(el('div','muted','Optional — connect Google Drive to bulk-import a folder:')).style.cssText='font-size:11.5px;margin-top:16px';
+    const gd=el('button','btn-set','🟢 Connect Google Drive');gd.style.cssText='margin-top:4px;font-size:12.5px;padding:6px 10px';
     gd.onclick=()=>gdConnect();
     add.appendChild(gd);
   }
