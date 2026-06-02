@@ -683,3 +683,7 @@ textarea.cmp-in{resize:vertical}
 .seochk:hover{background:var(--bg)}
 .seochk.on{color:var(--muted);text-decoration:line-through}
 .seochk input{margin-top:2px;width:16px;height:16px;flex:0 0 auto;accent-color:var(--orange)}
+
+/* ---- SEO builder read-only brief view ---- */
+.robox{background:var(--bg);border:1px solid var(--line2);border-radius:9px;padding:9px 11px;font-size:13.5px;color:var(--ink2);white-space:pre-wrap;line-height:1.5}
+.meddl{position:absolute;right:5px;bottom:5px;background:#0f2444cc;color:#fff;font-size:11px;width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center}

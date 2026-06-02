@@ -2251,9 +2251,15 @@ function seoPB(){ if(!ST.pb||typeof ST.pb!=='object')ST.pb={}; return ST.pb; }
 function seoPbStep(id){ const pb=seoPB(); if(!pb[id]||typeof pb[id]!=='object')pb[id]={tasks:{},note:''}; if(!pb[id].tasks)pb[id].tasks={}; return pb[id]; }
 function seoBlogsDone(){ return seoBlogs().filter(b=>b.status==='done').length; }
 function seoPbProgress(){ let t=0,d=0; SEO_PLAYBOOK.forEach(s=>{ const st=seoPbStep(s.id); s.tasks.forEach((_,i)=>{t++; if(st.tasks[i])d++;}); }); return t?Math.round(d/t*100):0; }
+/* the build-side view (Bogdan = editor): receives briefs + works the plan, doesn't author content.
+   owner can preview a teammate via the top-bar dropdown. */
+function seoIsBuilder(){ const me=curUser(); const eff=(me&&me.perm==='owner')?userById(S.role):me; return !!(eff&&eff.perm==='editor'); }
 function viewSeoDashboard(v){
   if(!Array.isArray(ST.blogs))ST.blogs=[];
-  v.appendChild(el('div','page-head',`<h2>SEO — 90-Day Plan</h2><p>${esc(SEO_TARGET)}</p>`));
+  const builder=seoIsBuilder();
+  v.appendChild(el('div','page-head', builder
+    ? `<h2>Your Build Queue</h2><p>Everything Sebastian hands you lives here. Work the plan top to bottom, build each brief, and mark it done.</p>`
+    : `<h2>SEO — 90-Day Plan</h2><p>${esc(SEO_TARGET)}</p>`));
   const done=seoBlogsDone(), pbPct=seoPbProgress();
   const prog=el('div','card pad');prog.style.marginTop='4px';
   prog.innerHTML=`<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center">
@@ -2285,16 +2291,15 @@ function viewSeoDashboard(v){
   v.appendChild(pbCard);
   // ---- CONTENT HAND-OFF (blog briefs) ----
   const handoff=el('div','card pad');handoff.style.marginTop='12px';
-  handoff.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📁</div><div><h3>Blog briefs for the builder</h3><small>Each blog is a folder: topic, town, keyword, your notes + the photos. Bogdan builds from these.</small></div></div>`;
-  const addBtn=el('button','btn-set primary','＋ New blog brief');addBtn.onclick=()=>openBlogEditor(null,true);
-  handoff.appendChild(addBtn);
+  handoff.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📁</div><div><h3>${builder?'Blog briefs to build':'Blog briefs for the builder'}</h3><small>${builder?'Open each one for the topic, keyword, notes + photos to download. Mark it Building → Done as you go.':'Each blog is a folder: topic, town, keyword, your notes + the photos. Bogdan builds from these.'}</small></div></div>`;
+  if(!builder){ const addBtn=el('button','btn-set primary','＋ New blog brief');addBtn.onclick=()=>openBlogEditor(null,true);handoff.appendChild(addBtn); }
   const blogs=seoBlogs().slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  if(!blogs.length){ handoff.appendChild(el('p','muted','No blog briefs yet. Tap “＋ New blog brief” to hand Bogdan his first one.')); }
-  else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b)));handoff.appendChild(list); }
+  if(!blogs.length){ handoff.appendChild(el('p','muted', builder?'Nothing to build yet — Sebastian hasn’t added a brief.':'No blog briefs yet. Tap “＋ New blog brief” to hand Bogdan his first one.')); }
+  else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b,builder)));handoff.appendChild(list); }
   v.appendChild(handoff);
 }
 function seoStatusPill(s){const m={todo:['To do','draft'],building:['Building','approved'],done:['Done','posted']}[s||'todo']||['To do','draft'];return `<span class="pst ${m[1]}">${m[0]}</span>`;}
-function seoBlogCard(b){
+function seoBlogCard(b,builderMode){
   const card=el('div','postcard');card.style.position='relative';
   const mm=b.media||[];
   card.innerHTML=`<div class="pcimg"><img alt="" style="display:none"><span class="pcph">✍️</span>${mm.length?`<span class="pccount">📎 ${mm.length}</span>`:''}</div>
@@ -2304,10 +2309,36 @@ function seoBlogCard(b){
       <div class="pccap">${b.keyword?'🔑 '+esc(b.keyword):'<span class="muted">No keyword yet</span>'}</div>
     </div>`;
   if(mm[0])thumbInto(card.querySelector('img'),mm[0].id);
-  const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();render();toast('Brief deleted');}};
-  card.appendChild(rm);
-  card.onclick=()=>openBlogEditor(b,false);
+  if(!builderMode){ const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();render();toast('Brief deleted');}};card.appendChild(rm); }
+  card.onclick=()=>builderMode?openBlogBuilder(b):openBlogEditor(b,false);
   return card;
+}
+/* Bogdan's read-and-build view of a brief: read the content, download the photos,
+   set status + leave a note back to Sebastian. He doesn't author the brief itself. */
+function openBlogBuilder(blog){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>Build: ${esc(blog.title||'blog')}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');
+  const ro=(label,val)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+label+'</label>';const box2=el('div','robox',esc(val||'—'));f.appendChild(box2);return f;};
+  bd.appendChild(ro('Target town',blog.town));
+  bd.appendChild(ro('Target keyword',blog.keyword));
+  bd.appendChild(ro('Notes from Sebastian',blog.notes));
+  if((blog.media||[]).length){
+    const pf=el('div','cmp-field');pf.innerHTML='<label>Photos — tap to download</label>';
+    const grid=el('div','medgrid');
+    (blog.media||[]).forEach(m=>{const cell=el('div','medcell');cell.style.cursor='pointer';cell.title='Download';const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);cell.appendChild(el('span','meddl','⬇'));
+      cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();toast('Downloading '+(m.name||'photo'));}else toast('Photo not ready — try again in a moment');};
+      grid.appendChild(cell);});
+    pf.appendChild(grid);bd.appendChild(pf);
+  }
+  if((blog.links||[]).length){ const lf=el('div','cmp-field');lf.innerHTML='<label>Links</label>';(blog.links||[]).forEach(l=>{const a=el('a','',esc(l.url));a.href=l.url;a.target='_blank';a.style.cssText='display:block;font-size:12.5px;margin:2px 0;color:var(--orange)';lf.appendChild(a);});bd.appendChild(lf); }
+  const sf=el('div','cmp-field');sf.innerHTML='<label>Status</label>';const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((blog.status||'todo')===val)o.selected=true;ss.appendChild(o)});sf.appendChild(ss);bd.appendChild(sf);
+  const bf=el('div','cmp-field');bf.innerHTML='<label>Your note back to Sebastian <span class="muted" style="font-weight:600">— questions / status</span></label>';const bn=el('textarea','cmp-in');bn.rows=2;bn.value=blog.builderNote||'';bf.appendChild(bn);bd.appendChild(bf);
+  const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){arr[i].status=ss.value;arr[i].builderNote=bn.value;ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
+  foot.appendChild(save);bd.appendChild(foot);
 }
 function openBlogEditor(blog,isNew){
   const b = isNew ? {id:'blog_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),title:'',town:SOC_TOWNS[0],keyword:'',notes:'',links:[],media:[],status:'todo',builderNote:'',createdAt:Date.now()} : Object.assign({},blog);
