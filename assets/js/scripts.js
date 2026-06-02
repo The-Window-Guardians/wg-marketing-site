@@ -3043,10 +3043,35 @@ function viewRuthGuide(v){
   // posting tips
   v.appendChild(ruthTipsCard());
 }
+/* content-dependency badge for a playbook step — shows if Sebastian still owes content */
+function seoContentBadge(stepId){
+  if(stepId==='gbp'){const n=seoMediaPool().length;return n>=1?`<span class="cb ok">📷 photos in (${n})</span>`:`<span class="cb wait">📷 needs job photos</span>`;}
+  if(stepId==='towns'){const tot=SOC_TOWNS.length;const have=Object.keys(seoTownFacts()).filter(t=>(seoTownFacts()[t]||'').trim()).length;return have>=tot?`<span class="cb ok">🏘️ all ${tot} town details in</span>`:`<span class="cb wait">🏘️ town details ${have}/${tot}</span>`;}
+  if(stepId==='blogs'){const have=seoBlogs().length;return have>=12?`<span class="cb ok">✍️ 12 briefs in</span>`:`<span class="cb wait">✍️ briefs ${have}/12</span>`;}
+  return '<span class="cb none">Bogdan only · no content needed</span>';
+}
+/* birds-eye: every task top-to-bottom, each with a provided/needed badge. Read-only reference;
+   the actual check-offs live on Home so the two never fight over state. */
+function seoScopeSection(){
+  const wrap=el('div');
+  wrap.appendChild(el('div','nav-sec','📋 Full scope — every task (work top to bottom)'));
+  const intro=el('div');intro.style.cssText='margin:0 0 8px';intro.innerHTML='<p class="muted" style="font-size:13px">The whole job at a glance. The badge shows whether the contributor still owes content for that step. Check things off on the <b>Home</b> tab.</p>';
+  wrap.appendChild(intro);
+  SEO_PLAYBOOK.forEach(step=>{
+    const st=seoPbStep(step.id);
+    const doneN=step.tasks.filter((_,i)=>st.tasks[i]).length, all=doneN===step.tasks.length;
+    const dd=el('details','guide');
+    dd.innerHTML=`<summary><div class="gi" style="background:${all?'var(--green-soft)':'var(--blue-soft)'}">${step.icon}</div><div><div class="gt">${esc(step.title)} ${seoContentBadge(step.id)}</div><div class="gd">${esc(step.sub)}</div></div><span class="num">${doneN}/${step.tasks.length}</span></summary>
+      <div class="guide-body">${step.tasks.map((t,i)=>`<div class="chk"><span class="b">${st.tasks[i]?'✓':'○'}</span><span style="${st.tasks[i]?'color:var(--muted);text-decoration:line-through':''}">${esc(t)}</span></div>`).join('')}</div>`;
+    wrap.appendChild(dd);
+  });
+  return wrap;
+}
 function viewGuides(v){
   if(activeProgram()==='social'&&isPoster())return viewRuthGuide(v);
   if(activeProgram()==='social')return viewSocialGuides(v);
-  v.appendChild(el('div','page-head',`<h2>Guides & Playbooks</h2><p>Keep these open while you build. The blog guide is the weekly engine; the 8 reference cards are the "what each kind of SEO does, and what to ignore" library from your reference guide.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Guide</h2><p>Your full task list is right up top — every step, with a badge showing what content the contributor still owes. Below it: the blog-writing playbook, the page-fix sheet, and a background library explaining each type of SEO.</p>`));
+  v.appendChild(seoScopeSection());
   const g=BLOG_GUIDE;
   const d=el('details','guide');d.open=true;
   d.innerHTML=`<summary><div class="gi" style="background:${g.bg}">${g.icon}</div><div><div class="gt">${esc(g.title)}</div><div class="gd">${esc(g.desc)}</div></div><span class="num">START HERE</span></summary>
@@ -3060,9 +3085,8 @@ function viewGuides(v){
 
   const fs=FIX_SHEET;
   const fd=el('details','guide');
-  fd.innerHTML=`<summary><div class="gi" style="background:${fs.bg}">${fs.icon}</div><div><div class="gt">${esc(fs.title)}</div><div class="gd">${esc(fs.desc)}</div></div><span class="num">FOR BOGDAN · DUE WK 2</span></summary>
+  fd.innerHTML=`<summary><div class="gi" style="background:${fs.bg}">${fs.icon}</div><div><div class="gt">${esc(fs.title)}</div><div class="gd">${esc(fs.desc)}</div></div><span class="num">FOR BOGDAN · REFERENCE</span></summary>
     <div class="guide-body">
-      <div class="sched-strip"><span class="sch-ico">📅</span><div><b>On the schedule — this is a timed task.</b><div class="sch-line"><span class="sch-pill prep">Week 1 · Jun 2</span> prep: export current titles + metas &nbsp;→&nbsp; <span class="sch-pill due">Week 2 · due Jun 9</span> main pass: rewrite every page below &nbsp;→&nbsp; <span class="sch-pill">Week 3 · Jun 16</span> schema can trail. Mirrors the Bogdan tasks in Weeks 1–3 of the plan.</div></div></div>
       <p style="color:var(--ink2)">${esc(fs.intro)}</p>
       <h6>Fix these first — under 15 minutes total</h6>${fs.critical.map(x=>`<div class="chk"><span class="b">✓</span><span>${esc(x)}</span></div>`).join('')}
       <h6>Page-by-page rewrites (${fs.pages.length} pages)</h6>
@@ -3074,7 +3098,7 @@ function viewGuides(v){
     </div>`;
   v.appendChild(fd);
 
-  v.appendChild(el('div','nav-sec','The 8 SEO categories — reference library'));
+  v.appendChild(el('div','nav-sec','SEO background — what each type of SEO is (reference only, not your task list)'));
   REF_CARDS.forEach(c=>{
     const dd=el('details','guide');
     dd.innerHTML=`<summary><div class="gi" style="background:${c.bg}">${c.icon}</div><div><div class="gt">${esc(c.title)}</div><div class="gd">${esc(c.line)}</div></div><span class="num">${c.num} / 08</span></summary>
