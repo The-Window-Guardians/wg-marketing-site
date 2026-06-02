@@ -1234,23 +1234,25 @@ async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   if(files.some(isHeic))toast('iPhone photos — preparing…');
-  const pool=socPool(); let localVid=false;
+  const pool=socPool(); let localVid=false, imgFailed=0;
   for(const raw of files){
     const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
     if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
     if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
       try{
         const geo=await readGps(raw);            // location BEFORE compressing (exifr reads HEIC + JPEG)
-        const norm=await normalizeImage(raw);    // HEIC -> JPEG if needed
-        const dataUrl=await imgToWebp(norm);     // Full-HD WebP @80%
+        const norm=await normalizeImage(raw);    // HEIC -> JPEG if the browser needs it
+        const dataUrl=await imgToWebp(norm);     // small webp (or jpeg on iOS) that fits Firestore
+        const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
+        const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
         const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-        const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.webp';
-        await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:'image/webp',dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
-        const item={id:id,name:name,type:'image/webp',status:'available',cloud:true,addedAt:Date.now()};
+        const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
+        await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+        const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
         if(geo){item.lat=geo.lat;item.lng=geo.lng;}
         if(folder)item.folder=folder;            // e.g. 'Before & After' — keeps it in its own group
         pool.push(item); VTHUMB[id]=dataUrl;     // cache so it shows instantly
-      }catch(e){ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }
+      }catch(e){ imgFailed++; const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }
     } else { // video (or offline image) -> local
       const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
       const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
@@ -1261,6 +1263,7 @@ async function poolAddFiles(fileList,folder){
   }
   ST.pool=pool;commit();
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
+  if(imgFailed)setTimeout(function(){toast('⚠️ '+imgFailed+' photo'+(imgFailed>1?'s':'')+' couldn’t be shared to the team (saved on this device only). Try again, or use a smaller photo.')},900);
   return files.length;
 }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
@@ -1842,19 +1845,37 @@ function fbStateSave(){
 }
 /* ---- Handoff PHOTOS that sync to the teammate: compress to Full-HD WebP @80%, store
    each as its own small Firestore doc (well under the 1MB doc limit). Free; no Storage. ---- */
+/* Does THIS browser actually encode WebP? iOS Safari historically does NOT — it
+   silently returns a (huge) PNG, which then blows past Firestore's 1MB doc limit.
+   So we detect it once and fall back to JPEG, which every iPhone encodes + compresses well. */
+var _webpOK=null;
+function canEncodeWebp(){
+  if(_webpOK!==null)return _webpOK;
+  try{var c=document.createElement('canvas');c.width=c.height=2;_webpOK=(c.toDataURL('image/webp').indexOf('data:image/webp')===0);}catch(e){_webpOK=false;}
+  return _webpOK;
+}
+/* Shrink + compress an image to a small dataURL that fits Firestore (under ~1MB).
+   Returns a webp dataURL where supported, otherwise jpeg. Despite the name it is the
+   single "make a shareable image" path used by both the pool and the SEO handoff. */
 function imgToWebp(file){
   return new Promise(function(resolve,reject){
     var url=URL.createObjectURL(file), img=new Image();
     img.onload=function(){
       try{
         var w=img.naturalWidth,h=img.naturalHeight,M=1920;
+        if(!w||!h){URL.revokeObjectURL(url);return reject(new Error('empty image'));}
         if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
-        var c=document.createElement('canvas');c.width=w;c.height=h;
-        c.getContext('2d').drawImage(img,0,0,w,h);
-        var q=0.8, data=c.toDataURL('image/webp',q);
-        while(data.length>950000 && q>0.45){ q-=0.15; data=c.toDataURL('image/webp',q); } // keep under the Firestore 1MB doc cap
-        if(data.length>950000){ var s=1280/Math.max(w,h),c2=document.createElement('canvas');c2.width=Math.round(w*s);c2.height=Math.round(h*s);c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);data=c2.toDataURL('image/webp',0.75); }
-        URL.revokeObjectURL(url); resolve(data);
+        var mime=canEncodeWebp()?'image/webp':'image/jpeg';
+        var enc=function(cw,ch,q){var c=document.createElement('canvas');c.width=cw;c.height=ch;var ctx=c.getContext('2d');
+          if(mime==='image/jpeg'){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,cw,ch);} // jpeg has no alpha — white, not black
+          ctx.drawImage(img,0,0,cw,ch);return c.toDataURL(mime,q);};
+        var q=0.82, data=enc(w,h,q);
+        while(data.length>950000 && q>0.4){ q-=0.12; data=enc(w,h,q); }          // 1) drop quality
+        var s=1;
+        while(data.length>950000 && s>0.35){ s-=0.2; data=enc(Math.round(w*s),Math.round(h*s),0.7); } // 2) shrink dimensions
+        URL.revokeObjectURL(url);
+        if(data.length>1010000) return reject(new Error('still too large for cloud'));
+        resolve(data);
       }catch(e){URL.revokeObjectURL(url);reject(e);}
     };
     img.onerror=function(){URL.revokeObjectURL(url);reject(new Error('decode failed'));};
