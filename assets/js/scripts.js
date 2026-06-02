@@ -3971,11 +3971,24 @@ function renderGate(){
     </div>`;
     const pw=$('#gatePw'); if(pw)pw.focus();
     const enter=()=>{S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();};
-    const go=async()=>{ const val=($('#gatePw')||{}).value||'';
+    const go=async()=>{ const val=($('#gatePw')||{}).value||''; const btn=$('#gateGo');
       if(window.WG_FB_READY){ // LOCKED: the app requires a real Firebase login
         if(!u.email){ toast('Your login isn’t set up yet — ask Sebastian to add your email in Team & logins.'); return; }
-        try{ await WG_AUTH.signInWithEmailAndPassword(u.email,val); /* onAuthStateChanged completes the sign-in */ }
-        catch(e){ toast('Incorrect password — try again.'); }
+        if(!val){ toast('Enter your password first.'); const f=$('#gatePw'); if(f)f.focus(); return; }
+        if(btn&&btn.disabled)return;                    // already signing in — ignore double-taps (mobile)
+        if(btn){btn.disabled=true;btn.textContent='Signing in…';}
+        try{ await WG_AUTH.signInWithEmailAndPassword(String(u.email).trim(),val); /* onAuthStateChanged finishes + hides the gate */ }
+        catch(e){ const code=(e&&e.code)||'';
+          let msg='Couldn’t sign in — try again.';
+          if(code==='auth/wrong-password'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials')msg='Incorrect password — try again.';
+          else if(code==='auth/user-not-found')msg='No login set up for this name yet — ask Sebastian.';
+          else if(code==='auth/invalid-email')msg='The login email looks wrong — ask Sebastian to fix it.';
+          else if(code==='auth/too-many-requests')msg='Too many tries — wait a minute, then try again.';
+          else if(code==='auth/network-request-failed')msg='No connection — check your internet and try again.';
+          else if(code==='auth/user-disabled')msg='This login is turned off — ask Sebastian.';
+          toast(msg);
+          if(btn){btn.disabled=false;btn.textContent='Log in';}
+        }
         return;
       }
       if(!u.pass||hashPw(val)===u.pass){ enter(); }   // local-only mode (Firebase not configured)
@@ -4135,8 +4148,12 @@ if(window.WG_FB_READY){
   try{ WG_AUTH.onAuthStateChanged(function(u){
     if(u){
       var acct=(S.users||[]).find(function(x){return x.email&&x.email.toLowerCase()===String(u.email||'').toLowerCase();});
-      if(acct){ S.uid=acct.id; S.role=PEOPLE[acct.id]?acct.id:'all'; }
-      commit(); fbSyncStart(); enterApp();
+      if(acct){ S.uid=acct.id; S.role=PEOPLE[acct.id]?acct.id:'all'; commit(); fbSyncStart(); enterApp(); }
+      else { // signed in, but this email has no team account — don't drop into a broken half-logged-in state
+        try{WG_AUTH.signOut()}catch(e){}
+        S.uid=null; var g2=$('#gate'); if(g2)g2.classList.remove('hidden'); var ap2=$('#app'); if(ap2)ap2.style.display='none'; renderGate();
+        toast('Signed in, but there’s no team account for '+(u.email||'this email')+'. Ask Sebastian to add it in Team & logins.');
+      }
     } else {
       _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} // stop live sync on sign-out
       S.uid=null;
