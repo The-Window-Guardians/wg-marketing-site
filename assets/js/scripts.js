@@ -3305,6 +3305,29 @@ async function openMediaPreview(mediaId,name){
   }catch(e){body.innerHTML='<div class="muted">Preview unavailable.</div>';}
 }
 function statusPill(s){const m={draft:['Draft','draft'],approved:['Ready','approved'],posted:['Posted','posted']}[s]||['Draft','draft'];return `<span class="pst ${m[1]}">${m[0]}</span>`}
+/* Themed confirm dialog (replaces the generic browser confirm) — matches the app's
+   card/modal look. Returns a Promise<boolean>. Stacks above the composer. */
+function uiConfirm(message, opts){
+  opts = opts||{};
+  return new Promise(function(resolve){
+    const ov=el('div','conf-ov');
+    const box=el('div','conf-box');
+    box.innerHTML=`<div class="conf-title">${esc(opts.title||'Are you sure?')}</div><div class="conf-body">${esc(message||'')}</div>`;
+    const foot=el('div','conf-foot');
+    const cancel=el('button','btn-set',opts.cancelText||'Cancel');
+    const ok=el('button','btn-set '+(opts.danger?'danger':'primary'),opts.confirmText||'Confirm');
+    foot.appendChild(cancel);foot.appendChild(ok);box.appendChild(foot);
+    ov.appendChild(box);document.body.appendChild(ov);
+    let done=false;
+    const close=(val)=>{ if(done)return; done=true; document.removeEventListener('keydown',onKey); ov.remove(); resolve(val); };
+    function onKey(e){ if(e.key==='Escape')close(false); else if(e.key==='Enter')close(true); }
+    cancel.onclick=()=>close(false);
+    ok.onclick=()=>close(true);
+    ov.onclick=e=>{ if(e.target===ov)close(false); };
+    document.addEventListener('keydown',onKey);
+    setTimeout(()=>{try{ok.focus()}catch(e){}},30);
+  });
+}
 function postCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
   const card=el('div','postcard '+p.status);
@@ -3321,10 +3344,10 @@ function postCard(p){
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
   card.style.position='relative';
   const rm=el('button','pcdel','✕');rm.title='Remove this post';
-  rm.onclick=(e)=>{e.stopPropagation();
-    if(confirm('Remove this post?'+(p.status==='approved'?' It leaves your posts AND the posting queue.':' It leaves your posts.')+'\n(Photos stay in your content.)')){
-      poolReleaseForPost(p); delPostRec(p.id); rerenderCal(); toast('Post removed');
-    }};
+  rm.onclick=async(e)=>{e.stopPropagation();
+    const ok=await uiConfirm((p.status==='approved'?'It leaves your posts AND the posting queue.':'It leaves your posts.')+' The photos stay safe in your content.',{title:'Remove this post?',confirmText:'Remove',danger:true});
+    if(ok){ poolReleaseForPost(p); delPostRec(p.id); rerenderCal(); toast('Post removed — photos back in your content'); }
+  };
   card.appendChild(rm);
   card.onclick=()=>openComposer(p.id);
   return card;
@@ -3710,7 +3733,7 @@ function openComposer(idOrPost,isNew){
 
   // footer
   const foot=el('div','cmp-foot');
-  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this post? It’s removed everywhere (drafts + queue); the photos go back to your content.')){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal();toast('Post deleted — photos back in your content')}};foot.appendChild(del);}
+  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('It’s removed everywhere (drafts + queue). The photos go back to your content so you can reuse them.',{title:'Delete this post?',confirmText:'Delete',danger:true});if(ok){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal();toast('Post deleted — photos back in your content')}};foot.appendChild(del);}
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
   const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
   const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve & send to queue');

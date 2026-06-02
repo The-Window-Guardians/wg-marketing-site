@@ -668,3 +668,12 @@ textarea.cmp-in{resize:vertical}
 /* ---- Remove (✕) button on Your-posts cards ---- */
 .pcdel{position:absolute;top:7px;right:7px;width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--line2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0b1b3a26;padding:0}
 .pcdel:hover{background:var(--red);border-color:var(--red);color:#fff}
+
+/* ---- Themed confirm dialog (matches the app, replaces browser confirm) ---- */
+.conf-ov{position:fixed;inset:0;background:rgba(8,16,32,.55);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:100000;padding:20px}
+.conf-box{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 70px #0b1b3a66;max-width:430px;width:100%;padding:22px 22px 20px;animation:confpop .14s ease}
+@keyframes confpop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+.conf-title{font-size:18px;font-weight:800;color:var(--ink);margin:0 0 8px}
+.conf-body{font-size:14px;color:var(--muted);line-height:1.55}
+.conf-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.conf-foot .btn-set{min-width:96px;justify-content:center}
