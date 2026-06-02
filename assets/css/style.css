@@ -711,3 +711,15 @@ textarea.cmp-in{resize:vertical}
 .seostart .tbtn{margin-left:6px}
 .si-date{flex:0 0 auto;background:var(--bg);border:1px solid var(--line2);border-radius:8px;padding:5px 8px;font-size:13px;cursor:pointer;line-height:1}
 .si-date:hover{border-color:var(--orange)}
+
+/* ---- SEO media tagging + select-to-brief ---- */
+.medcell.sel{outline:3px solid var(--orange);outline-offset:-3px;border-radius:9px}
+.medselck{position:absolute;left:5px;top:5px;width:21px;height:21px;border-radius:6px;background:#fff;border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;color:transparent;z-index:2}
+.medcell.sel .medselck{background:var(--orange);border-color:var(--orange);color:#fff}
+.medtags{position:absolute;left:4px;right:4px;bottom:4px;display:flex;gap:3px;flex-wrap:wrap;pointer-events:none}
+.medtag{font-size:9px;font-weight:800;color:#fff;border-radius:4px;padding:1px 5px;background:#0f2444cc;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.medtag.before{background:#2f6df0}.medtag.after{background:var(--orange)}
+.tagrow{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.tagrow:first-of-type{border-top:0}
+.tagthumb{width:64px;height:64px;object-fit:cover;border-radius:9px;background:#eef1f6;flex:0 0 auto}
+.tagfields{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}

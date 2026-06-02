@@ -2279,10 +2279,13 @@ function seoStart(){ if(!ST.seoStart){ST.seoStart=Date.now();commit();} return S
 function seoDueTs(it){ const o=(ST.dueOverride&&ST.dueOverride[it.id])||0; return o||(seoStart()+(it.day||30)*86400000); }
 function fmtShort(ts){ try{return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});}catch(e){return '';} }
 function seoTownFacts(){ if(!ST.townFacts||typeof ST.townFacts!=='object')ST.townFacts={}; return ST.townFacts; }
+/* a town's details now hold text + photos + links (migrates an old plain-string value) */
+function townFact(town){ const all=seoTownFacts(); let t=all[town]; if(typeof t==='string')t={text:t,media:[],links:[]}; if(!t||typeof t!=='object')t={text:'',media:[],links:[]}; if(typeof t.text!=='string')t.text=''; if(!Array.isArray(t.media))t.media=[]; if(!Array.isArray(t.links))t.links=[]; all[town]=t; return t; }
+function townProvided(town){ const t=townFact(town); return !!(t.text.trim()||t.media.length); }
 function seoMediaPool(){ if(!Array.isArray(ST.seoMedia))ST.seoMedia=[]; return ST.seoMedia; }
 function seoAllItems(){ return SEO_PLAN.reduce((a,mo)=>a.concat(mo.items.map(it=>Object.assign({month:mo.m},it))),[]); }
 function seoItemProvided(it){
-  if(it.type==='town') return !!((seoTownFacts()[it.town]||'').trim());
+  if(it.type==='town') return townProvided(it.town);
   if(it.type==='media') return seoMediaPool().length >= (it.target||1);
   if(it.type==='blog') return seoBlogs().length >= (it.target||1);
   return false;
@@ -2384,7 +2387,7 @@ function viewSeoBuilder(v){
 function viewSeoProgress(v){
   v.appendChild(el('div','page-head',`<h2>Progress</h2><p>${esc(SEO_TARGET)}</p>`));
   const blogs=seoBlogsDone(), pb=seoPbProgress();
-  const towns=Object.keys(seoTownFacts()).filter(t=>(seoTownFacts()[t]||'').trim()).length;
+  const towns=SOC_TOWNS.filter(townProvided).length;
   const photos=seoMediaPool().length;
   const grid=el('div','grid cols-3');grid.style.marginTop='4px';
   const stat=(n,of,lab)=>{const c=el('div','card pad kpi');c.innerHTML=`<div class="eyebrow" style="color:var(--faint)">${lab}</div><div style="margin:4px 0 8px"><b class="num">${n}</b>${of?` <span class="of">/ ${of}</span>`:''}</div>`;return c;};
@@ -2399,17 +2402,34 @@ function viewSeoProgress(v){
 }
 function openTownFacts(town,builder){
   closeComposer();
-  const facts=seoTownFacts();
+  const tf=townFact(town);
   const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
   box.innerHTML=`<div class="cmp-head"><h3>${esc(town)} — local details</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
   const bd=$('#cmpBody');
-  if(builder){ const f=el('div','cmp-field');f.innerHTML='<label>Local details from Sebastian</label>';f.appendChild(el('div','robox',esc(facts[town]||'— not provided yet —')));bd.appendChild(f); return; }
+  if(builder){
+    const f=el('div','cmp-field');f.innerHTML='<label>Local details from Sebastian</label>';f.appendChild(el('div','robox',esc(tf.text||'— not provided yet —')));bd.appendChild(f);
+    if(tf.media.length){const pf=el('div','cmp-field');pf.innerHTML='<label>Photos — tap to download</label>';const g=el('div','medgrid');tf.media.forEach(m=>{const cell=el('div','medcell');cell.style.cursor='pointer';const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);cell.appendChild(el('span','meddl','⬇'));cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||'photo.webp';a.click();}};g.appendChild(cell);});pf.appendChild(g);bd.appendChild(pf);}
+    if(tf.links.length){const lf=el('div','cmp-field');lf.innerHTML='<label>Links</label>';tf.links.forEach(l=>{const a=el('a','',esc(l.url));a.href=l.url;a.target='_blank';a.style.cssText='display:block;font-size:12.5px;margin:2px 0;color:var(--orange)';lf.appendChild(a);});bd.appendChild(lf);}
+    return;
+  }
   const f=el('div','cmp-field');f.innerHTML=`<label>3–5 real, local things about ${esc(town)} <span class="muted" style="font-weight:600">— neighborhoods, landmarks, what the homes are like, why folks there call you</span></label>`;
-  const ta=el('textarea','cmp-in');ta.rows=6;ta.value=facts[town]||'';ta.placeholder='e.g. lots of 1980s colonials near Flowers Mill; older windows fogging up; close to Core Creek Park; customers love same-week installs…';
+  const ta=el('textarea','cmp-in');ta.rows=5;ta.value=tf.text;ta.placeholder='e.g. lots of 1980s colonials near Flowers Mill; older windows fogging up; close to Core Creek Park; customers love same-week installs…';ta.oninput=()=>tf.text=ta.value;
   f.appendChild(ta);bd.appendChild(f);
+  // optional photos
+  const pf=el('div','cmp-field');pf.innerHTML='<label>Photos <span class="muted" style="font-weight:600">— optional: a couple street/job shots from this town</span></label>';const media=el('div','mediabox');
+  const drawM=()=>{ media.innerHTML='';const g=el('div','medgrid');
+    tf.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}tf.media.splice(i,1);drawM();};cell.appendChild(img);cell.appendChild(x);g.appendChild(cell);});
+    const drop=el('label','meddrop'+(tf.media.length?' small':''),tf.media.length?'＋ Add more':'📷 Add photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
+    inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing…');for(const fl of files){try{const ref=await hfAdd('town_'+town,fl);tf.media.push(ref);}catch(_){}}drawM();};
+    drop.appendChild(inp);g.appendChild(drop);media.appendChild(g); };
+  drawM();pf.appendChild(media);bd.appendChild(pf);
+  // optional links
+  const lf=el('div','cmp-field');lf.innerHTML='<label>Links <span class="muted" style="font-weight:600">— optional</span></label>';const lwrap=el('div');const drawL=()=>{lwrap.innerHTML='';tf.links.forEach((l,i)=>{const row=el('div');row.style.cssText='display:flex;gap:8px;align-items:center;margin:4px 0';row.innerHTML='<a href="'+esc(l.url)+'" target="_blank" style="font-size:12.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(l.url)+'</a>';const x=el('button','tbtn','✕');x.onclick=()=>{tf.links.splice(i,1);drawL();};row.appendChild(x);lwrap.appendChild(row);});};drawL();
+  const lrow=el('div');lrow.style.cssText='display:flex;gap:8px;margin-top:4px';const li=el('input','cmp-in');li.placeholder='https://…';const lb=el('button','btn-set','Add');lb.onclick=()=>{const u=li.value.trim();if(!u)return;if(!/^https?:\/\//.test(u)){toast('Start with http');return;}tf.links.push({url:u});li.value='';drawL();};lrow.appendChild(li);lrow.appendChild(lb);
+  lf.appendChild(lwrap);lf.appendChild(lrow);bd.appendChild(lf);
   const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save details');save.onclick=()=>{seoTownFacts()[town]=ta.value;commit();closeComposer();render();toast(ta.value.trim()?'Saved — Bogdan has it':'Saved');};
+  const save=el('button','btn-set primary','Save details');save.onclick=()=>{commit();closeComposer();render();toast(townProvided(town)?'Saved — Bogdan has it':'Saved');};
   foot.appendChild(save);bd.appendChild(foot);
 }
 function openSeoMedia(builder){
@@ -2418,18 +2438,50 @@ function openSeoMedia(builder){
   box.innerHTML=`<div class="cmp-head"><h3>Job photos for Bogdan</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
   const bd=$('#cmpBody');
-  if(!builder){const h=el('div','muted','General job photos Bogdan can reuse on any page or your Google profile. Photos for one specific blog go on that blog brief instead.');h.style.cssText='font-size:12.5px;margin-bottom:8px';bd.appendChild(h);}
-  const f=el('div','cmp-field');f.innerHTML='<label>'+(builder?'Photos Sebastian uploaded — tap to download':'Drop your before/after + job photos here — Bogdan can use any of them')+'</label>';
+  if(!builder){const h=el('div','muted','General job photos Bogdan can reuse on any page or your Google profile. Tap a photo to tag it (town + before/after + a line of alt text); tick a few and turn them into a blog brief.');h.style.cssText='font-size:12.5px;margin-bottom:8px';bd.appendChild(h);}
+  const sel=new Set();
+  const f=el('div','cmp-field');f.innerHTML='<label>'+(builder?'Photos Sebastian uploaded — tap to download':'Your job photos — tap to tag')+'</label>';
   const grid=el('div','medgrid');f.appendChild(grid);bd.appendChild(f);
+  const makeBtn=el('button','btn-set primary','＋ Make a blog brief from selected');makeBtn.style.cssText='margin-top:10px;display:none';
+  const updateMake=()=>{makeBtn.style.display=sel.size?'inline-flex':'none';makeBtn.textContent='＋ Make a blog brief from '+sel.size+' selected';};
+  makeBtn.onclick=()=>{ const picks=seoMediaPool().filter(m=>sel.has(m.id)); if(!picks.length)return; const town=(picks.find(p=>p.town)||{}).town||SOC_TOWNS[0]; const desc=picks.map(p=>p.desc).filter(Boolean).join('; '); openBlogEditor({media:picks.map(p=>({id:p.id,name:p.name})),town:town,notes:desc?('Photos show: '+desc):''},true); };
   const draw=()=>{ grid.innerHTML='';
-    seoMediaPool().forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);
+    seoMediaPool().forEach((m)=>{const cell=el('div','medcell'+(sel.has(m.id)?' sel':''));const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);
+      if(m.role||m.town){const tags=el('div','medtags');if(m.role)tags.appendChild(el('span','medtag '+m.role,m.role==='before'?'BEFORE':'AFTER'));if(m.town)tags.appendChild(el('span','medtag',esc(m.town)));cell.appendChild(tags);}
       if(builder){cell.style.cursor='pointer';cell.title='Download';cell.appendChild(el('span','meddl','⬇'));cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();toast('Downloading');}else toast('Photo not ready yet');};}
-      else{const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}seoMediaPool().splice(i,1);commit();draw();};cell.appendChild(x);}
+      else{
+        const ck=el('span','medselck','✓');ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');updateMake();};cell.appendChild(ck);
+        const x=el('button','medx','✕');x.onclick=(e)=>{e.stopPropagation();try{hfDel(m.id)}catch(_){}sel.delete(m.id);const idx=seoMediaPool().findIndex(p=>p.id===m.id);if(idx>=0)seoMediaPool().splice(idx,1);commit();draw();updateMake();};cell.appendChild(x);
+        cell.style.cursor='pointer';cell.title='Tap to tag';cell.onclick=()=>openPhotoTags([m]);
+      }
       grid.appendChild(cell);});
     if(!builder){const drop=el('label','meddrop'+(seoMediaPool().length?' small':''),seoMediaPool().length?'＋ Add more':'📷 Upload job photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
-      inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing…');for(const fl of files){try{const ref=await hfAdd('seomedia',fl);seoMediaPool().push(ref);}catch(_){}}commit();draw();toast(files.length+' photo'+(files.length>1?'s':'')+' added');};
+      inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing…');const added=[];for(const fl of files){try{const ref=await hfAdd('seomedia',fl);ref.town='';ref.role='';ref.desc='';seoMediaPool().push(ref);added.push(ref);}catch(_){}}commit();draw();if(added.length)openPhotoTags(added);};
       drop.appendChild(inp);grid.appendChild(drop);} };
   draw();
+  if(!builder)bd.appendChild(makeBtn);
+}
+/* tag newly-added (or tapped) photos: town + before/after + a one-line description (= alt text for Bogdan) */
+function openPhotoTags(refs){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
+  box.innerHTML=`<div class="cmp-head"><h3>Tag ${refs.length} photo${refs.length>1?'s':''}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');
+  const hint=el('div','muted','Tag each so Bogdan knows the town, whether it’s a before or after, and gets ready-made alt text.');hint.style.cssText='font-size:12.5px;margin-bottom:8px';bd.appendChild(hint);
+  refs.forEach(m=>{
+    const card=el('div','tagrow');
+    const img=el('img','tagthumb');thumbInto(img,m.id);card.appendChild(img);
+    const fields=el('div','tagfields');
+    const ts=el('select','cmp-in');[['','(no town)']].concat(SOC_TOWNS.map(t=>[t,t])).forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((m.town||'')===val)o.selected=true;ts.appendChild(o)});ts.onchange=()=>m.town=ts.value;
+    const seg=el('div','seg');[['','—'],['before','Before'],['after','After']].forEach(([val,lab])=>{const bb=el('button','seg-b'+((m.role||'')===val?' on':''),lab);bb.onclick=()=>{m.role=val;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));bb.classList.add('on');};seg.appendChild(bb);});
+    const di=el('input','cmp-in');di.placeholder='One line: what does this show? (becomes alt text)';di.value=m.desc||'';di.oninput=()=>m.desc=di.value;
+    fields.appendChild(ts);fields.appendChild(seg);fields.appendChild(di);card.appendChild(fields);
+    bd.appendChild(card);
+  });
+  const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const save=el('button','btn-set primary','Save tags');save.onclick=()=>{commit();closeComposer();render();toast('Tagged — Bogdan has the context');};
+  foot.appendChild(save);bd.appendChild(foot);
 }
 function openSeoBlogs(builder){ if(!builder){ openBlogEditor(null,true); return; } const b=seoBlogs().find(x=>x.status!=='done')||seoBlogs()[0]; if(b)openBlogBuilder(b); else toast('No briefs provided yet'); }
 function __seoLegacyUnused(v){
@@ -2507,8 +2559,18 @@ function openBlogBuilder(blog){
   const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){arr[i].status=ss.value;arr[i].builderNote=bn.value;ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
   foot.appendChild(save);bd.appendChild(foot);
 }
+/* scripted "AI" suggestions — proven local-blog titles, keywords + a section outline */
+function seoSuggest(b){
+  const town=(b.town||'your town'), yr=(new Date()).getFullYear();
+  return {
+    titles:[`5 signs your ${town} home needs new windows`,`Window replacement in ${town}: what it really costs in ${yr}`,`Before & after: a ${town} window transformation`,`Why ${town} homeowners are upgrading to energy-efficient windows`],
+    keywords:[`window replacement ${town}`,`${town} window company`,`energy efficient windows ${town}`,`new windows ${town} cost`],
+    outline:[`Local hook — name ${town} + a common local problem (drafty 80s windows, fogging glass).`,`The job — the before/after, the product, how fast it went in.`,`Why it matters for ${town} homes specifically.`,`Simple cost + financing note.`,`Call to action — free in-home estimate + phone number.`]
+  };
+}
 function openBlogEditor(blog,isNew){
-  const b = isNew ? {id:'blog_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),title:'',town:SOC_TOWNS[0],keyword:'',notes:'',links:[],media:[],status:'todo',builderNote:'',createdAt:Date.now()} : Object.assign({},blog);
+  const base={id:'blog_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),title:'',town:SOC_TOWNS[0],keyword:'',notes:'',links:[],media:[],status:'todo',builderNote:'',createdAt:Date.now()};
+  const b = isNew ? Object.assign(base, blog||{}) : Object.assign({},blog);
   if(!Array.isArray(b.media))b.media=[]; if(!Array.isArray(b.links))b.links=[];
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');
@@ -2523,6 +2585,16 @@ function openBlogEditor(blog,isNew){
   SEO_KEYWORD_HINTS.forEach(h=>{const kw=h.replace('{town}',b.town||'your town');const c=el('button','sugopt',esc(kw));c.style.cssText='font-size:11.5px;padding:3px 9px';c.onclick=()=>{ki.value=kw;b.keyword=kw;};chips.appendChild(c);});
   kf.appendChild(chips);bd.appendChild(kf);
   const nf=field('Your notes / rough copy','tell Bogdan what to say — bullets are fine');const na=el('textarea','cmp-in');na.rows=4;na.value=b.notes;na.placeholder='e.g. full window job in Langhorne, customer hated the drafts, installed Okna, before/after photos attached…';na.oninput=()=>b.notes=na.value;nf.appendChild(na);bd.appendChild(nf);
+  // ✨ Suggest — proven title, keyword + outline (so a thin brief still ranks)
+  const sug=el('div','cmp-field');const sugBtn=el('button','btn-set ai-draft','✨ Suggest title, keyword & outline');const sugBox=el('div','sugbox');
+  sugBtn.onclick=()=>{ if(sugBox.dataset.open==='1'){sugBox.innerHTML='';sugBox.dataset.open='0';return;} sugBox.dataset.open='1';sugBox.innerHTML='';
+    const s=seoSuggest(b);
+    const lbl=el('div','muted','Tap a title or keyword to drop it in:');lbl.style.cssText='font-size:12px;margin:4px 0';sugBox.appendChild(lbl);
+    s.titles.forEach(t=>{const o=el('button','sugopt',esc(t));o.onclick=()=>{ti.value=t;b.title=t;toast('Title set');};sugBox.appendChild(o);});
+    s.keywords.forEach(k=>{const o=el('button','sugopt','🔑 '+esc(k));o.onclick=()=>{ki.value=k;b.keyword=k;toast('Keyword set');};sugBox.appendChild(o);});
+    const ob=el('button','sugopt','📝 Insert section outline into notes');ob.onclick=()=>{const ol=s.outline.map((x,i)=>(i+1)+'. '+x).join('\n');na.value=(na.value?na.value+'\n\n':'')+'Outline:\n'+ol;b.notes=na.value;toast('Outline added to notes');};sugBox.appendChild(ob);
+  };
+  sug.appendChild(sugBtn);sug.appendChild(sugBox);bd.appendChild(sug);
   const pf=field('Photos','before/after + job shots');const media=el('div','mediabox');
   const renderMedia=()=>{ media.innerHTML=''; const grid=el('div','medgrid');
     b.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}b.media.splice(i,1);renderMedia();};cell.appendChild(img);cell.appendChild(x);grid.appendChild(cell);});
@@ -3066,7 +3138,7 @@ function viewRuthGuide(v){
 /* content-dependency badge for a playbook step — shows if Sebastian still owes content */
 function seoContentBadge(stepId){
   if(stepId==='gbp'){const n=seoMediaPool().length;return n>=1?`<span class="cb ok">📷 photos in (${n})</span>`:`<span class="cb wait">📷 needs job photos</span>`;}
-  if(stepId==='towns'){const tot=SOC_TOWNS.length;const have=Object.keys(seoTownFacts()).filter(t=>(seoTownFacts()[t]||'').trim()).length;return have>=tot?`<span class="cb ok">🏘️ all ${tot} town details in</span>`:`<span class="cb wait">🏘️ town details ${have}/${tot}</span>`;}
+  if(stepId==='towns'){const tot=SOC_TOWNS.length;const have=SOC_TOWNS.filter(townProvided).length;return have>=tot?`<span class="cb ok">🏘️ all ${tot} town details in</span>`:`<span class="cb wait">🏘️ town details ${have}/${tot}</span>`;}
   if(stepId==='blogs'){const have=seoBlogs().length;return have>=12?`<span class="cb ok">✍️ 12 briefs in</span>`:`<span class="cb wait">✍️ briefs ${have}/12</span>`;}
   return '<span class="cb none">Bogdan only · no content needed</span>';
 }
