@@ -2307,7 +2307,7 @@ function deliverBox(wid,fromRole,dv,i){
     <div class="dfiles"></div>
     <div class="dlinkrow"><input class="dlinkin" type="url" placeholder="Paste a link — Google Doc, video URL, reference…"><button class="btn-set dlinkbtn">＋ Add link</button></div>
     <div class="dlinks"></div>
-    <div class="dsync">💾 Saved on <b>this device</b> for now — reaches ${PEOPLE[dv.to].name} once the backend sync is turned on.</div>
+    <div class="dsync">${window.WG_FB_READY?('✅ Your note &amp; links reach <b>'+esc(PEOPLE[dv.to].name)+'</b> live. Attached files stay on <b>this device</b> — to send a photo or blog, put it in Google Drive and paste the <b>link</b> above.'):('💾 Saved on <b>this device</b> for now — reaches '+esc(PEOPLE[dv.to].name)+' once the backend sync is turned on.')}</div>
     </div>`;
   const ta=box.querySelector('.dtext'), drop=box.querySelector('.ddrop'),
         inp=box.querySelector('input'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat'),
