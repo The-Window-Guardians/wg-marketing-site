@@ -60,8 +60,9 @@ const TEAM_ORDER=['bogdan','ruth','sebastian']; // full roster — used by the l
 function hashPw(s){s=String(s||'');let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return 'h'+h.toString(36);}
 function userById(id){return (Array.isArray(S.users)?S.users.find(u=>u.id===id):null)||null;}
 function curUser(){return userById(S.uid);}
-function isPoster(){const u=curUser();return !!u&&u.perm==='poster';}
-function isContributor(){const u=curUser();return !!u&&u.perm==='contributor';} // SEO content provider: fills handoffs, can't check off the build work
+function amPoster(){const u=curUser();return !!u&&u.perm==='poster';} // the ACTUAL logged-in user is a poster (used to truly lock them)
+function isPoster(){const me=curUser(); if(me&&me.perm==='poster')return true; const v=userById(S.role); return !!(me&&v&&v.perm==='poster');} // poster EXPERIENCE: real poster, or owner/editor previewing a poster via "view as"
+function isContributor(){const me=curUser(); if(me&&me.perm==='contributor')return true; const v=userById(S.role); return !!(me&&v&&v.perm==='contributor');} // contributor experience: real one, or previewing one
 function personOf(id){return PEOPLE[id] || userById(id) || {name:String(id||'?'),av:'?',c:'#64748b',bg:'#e5e7eb',role:''};}
 /* which dashboards an account may open (owner = all; everyone else = their assigned list) */
 function userProgs(u){ if(!u)return PROGRAM_ORDER.slice(); if(u.perm==='owner')return PROGRAM_ORDER.slice(); return (Array.isArray(u.progs)&&u.progs.length)?u.progs:['social']; }
@@ -3605,7 +3606,7 @@ function enterApp(){
   const app=$('#app');if(app)app.style.display='block';
   const sel=$('#roleSel');
   if(sel){
-    if(isPoster()){ sel.style.display='none'; } // a poster (Ruth) can't switch views — locked to her own app
+    if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown; an owner previewing one keeps it to switch back
     else{
       sel.style.display='';
       if(S.role!=='all' && ORDER.indexOf(S.role)===-1) S.role='all';
