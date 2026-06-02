@@ -70,10 +70,12 @@ function activeOwners(){return (S.users||[]).filter(u=>u.perm==='owner'&&u.activ
 function ensureAuth(){ // seed the account list once, and map an existing role → uid so nobody gets logged out
   if(!Array.isArray(S.users)||!S.users.length){
     const perm={sebastian:'owner',bogdan:'editor',ruth:'poster'};
-    S.users=TEAM_ORDER.map(id=>({id,name:PEOPLE[id].name,title:PEOPLE[id].role,av:PEOPLE[id].av,c:PEOPLE[id].c,bg:PEOPLE[id].bg,perm:perm[id]||'editor',progs:(id==='bogdan'?['seo']:id==='ruth'?['social']:['seo','social']),pass:hashPw('wgteam'),active:true,seeded:true}));
+    S.users=TEAM_ORDER.map(id=>({id,name:PEOPLE[id].name,title:PEOPLE[id].role,av:PEOPLE[id].av,c:PEOPLE[id].c,bg:PEOPLE[id].bg,perm:perm[id]||'editor',progs:(id==='bogdan'?['seo']:id==='ruth'?['social']:['seo','social']),email:(id==='sebastian'?'seba@windowguardians.com':''),pass:hashPw('wgteam'),active:true,seeded:true}));
   }
   // backfill dashboard access on accounts created before the program-assignment feature
   (S.users||[]).forEach(u=>{ if(u.perm!=='owner' && (!Array.isArray(u.progs)||!u.progs.length)) u.progs=(u.id==='bogdan'?['seo']:['social']); });
+  var _emails={sebastian:'seba@windowguardians.com',bogdan:'bogdan@windowguardians.com',ruth:'ruth@windowguardians.com'};
+  (S.users||[]).forEach(function(u){ if(u&&_emails[u.id]&&!u.email)u.email=_emails[u.id]; }); // map the team to their Firebase logins
   if(!S.uid && S.role && userById(S.role)) S.uid=S.role;
 }
 
@@ -1705,7 +1707,50 @@ let S=Store.load()||freshState();
   if(!S.view)S.view='dashboard';
 })();
 bindProgram(); // set the live bindings for this page before anything renders
-function commit(){Store.save(S);publishFeed()}
+function commit(){Store.save(S);publishFeed();if(typeof fbStateSave==='function')fbStateSave();}
+/* ============================================================
+   Firestore LIVE SYNC (Path A). Shares only the shared state —
+   S.prog (tasks/kpis/deliv/posts/pool/bajobs) and S.users (accounts).
+   The session (S.uid / S.role / S.view) stays local to each device.
+   Media stays in Google Drive; only records sync here.
+   ============================================================ */
+var _fbSync={on:false,unsub:null,applying:false,t:null,lastSavedAt:0};
+function fbStateRef(){return WG_DB.collection('workspaces').doc('wg').collection('state').doc('main');}
+function fbApplyRemote(data){
+  if(!data)return;
+  _fbSync.applying=true;
+  if(data.prog&&typeof data.prog==='object')S.prog=data.prog;
+  if(Array.isArray(data.users))S.users=data.users;
+  ensureAuth(); bindProgram();      // re-seed/guard + rebind ST to the (possibly new) S.prog
+  _fbSync.applying=false;
+  try{Store.save(S);}catch(e){}      // refresh the local cache
+}
+async function fbSyncStart(){
+  if(_fbSync.on||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
+  const ref=fbStateRef();
+  try{
+    const snap=await ref.get();
+    if(snap.exists&&snap.data()){ fbApplyRemote(snap.data()); }
+    else { _fbSync.lastSavedAt=Date.now(); await ref.set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser.email||'')}); }
+    _fbSync.on=true;
+    if(_fbSync.unsub)_fbSync.unsub();
+    _fbSync.unsub=ref.onSnapshot(function(d){
+      if(!d.exists||_fbSync.applying)return;
+      const data=d.data(); if(!data)return;
+      if(data.updatedAt&&data.updatedAt===_fbSync.lastSavedAt)return;        // ignore the echo of our own write
+      if(document.getElementById('cmpOv')||document.getElementById('mprevOv'))return; // don't disrupt an open editor
+      fbApplyRemote(data);
+      if(typeof render==='function')render();
+    });
+    if(typeof render==='function')render();
+  }catch(e){ /* network/rules issue — stay on the local cache */ }
+}
+function fbStateSave(){
+  if(!_fbSync.on||_fbSync.applying||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
+  clearTimeout(_fbSync.t);
+  _fbSync.t=setTimeout(function(){ try{ _fbSync.lastSavedAt=Date.now();
+    fbStateRef().set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''}); }catch(e){} },400);
+}
 
 /* ============================================================
    CROSS-APP FEED  (Marketing OS → Founder HQ dashboard)
@@ -2594,13 +2639,14 @@ function usersAdminCard(){
     const me=(u.id===S.uid);
     const row=el('div','urow');
     row.innerHTML=`<div class="uav">${av(u.id)}</div>
-      <div class="uinfo"><input class="uname cmp-in" value="${esc(u.name)}"><div class="ulogin muted">login: ${esc(u.id)}${u.seeded?' · <span style="color:var(--orange)">default password &ldquo;wgteam&rdquo;</span>':''}${me?' · <b>you</b>':''}</div></div>
+      <div class="uinfo"><input class="uname cmp-in" value="${esc(u.name)}"><input class="uemail cmp-in" type="email" placeholder="login email (for Firebase)" value="${esc(u.email||'')}"><div class="ulogin muted">login id: ${esc(u.id)}${me?' · <b>you</b>':''}</div></div>
       <div class="uprogwrap">${progPick(u)}</div>
       <select class="uperm cmp-in">${roleOptsFor(u)}</select>
       <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
       <button class="btn-set upw">Set password</button>
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
+    const em=row.querySelector('.uemail'); if(em)em.onchange=e=>{u.email=e.target.value.trim();commit();toast('Saved')};
     const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{const v=e.target.value;setProgs(u,v);
       const valid={social:['owner','editor','poster'],seo:['owner','editor','contributor'],both:['owner','editor']};
       if((valid[v]||[]).indexOf(u.perm)<0)u.perm='editor'; // keep the role valid for the chosen dashboard
@@ -3448,7 +3494,7 @@ function renderGate(){
   const showList=()=>{
     wrap.innerHTML=users().map(u=>
       `<button data-uid="${u.id}">${av(u.id)}<div><div class="nm">${esc(u.name)}</div><div class="rl">${esc(u.title||'')}</div></div></button>`).join('')
-      +`<button data-uid="__guest" style="grid-column:1/-1;justify-content:center">👀 <div><div class="nm">Just looking — browse only</div></div></button>`;
+      +(window.WG_FB_READY?'':`<button data-uid="__guest" style="grid-column:1/-1;justify-content:center">👀 <div><div class="nm">Just looking — browse only</div></div></button>`);
     wrap.querySelectorAll('button').forEach(b=>b.onclick=()=>{
       const id=b.dataset.uid;
       if(id==='__guest'){S.uid=null;S.role='all';commit();enterApp();return;}
@@ -3465,13 +3511,26 @@ function renderGate(){
       <div class="login-hint">Prototype login — real security turns on with the backend.</div>
     </div>`;
     const pw=$('#gatePw'); if(pw)pw.focus();
-    const go=()=>{ const val=($('#gatePw')||{}).value||''; if(!u.pass||hashPw(val)===u.pass){S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();} else toast('Incorrect password — try again.'); };
+    const enter=()=>{S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();};
+    const go=async()=>{ const val=($('#gatePw')||{}).value||'';
+      if(window.WG_FB_READY){ // LOCKED: the app requires a real Firebase login
+        if(!u.email){ toast('Your login isn’t set up yet — ask Sebastian to add your email in Team & logins.'); return; }
+        try{ await WG_AUTH.signInWithEmailAndPassword(u.email,val); /* onAuthStateChanged completes the sign-in */ }
+        catch(e){ toast('Incorrect password — try again.'); }
+        return;
+      }
+      if(!u.pass||hashPw(val)===u.pass){ enter(); }   // local-only mode (Firebase not configured)
+      else toast('Incorrect password — try again.');
+    };
     $('#gateGo').onclick=go; $('#gateBack').onclick=showList;
     if(pw)pw.onkeydown=e=>{if(e.key==='Enter')go();};
   };
   showList();
 }
-function logout(){ S.uid=null; S.role='all'; commit(); const app=$('#app'); if(app)app.style.display='none'; const g=$('#gate'); if(g)g.classList.remove('hidden'); renderGate(); }
+function logout(){ S.uid=null; S.role='all'; commit();
+  _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;}
+  if(window.WG_FB_READY&&WG_AUTH.currentUser){try{WG_AUTH.signOut()}catch(e){}}
+  const app=$('#app'); if(app)app.style.display='none'; const g=$('#gate'); if(g)g.classList.remove('hidden'); renderGate(); }
 function ensureLogoutBtn(){
   const bar=document.querySelector('.topbar'); if(!bar)return;
   let b=document.getElementById('btnLogout');
@@ -3572,5 +3631,21 @@ async function resetAll(){
 
 /* init */
 renderGate();
-// auto-skip gate only if someone is actually logged in on this device (guests re-pick)
-if(Store.load()&&S.uid){enterApp()}
+if(window.WG_FB_READY){
+  // LOCKED MODE: the app requires an active Firebase login — no guest, no localStorage-only entry.
+  try{ WG_AUTH.onAuthStateChanged(function(u){
+    if(u){
+      var acct=(S.users||[]).find(function(x){return x.email&&x.email.toLowerCase()===String(u.email||'').toLowerCase();});
+      if(acct){ S.uid=acct.id; S.role=PEOPLE[acct.id]?acct.id:'all'; }
+      commit(); fbSyncStart(); enterApp();
+    } else {
+      S.uid=null;
+      var g=$('#gate'); if(g)g.classList.remove('hidden');
+      var ap=$('#app'); if(ap)ap.style.display='none';
+      renderGate();
+    }
+  }); }catch(e){}
+} else {
+  // local-only mode (Firebase not configured): keep the prototype behavior
+  if(Store.load()&&S.uid){enterApp()}
+}
