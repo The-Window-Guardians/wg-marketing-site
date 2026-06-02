@@ -1167,17 +1167,83 @@ function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
 function socPool(){return (ST&&Array.isArray(ST.pool))?ST.pool:[]}
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
 function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
+/* fetch a cloud-stored media file (WebP) by id — social pool photos (pf_) or handoff photos (hf_) */
+async function cloudFileGet(id){
+  if(!window.WG_DB||!id)return null;
+  var cols = id.indexOf('hf_')===0?['hfiles']:id.indexOf('pf_')===0?['poolfiles']:['poolfiles','hfiles'];
+  for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()&&d.data().dataUrl)return d.data(); }catch(e){} }
+  return null;
+}
+/* read GPS lat/lng from a JPEG's EXIF so before/after location grouping still works on in-app uploads.
+   Best-effort, JPEG only; returns null on anything unusual (HEIC, no GPS, parse issue). */
+function exifGps(file){
+  return new Promise(function(resolve){
+    try{
+      if(!/jpe?g/i.test(file.type||'')&&!/\.jpe?g$/i.test(file.name||''))return resolve(null);
+      const fr=new FileReader();
+      fr.onerror=function(){resolve(null)};
+      fr.onload=function(){
+        try{
+          const dv=new DataView(fr.result);
+          if(dv.getUint16(0)!==0xFFD8)return resolve(null);
+          let off=2; const len=dv.byteLength;
+          while(off+4<len){
+            const marker=dv.getUint16(off); if((marker&0xFF00)!==0xFF00)return resolve(null);
+            const size=dv.getUint16(off+2);
+            if(marker===0xFFE1 && dv.getUint32(off+4)===0x45786966){ // APP1 + 'Exif'
+              const tiff=off+10, little=dv.getUint16(tiff)===0x4949;
+              const g16=o=>dv.getUint16(o,little), g32=o=>dv.getUint32(o,little);
+              const ifd0=tiff+g32(tiff+4), n0=g16(ifd0); let gps=0;
+              for(let i=0;i<n0;i++){const e=ifd0+2+i*12; if(g16(e)===0x8825){gps=tiff+g32(e+8);break;}}
+              if(!gps)return resolve(null);
+              const gn=g16(gps); let latR='',lngR='',lat=null,lng=null;
+              const rats=(o,c)=>{const a=[];for(let k=0;k<c;k++){const num=g32(o+k*8),den=g32(o+k*8+4);a.push(den?num/den:0);}return a;};
+              for(let i=0;i<gn;i++){const e=gps+2+i*12, tag=g16(e);
+                if(tag===1)latR=String.fromCharCode(dv.getUint8(e+8));
+                else if(tag===3)lngR=String.fromCharCode(dv.getUint8(e+8));
+                else if(tag===2){const d=rats(tiff+g32(e+8),3);lat=d[0]+d[1]/60+d[2]/3600;}
+                else if(tag===4){const d=rats(tiff+g32(e+8),3);lng=d[0]+d[1]/60+d[2]/3600;}
+              }
+              if(lat==null||lng==null)return resolve(null);
+              if(latR==='S')lat=-lat; if(lngR==='W')lng=-lng;
+              return resolve({lat:lat,lng:lng});
+            }
+            off+=2+size;
+          }
+          resolve(null);
+        }catch(e){resolve(null)}
+      };
+      fr.readAsArrayBuffer(file.slice(0,256*1024)); // EXIF lives near the start
+    }catch(e){resolve(null)}
+  });
+}
 async function poolAddFiles(fileList){
-  const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov)$/i.test(f.name||''));
+  const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
-  if(files.some(isHeic))toast('iPhone photos — converting…');
-  const pool=socPool();
+  if(files.some(isHeic))toast('iPhone photos — preparing…');
+  const pool=socPool(); let localVid=false;
   for(const raw of files){
-    const f=await normalizeImage(raw);
-    const rec=await fileAdd(f,'',S.role,'pool');
-    pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()});
+    const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
+    if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
+    if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
+      try{
+        const geo=await exifGps(raw);            // location BEFORE compressing (compression strips it)
+        const norm=await normalizeImage(raw);    // HEIC -> JPEG if needed
+        const dataUrl=await imgToWebp(norm);     // Full-HD WebP @80%
+        const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+        const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.webp';
+        await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:'image/webp',dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+        const item={id:id,name:name,type:'image/webp',status:'available',cloud:true,addedAt:Date.now()};
+        if(geo){item.lat=geo.lat;item.lng=geo.lng;}
+        pool.push(item); VTHUMB[id]=dataUrl;     // cache so it shows instantly
+      }catch(e){ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}); }
+    } else { // video (or offline) -> local; Google Drive stays the path for sharing video
+      const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
+      pool.push({id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()});
+    }
   }
   ST.pool=pool;commit();
+  if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
   return files.length;
 }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
@@ -3123,7 +3189,9 @@ function videoThumb(blob){
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(!rec||!rec.blob)return;
+    if(!rec||!rec.blob){ // no local copy — try the cloud (synced WebP), cache it
+      if(VTHUMB[mediaId]){img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
+      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;} return; }
     if(/image/.test(rec.type)){
       // show only once the browser actually decodes it; HEIC etc. that Chrome
       // can't render fail silently to the emoji placeholder instead of a broken icon
@@ -3149,7 +3217,7 @@ async function openMediaPreview(mediaId,name){
   ov.onclick=e=>{if(e.target===ov)closeMediaPreview()};
   try{const rec=await fileGet(mediaId);
     body.innerHTML='';
-    if(!rec||!rec.blob){body.appendChild(el('div','muted','Preview unavailable.'));return;}
+    if(!rec||!rec.blob){ const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){const im=document.createElement('img');im.src=c.dataUrl;im.className='mprev-media';body.appendChild(im);if(name)box.appendChild(el('div','mprev-cap',esc(name)));}else body.appendChild(el('div','muted','Preview unavailable.')); return; }
     const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(name||'');
     if(isVid){
@@ -3412,7 +3480,7 @@ function readyCard(p){
   card.querySelector('[data-copy="tags"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.hashtags||'');toast('Hashtags copied')};
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
-  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(!rec)continue;const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u)}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
+  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u);}else{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();}}}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
   const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
