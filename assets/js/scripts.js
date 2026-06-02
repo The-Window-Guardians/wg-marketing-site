@@ -1329,7 +1329,8 @@ function renderSavedJobs(container){
    token, plain Drive REST for list+download). Pulls new media from
    ONE folder into the content pool, polling while the page is open.
    Client ID is public-safe; no client secret is used. Only works on an
-   authorized https origin (the Netlify site) or registered localhost.
+   authorized https origin — the LIVE DOMAIN must be listed in the OAuth client's
+   "Authorized JavaScript origins" in Google Cloud (localhost is allowed by default).
    ============================================================ */
 const GDRIVE_CLIENT_ID='922689253691-f58pv9jg0194es7ve9avc0di1ssan4i6.apps.googleusercontent.com';
 const GDRIVE_FOLDER_ID='1hRescZ95VEr_mVPm8AkRAsq-gqDdoIFq';
@@ -1361,7 +1362,9 @@ function gdInit(){
   if(_gdClient)return Promise.resolve(true);
   return loadGsi().then(ok=>{
     if(ok&&window.google&&google.accounts&&google.accounts.oauth2){
-      _gdClient=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:GDRIVE_SCOPE,callback:()=>{}});
+      _gdClient=google.accounts.oauth2.initTokenClient({client_id:GDRIVE_CLIENT_ID,scope:GDRIVE_SCOPE,callback:()=>{},
+        error_callback:function(err){var t=(err&&err.type)||'';if(t==='popup_closed')return; // user just closed it
+          toast('Google Drive sign-in failed'+(t?(' — '+t):'')+'. On the live site, this web address must be added to the Drive app’s Authorized JavaScript origins in Google Cloud, then retry.');}});
       return true;
     }
     return false;
