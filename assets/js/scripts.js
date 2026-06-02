@@ -1161,6 +1161,33 @@ function postMedia(p){
   return p.media;
 }
 function savePost(p){const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);if(i>=0)arr[i]=p;else arr.push(p);ST.posts=arr;commit()}
+/* When a post goes to Ruth, make it self-contained: copy every photo into the shared
+   cloud (Firestore) under its EXISTING id, so cloudFileGet resolves it on ANY device.
+   Drive photos live in Sebastian's private Drive — Ruth can't reach those — so without
+   this she sees blanks. Runs on the approver's device, which already holds the blob
+   (Drive-synced or in-app). Videos are skipped (too big until Firebase Storage). */
+async function publishPostMedia(post){
+  if(!window.WG_FB_READY||!WG_AUTH.currentUser) return {done:0,skipped:0};
+  let done=0, skipped=0;
+  for(const m of postMedia(post)){
+    const id=m.id; if(!id){skipped++;continue;}
+    if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
+    try{ const ex=await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get();
+         if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published
+    let rec=null; try{ rec=await fileGet(id); }catch(e){}
+    if(!rec||!rec.blob){skipped++;continue;}                                 // no local blob to copy
+    const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||m.name||'');
+    if(isVid){skipped++;continue;}                                          // video can't go in Firestore yet
+    try{
+      const dataUrl=await imgToWebp(rec.blob);
+      const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
+      await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id)
+        .set({name:(rec.name||m.name||'photo'),type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),fromPost:true});
+      VTHUMB[id]=dataUrl; done++;
+    }catch(e){ skipped++; }
+  }
+  return {done,skipped};
+}
 function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
 /* ---- CONTENT POOL: raw uploaded media, separate from posts ----
    Lifecycle: available → used (attached to a post) → archived (post got posted). */
@@ -3651,9 +3678,9 @@ function openComposer(idOrPost,isNew){
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this post?')){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal()}};foot.appendChild(del);}
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
-  const save=el('button','btn-set','Save draft');save.onclick=()=>{p.status=p.status==='posted'?'posted':(p.status==='approved'?'approved':'draft');p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast('Saved')};
+  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos to Ruth…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
   const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve for Ruth');
-  appr.onclick=()=>{const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast('Approved → Ruth’s queue')};
+  appr.onclick=async()=>{const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}appr.disabled=true;toast('Sharing photos to Ruth…');const r=await publishPostMedia(p);p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast(r&&r.skipped?('Approved → Ruth’s queue ('+r.skipped+' item'+(r.skipped>1?'s':'')+' couldn’t be shared)'):'Approved → Ruth’s queue ✓');};
   foot.appendChild(save);foot.appendChild(appr);b.appendChild(foot);
 }
 function closeComposer(){const o=$('#cmpOv');if(o)o.remove()}
