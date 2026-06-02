@@ -1741,7 +1741,7 @@ async function fbSyncStart(){
       if(document.getElementById('cmpOv')||document.getElementById('mprevOv'))return; // don't disrupt an open editor
       fbApplyRemote(data);
       if(typeof render==='function')render();
-    });
+    }, function(err){ _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} }); // stop quietly if the session ends
     if(typeof render==='function')render();
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
@@ -1750,6 +1750,59 @@ function fbStateSave(){
   clearTimeout(_fbSync.t);
   _fbSync.t=setTimeout(function(){ try{ _fbSync.lastSavedAt=Date.now();
     fbStateRef().set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''}); }catch(e){} },400);
+}
+/* ---- Handoff PHOTOS that sync to the teammate: compress to Full-HD WebP @80%, store
+   each as its own small Firestore doc (well under the 1MB doc limit). Free; no Storage. ---- */
+function imgToWebp(file){
+  return new Promise(function(resolve,reject){
+    var url=URL.createObjectURL(file), img=new Image();
+    img.onload=function(){
+      try{
+        var w=img.naturalWidth,h=img.naturalHeight,M=1920;
+        if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
+        var c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        var q=0.8, data=c.toDataURL('image/webp',q);
+        while(data.length>950000 && q>0.45){ q-=0.15; data=c.toDataURL('image/webp',q); } // keep under the Firestore 1MB doc cap
+        if(data.length>950000){ var s=1280/Math.max(w,h),c2=document.createElement('canvas');c2.width=Math.round(w*s);c2.height=Math.round(h*s);c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);data=c2.toDataURL('image/webp',0.75); }
+        URL.revokeObjectURL(url); resolve(data);
+      }catch(e){URL.revokeObjectURL(url);reject(e);}
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);reject(new Error('decode failed'));};
+    img.src=url;
+  });
+}
+function hfRef(){return WG_DB.collection('workspaces').doc('wg').collection('hfiles');}
+async function hfAdd(key,file){
+  var norm=await normalizeImage(file);            // HEIC -> JPEG first if needed
+  var dataUrl=await imgToWebp(norm);
+  var id='hf_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
+  var name=String(file.name||'image').replace(/\.[^.]+$/,'')+'.webp';
+  await hfRef().doc(id).set({deliv:key,name:name,type:'image/webp',dataUrl:dataUrl,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||'',at:Date.now()});
+  return {id:id,name:name};
+}
+async function hfGet(id){ try{var d=await hfRef().doc(id).get(); return d.exists?d.data():null;}catch(e){return null;} }
+async function hfDel(id){ try{await hfRef().doc(id).delete();}catch(e){} }
+async function handleDelivAttach(files,wid,fromRole,key){
+  for(const f of (files||[])){
+    var isImg=/^image\//.test(f.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(f.name||'');
+    if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
+      try{ var ref=await hfAdd(key,f); if(!ST.deliv[key])ST.deliv[key]={text:'',files:[],links:[],cf:[]}; if(!Array.isArray(ST.deliv[key].cf))ST.deliv[key].cf=[]; ST.deliv[key].cf.push(ref); commit(); }
+      catch(e){ await fileAdd(f,wid,fromRole,key); } // fallback: keep local if compression fails
+    } else { await fileAdd(f,wid,fromRole,key); } // video/PDF/other -> local
+  }
+}
+function renderCloudFiles(container,key,editable,onChange){
+  if(!container)return; container.innerHTML='';
+  var cf=(ST.deliv[key]&&ST.deliv[key].cf)||[];
+  cf.forEach(function(c,idx){
+    var row=el('div','dfile');
+    row.innerHTML='<img class="dcthumb" alt=""><span class="fn">'+esc(c.name||'photo.webp')+'</span><span class="fm">photo</span><button class="tbtn dl">⬇</button>'+(editable?'<button class="tbtn del">✕</button>':'');
+    var im=row.querySelector('.dcthumb');
+    hfGet(c.id).then(function(d){ if(d&&d.dataUrl){im.src=d.dataUrl; row.querySelector('.dl').onclick=function(){var a=document.createElement('a');a.href=d.dataUrl;a.download=c.name||'photo.webp';a.click();}; im.onclick=function(){var w=window.open();if(w)w.document.write('<img src="'+d.dataUrl+'" style="max-width:100%">');}; } });
+    if(editable){var del=row.querySelector('.del'); if(del)del.onclick=async function(){ await hfDel(c.id); if(ST.deliv[key]&&ST.deliv[key].cf)ST.deliv[key].cf.splice(idx,1); commit(); renderCloudFiles(container,key,editable,onChange); if(onChange)onChange(); };}
+    container.appendChild(row);
+  });
 }
 
 /* ============================================================
@@ -2305,28 +2358,31 @@ function deliverBox(wid,fromRole,dv,i){
     <div class="ddrop">📎 <b>Drag images, video, a PDF or doc here</b> or click to attach</div>
     <input type="file" multiple class="hidden">
     <div class="dfiles"></div>
+    <div class="dcloud"></div>
     <div class="dlinkrow"><input class="dlinkin" type="url" placeholder="Paste a link — Google Doc, video URL, reference…"><button class="btn-set dlinkbtn">＋ Add link</button></div>
     <div class="dlinks"></div>
-    <div class="dsync">${window.WG_FB_READY?('✅ Your note &amp; links reach <b>'+esc(PEOPLE[dv.to].name)+'</b> live. Attached files stay on <b>this device</b> — to send a photo or blog, put it in Google Drive and paste the <b>link</b> above.'):('💾 Saved on <b>this device</b> for now — reaches '+esc(PEOPLE[dv.to].name)+' once the backend sync is turned on.')}</div>
+    <div class="dsync">${window.WG_FB_READY?('✅ Your note, links &amp; <b>photos</b> reach <b>'+esc(PEOPLE[dv.to].name)+'</b> live (photos sent Full-HD WebP). Big files like video/PDF stay on this device — share those as a <b>link</b>.'):('💾 Saved on <b>this device</b> for now — reaches '+esc(PEOPLE[dv.to].name)+' once the backend sync is turned on.')}</div>
     </div>`;
   const ta=box.querySelector('.dtext'), drop=box.querySelector('.ddrop'),
         inp=box.querySelector('input'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat'),
-        linkin=box.querySelector('.dlinkin'), linkbtn=box.querySelector('.dlinkbtn'), linksEl=box.querySelector('.dlinks');
+        linkin=box.querySelector('.dlinkin'), linkbtn=box.querySelector('.dlinkbtn'), linksEl=box.querySelector('.dlinks'),
+        cloudEl=box.querySelector('.dcloud');
   const setStat=async()=>{const files=await filesForDeliv(key); const d=ST.deliv[key]||{};
-    const has=((d.text&&d.text.trim())||files.length||(d.links&&d.links.length));
+    const has=((d.text&&d.text.trim())||files.length||(d.links&&d.links.length)||(d.cf&&d.cf.length));
     stat.textContent=has?'✓ Delivered':'⏳ Not sent yet'; stat.className='dstat'+(has?' on':'');};
   ta.oninput=()=>{ if(!ST.deliv[key])ST.deliv[key]={text:'',files:[],links:[]}; ST.deliv[key].text=ta.value; };
   ta.onblur=()=>{commit();setStat()};
   drop.onclick=()=>inp.click();
   drop.ondragover=e=>{e.preventDefault();drop.classList.add('over')};
   drop.ondragleave=()=>drop.classList.remove('over');
-  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('over');for(const f of e.dataTransfer.files)await fileAdd(f,wid,fromRole,key);toast('Attached');refreshDFiles(fl,key,true,setStat);setStat()};
-  inp.onchange=async e=>{for(const f of e.target.files)await fileAdd(f,wid,fromRole,key);e.target.value='';toast('Attached');refreshDFiles(fl,key,true,setStat);setStat()};
+  const onAttached=()=>{refreshDFiles(fl,key,true,setStat);renderCloudFiles(cloudEl,key,true,setStat);setStat();};
+  drop.ondrop=async e=>{e.preventDefault();drop.classList.remove('over');toast('Adding photo(s)…');await handleDelivAttach(e.dataTransfer.files,wid,fromRole,key);toast('Attached');onAttached();};
+  inp.onchange=async e=>{toast('Adding photo(s)…');await handleDelivAttach(e.target.files,wid,fromRole,key);e.target.value='';toast('Attached');onAttached();};
   const addLink=()=>{let u2=(linkin.value||'').trim();if(!u2)return;if(!/^https?:\/\//i.test(u2))u2='https://'+u2;
     if(!ST.deliv[key])ST.deliv[key]={text:'',files:[],links:[]}; if(!Array.isArray(ST.deliv[key].links))ST.deliv[key].links=[];
     ST.deliv[key].links.push({url:u2}); linkin.value=''; commit(); renderDLinks(linksEl,key,true,setStat); setStat();};
   linkbtn.onclick=addLink; linkin.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addLink();}};
-  refreshDFiles(fl,key,true,setStat); renderDLinks(linksEl,key,true,setStat); setStat();
+  refreshDFiles(fl,key,true,setStat); renderCloudFiles(cloudEl,key,true,setStat); renderDLinks(linksEl,key,true,setStat); setStat();
   return box;
 }
 function linkLabel(u){try{const x=new URL(u);return x.hostname.replace(/^www\./,'')+(x.pathname&&x.pathname.length>1?x.pathname:'');}catch(e){return u}}
@@ -2347,19 +2403,21 @@ function inboxBox(item){
     <div class="dneed">${esc(item.need)}</div>
     <div class="dintext"></div>
     <div class="dlinks"></div>
+    <div class="dcloud"></div>
     <div class="dfiles"></div>
     </div>`;
   const body=box.querySelector('.dintext'), fl=box.querySelector('.dfiles'), stat=box.querySelector('.dstat');
-  const linksEl=box.querySelector('.dlinks');
+  const linksEl=box.querySelector('.dlinks'), cloudEl=box.querySelector('.dcloud');
   const nLinks=((ST.deliv[key]&&ST.deliv[key].links&&ST.deliv[key].links.length)||0);
-  renderDLinks(linksEl,key,false);
+  const nCloud=((ST.deliv[key]&&ST.deliv[key].cf&&ST.deliv[key].cf.length)||0);
+  renderDLinks(linksEl,key,false); renderCloudFiles(cloudEl,key,false);
   if(txt.trim()){body.className='dintext has';body.textContent=txt;box.open=true;}
-  else if(nLinks){body.style.display='none';box.open=true;} // links/files speak for themselves
+  else if(nLinks||nCloud){body.style.display='none';box.open=true;} // links/photos speak for themselves
   else{body.className='dintext wait';body.textContent='⏳ Waiting on '+PEOPLE[fr].name+' — nothing delivered yet.';}
   filesForDeliv(key).then(files=>{
-    const has=(txt.trim()||files.length||nLinks);
+    const has=(txt.trim()||files.length||nLinks||nCloud);
     stat.textContent=has?'✓ Received':'⏳ Pending'; stat.className='dstat'+(has?' on':'');
-    if(files.length||nLinks)box.open=true;
+    if(files.length||nLinks||nCloud)box.open=true;
     if(!files.length)return;
     files.forEach(f=>{const row=el('div','dfile');
       row.innerHTML=`<span class="fi">${fileIcon(f.type)}</span><span class="fn">${esc(f.name)}</span><span class="fm">${humanSize(f.size)}</span><button class="tbtn dl">⬇</button>`;
@@ -3639,6 +3697,7 @@ if(window.WG_FB_READY){
       if(acct){ S.uid=acct.id; S.role=PEOPLE[acct.id]?acct.id:'all'; }
       commit(); fbSyncStart(); enterApp();
     } else {
+      _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} // stop live sync on sign-out
       S.uid=null;
       var g=$('#gate'); if(g)g.classList.remove('hidden');
       var ap=$('#app'); if(ap)ap.style.display='none';
