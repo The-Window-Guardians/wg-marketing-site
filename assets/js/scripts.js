@@ -1718,7 +1718,7 @@ function aiSuggest(week){
   const notReady=posts.find(p=>!postReady(p)&&p.status!=='posted');
   if(notReady){const m=postGaps(notReady).join(', ');return {type:'finish',post:notReady,msg:`Your <b>${pillar(notReady.pillar).t}</b> post still needs: ${m}. Finish it so Ruth can run it.`};}
   const draft=posts.find(p=>p.status==='draft');
-  if(draft)return {type:'approve',post:draft,msg:`All ${SOC_WEEKLY_GOAL} posts are built — approve them so they drop into Ruth’s ready queue.`};
+  if(draft)return {type:'approve',post:draft,msg:`All ${SOC_WEEKLY_GOAL} posts are built — approve them so they drop into the ready queue.`};
   const st=socStreak();
   return {type:'done',msg:`This week’s ${SOC_WEEKLY_GOAL} are built and ready${st>1?` — <b>${st}-week</b> consistency streak`:''}. 🎯 Want to get ahead on next week?`};
 }
@@ -2217,7 +2217,7 @@ function viewSocialDashboard(v){
     return;
   }
   // Sebastian's home: the consistency pulse, then his content library.
-  v.appendChild(el('div','page-head',`<h2>Home</h2><p>Drop photos + a note, fill the post once, approve it — it lands in Ruth’s queue. Make as many as you want; they all live below.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Home</h2><p>Drop photos + a note, fill the post once, approve it — it lands in the posting queue. Make as many as you want; they all live below.</p>`));
   v.appendChild(cadenceBanner());
   socLibrary(v);
 }
@@ -3319,6 +3319,13 @@ function postCard(p){
       <div class="pcfoot"><span class="pcplats">${plats||'—'}</span><span class="pcgap">${postReady(p)?'<span class=\"rdy\">✓ ready</span>':postGaps(p).length+' to add'}</span></div>
     </div>`;
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
+  card.style.position='relative';
+  const rm=el('button','pcdel','✕');rm.title='Remove this post';
+  rm.onclick=(e)=>{e.stopPropagation();
+    if(confirm('Remove this post?'+(p.status==='approved'?' It leaves your posts AND the posting queue.':' It leaves your posts.')+'\n(Photos stay in your content.)')){
+      poolReleaseForPost(p); delPostRec(p.id); rerenderCal(); toast('Post removed');
+    }};
+  card.appendChild(rm);
   card.onclick=()=>openComposer(p.id);
   return card;
 }
@@ -3515,7 +3522,7 @@ function socLibrary(v){
   const drafts=active.filter(p=>p.status==='draft');
   const queued=active.filter(p=>p.status==='approved');
   const postsCard=el('div','card pad');postsCard.style.marginTop='12px';
-  postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${drafts.length} draft${drafts.length===1?'':'s'} · ${queued.length} waiting in Ruth’s queue</small></div></div>`;
+  postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${drafts.length} draft${drafts.length===1?'':'s'} · ${queued.length} waiting in the queue</small></div></div>`;
   if(!active.length){
     postsCard.innerHTML+=`<p class="muted">No posts yet. Tick some content above and tap “Make a post”.</p>`;
   }else{

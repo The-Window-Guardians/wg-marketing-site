@@ -664,3 +664,7 @@ textarea.cmp-in{resize:vertical}
 .upthumb .poolplay{position:absolute;right:6px;bottom:6px}
 .upfull{display:block;text-align:center;margin:18px 0 8px;color:var(--orange);font-weight:700;font-size:15px}
 .upfull:hover{text-decoration:underline}
+
+/* ---- Remove (✕) button on Your-posts cards ---- */
+.pcdel{position:absolute;top:7px;right:7px;width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--line2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0b1b3a26;padding:0}
+.pcdel:hover{background:var(--red);border-color:var(--red);color:#fff}
