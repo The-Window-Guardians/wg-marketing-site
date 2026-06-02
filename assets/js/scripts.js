@@ -2106,7 +2106,7 @@ function navItems(){
 function currentView(){return (document.body&&document.body.dataset.view)||'dashboard'}
 function render(){
   const v=$('#view');if(!v)return;v.innerHTML='';
-  ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings}[currentView()]||viewDashboard)(v);
+  ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader}[currentView()]||viewDashboard)(v);
 }
 /* ---------- MARKETING HUB (birds-eye over every program) ---------- */
 function viewMarketingHub(v){
@@ -3175,7 +3175,7 @@ function viewSocialAudit(v){
    Ruth executes). Week-ahead planner + post composer + Ruth's
    ready-to-post queue + the scripted assistant.
    ============================================================ */
-function rerenderCal(){const v=$('#view');if(v){v.innerHTML='';viewCalendar(v);}}
+function rerenderCal(){const v=$('#view');if(!v)return;v.innerHTML='';if(currentView()==='upload'){viewUploader(v);return;}viewCalendar(v);}
 function calWeeks(){ // current + next (rolling 2-week buffer)
   const cw=currentWeek(); const out=[];
   if(cw){out.push(cw);const nx=WEEKS.find(w=>w.id===cw.id+1);if(nx)out.push(nx);}
@@ -3641,6 +3641,83 @@ function closeComposer(){const o=$('#cmpOv');if(o)o.remove()}
    BOOT  (multi-page: nav uses real <a href> links to .html files;
    active item determined by currentView(); no SPA view-switching)
    ============================================================ */
+/* ============================================================
+   SIMPLE PHONE UPLOADER  (upload.html · data-view="upload")
+   One job: get content off the phone and shared with the team in
+   the fewest taps. Photos work now (free). Video lights up after
+   the one-time Firebase Storage step — flip UPLOAD_VIDEO_READY.
+   ============================================================ */
+var UPLOAD_VIDEO_READY = false;   // set true once cloud video storage is wired
+var UPLOAD_JUST = [];             // ids added THIS session — drives the "Just added" strip
+
+function uploaderPick(accept, folder, isBA){
+  const i=document.createElement('input');
+  i.type='file'; i.accept=accept; i.multiple=true; i.style.display='none';
+  document.body.appendChild(i);
+  i.onchange=async e=>{
+    const had=e.target.files&&e.target.files.length;
+    const before=new Set(socPool().map(m=>m.id));
+    const n=await poolAddFiles(e.target.files, folder);
+    i.remove();
+    if(!n){ if(had)toast('Pick photos — iPhone HEIC is fine.'); return; }
+    const added=socPool().filter(m=>!before.has(m.id));
+    UPLOAD_JUST = added.map(m=>m.id).concat(UPLOAD_JUST);   // newest first
+    render();                                               // refresh the "Just added" strip
+    if(isBA && added.length){ openBaBuilder(added); }       // tag before / after right on the phone
+    else { toast('✓ '+n+' added — shared with the team'); }
+  };
+  i.click();
+}
+
+function viewUploader(v){
+  // Posters (e.g. Ruth) post approved content — they don't add it, and the rules block their writes.
+  if(amPoster()){
+    v.appendChild(el('div','page-head',`<h2>Quick Upload</h2>`));
+    const c=el('div','card pad');
+    c.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📤</div><div><h3>You're set up to post</h3><small>This quick uploader is for adding new content.</small></div></div><p class="muted" style="font-size:14px;line-height:1.5">Your job is posting the approved content — head to your queue to grab what's ready and post it.</p>`;
+    const a=el('a','upfull','Open my post queue →');a.setAttribute('href','social.html');
+    c.appendChild(a); v.appendChild(c); return;
+  }
+
+  v.appendChild(el('div','page-head',`<h2>Quick Upload</h2><p>Snap → upload → done. Photos go straight to the whole team. Open the full dashboard when you’re ready to make posts.</p>`));
+
+  const card=el('div','card pad');
+  const photo=el('button','upbtn','<span class="upic">📷</span><span class="uptx"><b>Photos</b><small>Everyday job photos</small></span>');
+  photo.onclick=()=>uploaderPick('image/*,.heic,.heif','',false);
+  const ba=el('button','upbtn','<span class="upic">🔀</span><span class="uptx"><b>Before / After</b><small>Pick the pair, then tap to label</small></span>');
+  ba.onclick=()=>uploaderPick('image/*,.heic,.heif','Before & After',true);
+  const vlabel = UPLOAD_VIDEO_READY ? 'Job videos' : 'Turns on after the storage step';
+  const vid=el('button','upbtn'+(UPLOAD_VIDEO_READY?'':' locked'),'<span class="upic">🎬</span><span class="uptx"><b>Video</b><small>'+vlabel+'</small></span>');
+  vid.onclick=()=>{ if(UPLOAD_VIDEO_READY)uploaderPick('video/*,.mov','Videos',false); else toast('🎬 Video turns on after the quick Firebase storage step — photos are ready to use right now.'); };
+  card.appendChild(photo);card.appendChild(ba);card.appendChild(vid);
+  v.appendChild(card);
+
+  // "Just added" strip — ONLY this session's uploads, so it's honest reassurance (not old library content)
+  const pool=socPool();
+  const recent=UPLOAD_JUST.map(id=>pool.find(m=>m.id===id)).filter(Boolean).slice(0,12);
+  if(recent.length){
+    const rc=el('div','card pad');rc.style.marginTop='12px';
+    rc.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">✅</div><div><h3>Just added</h3><small>Your latest uploads — already shared with the team.</small></div></div>';
+    const g=el('div','upstrip');
+    recent.forEach(m=>{
+      const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+      const cell=el('div','upthumb');
+      const img=el('img');img.addEventListener('load',()=>img.style.display='block');
+      if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else thumbInto(img,m.id);
+      cell.appendChild(img);
+      if(isVid)cell.appendChild(el('span','poolplay','▶'));
+      if(m.folder==='Before & After')cell.appendChild(el('span','uptag','B/A'));
+      cell.onclick=()=>openMediaPreview(m.id,m.name);
+      g.appendChild(cell);
+    });
+    rc.appendChild(g);
+    v.appendChild(rc);
+  }
+
+  const link=el('a','upfull','Open the full dashboard →');link.setAttribute('href','social.html');
+  v.appendChild(link);
+}
+
 function renderGate(){
   const wrap=$('#whoBtns');if(!wrap)return;
   ensureAuth();

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Quick Upload · Window Guardians</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<meta name="apple-mobile-web-app-title" content="WG Upload">
+<meta name="apple-mobile-web-app-capable" content="yes">
+</head>
+<body data-program="social" data-view="upload">
+
+<!-- LOGIN GATE -->
+<div id="gate">
+  <div class="gate-card">
+    <div class="eyebrow">Window Guardians · Quick Upload</div>
+    <h1>Upload<br><span>Who's here?</span></h1>
+    <p>Pick your name and log in. Then just snap and upload — it goes straight to the team.</p>
+    <div class="who" id="whoBtns"></div>
+    <div class="gate-foot">Photos upload free &amp; instant. Need the full dashboard? Open <b style="color:#cdd8ec">Social</b> after logging in.</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><div class="logo">WG</div><div>Window Guardians<small>Quick Upload</small></div></div>
+    <div class="spacer"></div>
+  </div>
+
+  <div class="layout">
+    <main class="main" id="view" style="max-width:560px;margin:0 auto"></main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/jquery.min.js"></script>
+<script src="assets/js/firebase-app-compat.js"></script>
+<script src="assets/js/firebase-auth-compat.js"></script>
+<script src="assets/js/firebase-firestore-compat.js"></script>
+<script src="assets/js/firebase-init.js"></script>
+<script src="assets/js/scripts.js"></script>
+</body>
+</html>
