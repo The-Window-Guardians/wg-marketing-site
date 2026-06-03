@@ -2862,6 +2862,80 @@ function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst
 function sprintTasks(){ ensureBacklog(); applySeoAdjustments(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
 function sprintSel(){ const sp=seoSprints(); if(!sp.length)return null; const f=sp.find(s=>s.id===ST.sprintSel); if(f)return f.id; const now=Date.now(); const cur=sp.find(s=>now>=s.start&&now<=s.end); return cur?cur.id:sp[0].id; }
+/* ============================================================
+   CATEGORIZED SEO BACKLOG (the master punch list)
+   Every task lives here, grouped by category. Tick several → add to a sprint.
+   Add your own → pick/ә create a category. A task in a sprint still shows here (one list).
+   ============================================================ */
+var BACKLOG_SEL=new Set();
+var SEO_CATS=['Technical','Google Business Profile','Core website pages','Town pages','Blogs','Reviews engine','Citations','Local links'];
+function backlogCategories(){ var present={}; sprintTasks().forEach(function(t){ if(t.section&&SEO_CATS.indexOf(t.section)<0&&t.section!=='Custom')present[t.section]=1; }); return SEO_CATS.concat(Object.keys(present)); }
+function openAddBacklogTask(){
+  closeComposer();
+  var ov=el('div','cmp-ov');ov.id='cmpOv';var box=el('div','cmp-box');
+  box.innerHTML='<div class="cmp-head"><h3>Add an SEO task</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>';
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=function(e){if(e.target===ov)closeComposer();};$('#cmpX').onclick=closeComposer;
+  var bd=$('#cmpBody');
+  var tf=el('div','cmp-field');tf.innerHTML='<label>Task</label>';var ti=el('textarea','cmp-in');ti.rows=2;ti.placeholder='What needs doing? (e.g. “Add FAQ schema to the Yardley page”)';tf.appendChild(ti);bd.appendChild(tf);
+  var cf=el('div','cmp-field');cf.innerHTML='<label>Category</label>';var cs=el('select','cmp-in');
+  cs.innerHTML=backlogCategories().map(function(c){return '<option value="'+esc(c)+'">'+(SECTION_ICON[c]||'•')+' '+esc(c)+'</option>';}).join('')+'<option value="__new">＋ New category…</option>';
+  cf.appendChild(cs);
+  var ni=el('input','cmp-in');ni.placeholder='New category name';ni.style.cssText='margin-top:6px;display:none';
+  cs.onchange=function(){ ni.style.display=cs.value==='__new'?'':'none'; if(cs.value==='__new')ni.focus(); };
+  cf.appendChild(ni);bd.appendChild(cf);
+  var sf=el('div','cmp-field');sf.innerHTML='<label>Add to <span class="muted" style="font-weight:600">— it stays in the backlog either way</span></label>';var ss=el('select','cmp-in');
+  ss.innerHTML='<option value="backlog">Backlog (unscheduled)</option>'+seoSprints().map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+  sf.appendChild(ss);bd.appendChild(sf);
+  var foot=el('div','cmp-foot');var sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  var save=el('button','btn-set primary','Add task');
+  save.onclick=function(){ var title=(ti.value||'').trim(); if(!title){toast('Type the task first');return;}
+    var cat=cs.value==='__new'?((ni.value||'').trim()||'Custom'):cs.value;
+    sprintTasks().push({id:'spt_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),title:title,section:cat,sectionIcon:SECTION_ICON[cat]||'•',est:0,status:'todo',sprint:ss.value||'backlog',_ct:Date.now(),_ut:Date.now()});
+    commit();closeComposer();render();toast('Task added'+(ss.value!=='backlog'?' to the sprint + backlog':' to the backlog'));
+  };
+  foot.appendChild(save);bd.appendChild(foot);
+}
+function seoBacklogCard(){
+  var card=el('div','card pad');card.style.marginTop='12px';
+  card.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📋</div><div><h3>SEO Punch List</h3><small>Everything to do, by category. Tick tasks to add them to a sprint, or add your own.</small></div></div>';
+  var addBtn=el('button','btn-set primary','＋ Add a task');addBtn.onclick=openAddBacklogTask;addBtn.style.marginBottom='4px';card.appendChild(addBtn);
+  var bulk=el('div','blkbar');
+  if(BACKLOG_SEL.size){
+    var sel=el('select','cmp-in');sel.style.maxWidth='200px';
+    sel.innerHTML='<option value="backlog">Backlog (unschedule)</option>'+seoSprints().map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
+    var go=el('button','btn-set primary','Add '+BACKLOG_SEL.size+' to sprint');
+    go.onclick=function(){ var dst=sel.value; sprintTasks().forEach(function(t){ if(BACKLOG_SEL.has(t.id)){ if(dst!=='backlog'&&(t.sprint||'backlog')!==dst){t.movedFrom=((t.sprint||'backlog')==='backlog')?'Backlog':((sprintById(t.sprint)||{}).name||'a sprint');t.movedAt=Date.now();} t.sprint=dst;t._ut=Date.now(); } }); BACKLOG_SEL.clear();commit();render();toast(dst==='backlog'?'Moved to Backlog':'Added to '+((sprintById(dst)||{}).name||'sprint')); };
+    var clr=el('button','btn-set','Clear');clr.onclick=function(){BACKLOG_SEL.clear();render();};
+    bulk.appendChild(el('span','blklbl',BACKLOG_SEL.size+' selected →'));bulk.appendChild(sel);bulk.appendChild(go);bulk.appendChild(clr);
+    if(!seoSprints().length){bulk.appendChild(el('span','muted','— make a sprint first (top of page)'));}
+  }
+  card.appendChild(bulk);
+  var byCat={}; sprintTasks().forEach(function(t){ var c=t.section||'Custom'; (byCat[c]=byCat[c]||[]).push(t); });
+  var order=SEO_CATS.concat(['Custom']);
+  var cats=Object.keys(byCat).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?98:ia)-(ib<0?98:ib);});
+  if(!cats.length){ card.appendChild(el('p','muted','No tasks yet — tap “＋ Add a task”.')); return card; }
+  cats.forEach(function(c){
+    var list=byCat[c], done=list.filter(function(t){return t.status==='done';}).length;
+    var d=el('details','seoacc');d.style.marginTop='8px';
+    var sm=el('summary','seoacc-sum');sm.innerHTML='<div class="chip" style="background:var(--blue-soft)">'+(SECTION_ICON[c]||'•')+'</div><div class="seoacc-tt"><h3>'+esc(c)+'</h3><small>'+list.length+' task'+(list.length===1?'':'s')+' · '+done+' done</small></div><span class="seoacc-ar">▾</span>';
+    d.appendChild(sm);
+    var body=el('div','seoacc-body');
+    list.forEach(function(t){
+      var row=el('div','blkrow');
+      var cb=el('input');cb.type='checkbox';cb.className='blkck';cb.checked=BACKLOG_SEL.has(t.id);
+      cb.onchange=function(){ if(cb.checked)BACKLOG_SEL.add(t.id);else BACKLOG_SEL.delete(t.id); render(); };
+      row.appendChild(cb);
+      var main=el('div','blkmain');
+      var html='<span class="blktitle'+(t.status==='done'?' done':'')+'">'+esc(t.title||'(untitled)')+'</span>';
+      if(t.sprint&&t.sprint!=='backlog'){var spn=sprintById(t.sprint);html+=' <span class="blksprint">▸ '+esc((spn&&spn.name)||'sprint')+'</span>';}
+      if(t.est)html+=' <span class="blkest">'+t.est+'h</span>';
+      main.innerHTML=html; main.onclick=function(){ editSprintTask(t); };
+      row.appendChild(main);body.appendChild(row);
+    });
+    d.appendChild(body);card.appendChild(d);
+  });
+  return card;
+}
 function renderSprintBoard(box){
   const bar=el('div','sprintbar');
   const seg=el('div','seg');[['list','☰ List'],['board','▦ Board']].forEach(([v,l])=>{const b=el('button','seg-b'+(sprintView()===v?' on':''),l);b.onclick=()=>{ST.sprintView=v;commit();render();};seg.appendChild(b);});
@@ -2989,6 +3063,7 @@ function viewSeoProvider(v){
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
   v.appendChild(seoBlogsCard(false));
   v.appendChild(seoAccordion('🏃','Sprint plan','Plan the 2-week sprints + set hour estimates with Bogdan — live in your call',false,renderSprintBoard));
+  v.appendChild(seoBacklogCard());
   v.appendChild(activityCard());
 }
 function viewSeoBuilder(v){
@@ -3005,6 +3080,7 @@ function viewSeoBuilder(v){
   v.appendChild(seoAccordion('✅','Ready to build',(ready.length||'No')+' item'+(ready.length===1?'':'s')+' provided — open to use + download',false,function(box){ if(!ready.length){box.appendChild(el('p','muted','Nothing provided yet.'));return;} ready.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
   v.appendChild(seoAccordion('✍️','Blog briefs to build',seoBlogs().length+' brief'+(seoBlogs().length===1?'':'s'),false,function(box){ seoBlogsFill(box,true); }));
   v.appendChild(seoAccordion('⏳','Waiting on Sebastian',(waiting.length||'No')+' item'+(waiting.length===1?'':'s')+' still coming',false,function(box){ if(!waiting.length){box.appendChild(el('p','muted','Nothing outstanding — you have everything.'));return;} waiting.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
+  v.appendChild(seoBacklogCard());
   v.appendChild(activityCard());
 }
 function viewSeoProgress(v){
