@@ -2243,6 +2243,70 @@ const SEO_PLAYBOOK=[
    tasks:['Suppliers / manufacturers','Local associations / chamber','Local press or sponsorships','Partner cross-links']}
 ];
 const SEO_KEYWORD_HINTS=['window replacement {town}','{town} roofing company','siding contractor {town}','patio doors {town}','best windows near me'];
+/* === MERGED RESEARCH BACKLOG — from Sebastian's SEO Targets doc + the live-site audit agents.
+   Windows-first, anchored to the 7 priority towns. Gutters, off-site (citations/backlinks),
+   and geographic expansion are intentionally held for the "After 90 days" overview (Guide). === */
+const SEO_TOWNS7=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','Holland','Feasterville'];
+const SECTION_ICON={'Google Business Profile':'📍','Core website pages':'🌐','Town pages':'🏘️','Blogs':'✍️','Citations':'📒','Reviews engine':'⭐','Local links':'🔗','Technical':'🔧','Custom':'•'};
+function seoSlug(t){return t.toLowerCase().replace(/ /g,'-');}
+const RESEARCH_TASKS=[
+  {title:'Audit the site: list every page, title tag, H1 and body line that says "Philadelphia"',section:'Technical',est:2,why:'Find all the wrong geo-targeting before fixing it'},
+  {title:'Rewrite all "Philadelphia" titles / H1 / copy to Langhorne / Bucks County',section:'Technical',est:3,why:'You serve Bucks, not Philly — it’s bleeding your focus'},
+  {title:'Consolidate the duplicate Philadelphia pages into one + 301-redirect the rest',section:'Technical',est:2,why:'Kills keyword cannibalization'},
+  {title:'Add HomeAndConstructionBusiness + GeneralContractor schema sitewide (not generic LocalBusiness)',section:'Technical',est:3,why:'Google ranks specific schema over generic; competitors run basic Yoast'},
+  {title:'Add Service schema (itemListElement) to each service hub page',section:'Technical',est:2,why:'Powers the service catalog + rich results'},
+  {title:'Add FAQPage schema (5–8 real FAQs) to every service + town page',section:'Technical',est:3,why:'Surfaces in AI Overviews + People Also Ask'},
+  {title:'Add BreadcrumbList schema sitewide',section:'Technical',est:1,why:'Better SERP appearance + site hierarchy'},
+  {title:'Add AggregateRating + 3 recent Review schema (from GBP) to town/service pages',section:'Technical',est:2,why:'Star-rich results + AI citation'},
+  {title:'Rewrite image alt text sitewide as "[service] in [town], PA — [description]"',section:'Technical',est:2,why:'Image-search traffic + local relevance'},
+  {title:'Rewrite weak / missing title tags + meta descriptions on all key pages',section:'Technical',est:3,why:'Click-through + on-page relevance'},
+  {title:'Run PageSpeed Insights + Search Console; fix mobile/speed red flags',section:'Technical',est:3,why:'Core Web Vitals + indexing health'},
+  {title:'Lock NAP (Window Guardians · 430 Fox Hollow Dr, Langhorne · (215) 709-8793) in footer + schema sitewide',section:'Technical',est:1,why:'Consistency is a core local ranking signal'},
+  {title:'Set GBP primary category to "Window installation service"',section:'Google Business Profile',est:0.5,why:'#1 individual local-pack ranking factor'},
+  {title:'Add all relevant GBP secondary categories (door/roofing/siding/window supplier, general contractor, home improvement)',section:'Google Business Profile',est:0.5,why:'Expands the queries you can show for'},
+  {title:'Set accurate GBP hours (mark 24/7 if you run 24/7 phone coverage)',section:'Google Business Profile',est:0.5,why:'Hours are now a top-5 ranking factor'},
+  {title:'Populate the GBP Services list with price ranges for every offering',section:'Google Business Profile',est:1,why:'"Starting at $X" signals premium tier'},
+  {title:'Upload 15+ GBP photos across 5 categories (exterior, interior, team, product, at-work)',section:'Google Business Profile',est:1.5,why:'Recent photos move ranking'},
+  {title:'Set a weekly GBP photo + 1–2x/week post cadence',section:'Google Business Profile',est:0.5,why:'Active-profile signal'},
+  {title:'Add a GBP booking link + verify phone routing (Google AI starts calling businesses in 2026)',section:'Google Business Profile',est:1,why:'Agentic-search readiness'},
+  {title:'Optimize the /windows/ hub for "window replacement Bucks County" + Okna/Andersen/Pella + FAQ + schema',section:'Core website pages',est:3,why:'Regional hub that feeds the town pages'},
+  {title:'Optimize the /roofing/ hub (on-page + Service/FAQ schema)',section:'Core website pages',est:2.5,why:'Second-biggest revenue line'},
+  {title:'Optimize the /siding/ hub (on-page + schema)',section:'Core website pages',est:2,why:'Full-exterior buyer signal'},
+  {title:'Optimize the /entry-doors/ + /patio-doors/ hubs (on-page + schema)',section:'Core website pages',est:2.5,why:'High-ticket attach to window jobs'},
+  {title:'Build a /why-us/ EEAT page (installer bios, license/insurance #, certifications, badges)',section:'Core website pages',est:3,why:'EEAT moat competitors can’t copy'},
+  {title:'Build a /reviews/ page pulling your Google reviews',section:'Core website pages',est:2,why:'Owns "window guardians reviews" + builds trust'}
+]
+.concat(SEO_TOWNS7.map(t=>({title:'Build a deep /window-replacement-'+seoSlug(t)+'-pa/ page (real local project + photos + reviews + schema)',section:'Town pages',est:4,why:'Rank top-3 for "window replacement '+t+' PA" — the bullseye'})))
+.concat([
+  {title:'Write /cost/window-replacement-cost-bucks-county-pa/ (1,500+ words, real price ranges)',section:'Blogs',est:3,why:'Highest-intent gap — NO competitor owns cost guides'},
+  {title:'Write /cost/roof-replacement-cost-bucks-county-pa/',section:'Blogs',est:2.5,why:'Middle-funnel intent, zero competition'}
+])
+.concat(SEO_TOWNS7.map(t=>({title:'Write the '+t+' window cost guide /cost/window-replacement-cost-'+seoSlug(t)+'-pa/',section:'Blogs',est:2.5,why:'Own "window cost/prices '+t+'" — uncontested'})))
+.concat([
+  {title:'Write /okna-window-repair-pa/ (Okna is your primary line — defensible)',section:'Blogs',est:2,why:'Brand-repair gap; Ardmor only owns Andersen/Marvin/Pella'},
+  {title:'Write /provia-door-repair-pa/',section:'Blogs',est:1.5,why:'Open brand-repair query'},
+  {title:'Write /sunrise-window-repair-pa/',section:'Blogs',est:1.5,why:'Open brand-repair query'},
+  {title:'Write comparison guide: Okna vs Andersen vs Pella vs ProVia',section:'Blogs',est:2.5,why:'Bottom-funnel; no competitor has it'},
+  {title:'Write comparison: triple-pane vs double-pane windows in PA',section:'Blogs',est:2,why:'High-intent buyer question'},
+  {title:'Write comparison: James Hardie vs vinyl siding',section:'Blogs',est:2,why:'Siding buyer decision content'},
+  {title:'Write comparison: architectural vs 3-tab shingles',section:'Blogs',est:2,why:'Roofing buyer decision content'},
+  {title:'Blog: "5 signs your Bucks County home needs new windows"',section:'Blogs',est:1.5,why:'Top-of-funnel local pull'},
+  {title:'Blog: "Best replacement windows for 1980s Bucks County colonials"',section:'Blogs',est:1.5,why:'Matches your housing-stock sweet spot'},
+  {title:'Blog: "PA energy rebates + tax credits for new windows (2026)"',section:'Blogs',est:1.5,why:'High-intent + timely'},
+  {title:'Build an SMS + email one-click Google-review workflow, sent 24–48h after install',section:'Reviews engine',est:2,why:'Review velocity = 16–20% of map rank'},
+  {title:'Coach staff/customers to mention Okna + the town + one specific detail in reviews',section:'Reviews engine',est:1,why:'Google parses review CONTENT, not just stars'},
+  {title:'Run 15+ Google reviews/month + reply to 80%+ within 48h',section:'Reviews engine',est:1,why:'Recency beats raw count in 2026'},
+  {title:'Claim + optimize the BBB profile',section:'Reviews engine',est:1,why:'Homeowners vet $20–50K jobs on BBB'},
+  {title:'Set up a Houzz profile with project photos',section:'Reviews engine',est:1,why:'Design-forward platform + citation'}
+]);
+function loadResearchOnce(){
+  if(ST.researchLoaded)return;
+  const cur=Array.isArray(ST.sprintTasks)?ST.sprintTasks:[];
+  const keep=cur.filter(function(t){ return t.status!=='todo' || !/^spt_(gbp|pages|towns|blogs|citations|reviews|links)_\d+$/.test(t.id); });
+  const have={}; keep.forEach(function(t){have[t.title]=1;});
+  const add=RESEARCH_TASKS.filter(function(rt){return !have[rt.title];}).map(function(rt,i){return {id:'spt_r'+i,title:rt.title,section:rt.section,sectionIcon:SECTION_ICON[rt.section]||'•',est:rt.est||0,status:'todo',sprint:'backlog',why:rt.why||''};});
+  ST.sprintTasks=keep.concat(add); ST.researchLoaded=true; commit();
+}
 function seoBlogs(){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return ST.blogs; }
 function seoPB(){ if(!ST.pb||typeof ST.pb!=='object')ST.pb={}; return ST.pb; }
 function seoPbStep(id){ const pb=seoPB(); if(!pb[id]||typeof pb[id]!=='object')pb[id]={tasks:{},note:''}; if(!pb[id].tasks)pb[id].tasks={}; return pb[id]; }
@@ -2404,7 +2468,7 @@ function editSprint(s){
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
 }
 function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
-function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
+function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } loadResearchOnce(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
 function sprintSel(){ const sp=seoSprints(); if(!sp.length)return null; const f=sp.find(s=>s.id===ST.sprintSel); if(f)return f.id; const now=Date.now(); const cur=sp.find(s=>now>=s.start&&now<=s.end); return cur?cur.id:sp[0].id; }
 function renderSprintBoard(box){
@@ -2443,7 +2507,15 @@ function sprintAccordion(g,isBacklog){
   const body=el('div','seoacc-body');
   if(!isBacklog){ const ed=el('button','tbtn','✎ Edit / dates / remove');ed.style.marginBottom='8px';ed.onclick=(e)=>{e.preventDefault();editSprint(g);};body.appendChild(ed); }
   if(!tasks.length)body.appendChild(el('p','muted',isBacklog?'Empty — finished or unassigned tasks live here.':'No tasks yet — add some, or move from Backlog.'));
-  tasks.forEach(t=>body.appendChild(sprintRow(t,true)));
+  else { // group by category into collapsible sub-sections (keeps a big backlog tidy)
+    const bySec={}, order=[]; tasks.forEach(t=>{const k=t.section||'Other'; if(!bySec[k]){bySec[k]=[];order.push(k);} bySec[k].push(t);});
+    order.forEach(sec=>{ const grp=bySec[sec], gh=grp.reduce((a,t)=>a+(+t.est||0),0), gd=grp.filter(t=>t.status==='done').length;
+      const sd=el('details','seosub'); if(!isBacklog)sd.open=true;
+      sd.appendChild(el('summary','seosub-sum',`${SECTION_ICON[sec]||'•'} ${esc(sec)} <span class="muted">${grp.length} · ${gh}h${gd?(' · '+gd+' done'):''}</span>`));
+      grp.forEach(t=>sd.appendChild(sprintRow(t,true)));
+      body.appendChild(sd);
+    });
+  }
   const a=el('button','tbtn','＋ Add task');a.style.marginTop='6px';a.onclick=(e)=>{e.preventDefault();addSprintTask(g.id);};body.appendChild(a);
   d.appendChild(body);return d;
 }
@@ -3308,11 +3380,33 @@ function seoScopeSection(){
   });
   return wrap;
 }
+/* What to tackle AFTER the 90-day backlog is shipped — held out on purpose */
+function seoAfter90Section(){
+  const wrap=el('div');
+  wrap.appendChild(el('div','nav-sec','🔭 After the 90 days — Phase 2 (once the backlog is shipped)'));
+  const card=el('div','card pad');
+  card.innerHTML=`<p class="muted" style="font-size:13px;margin:0 0 10px">Held out of the 90-day backlog on purpose. Tackle these once the on-site + Google Business Profile work is done.</p>
+    <h6>Off-site authority</h6>
+    <div class="chk"><span class="b">→</span><span><b>Citations</b> — lock NAP everywhere, then bulk-submit via BrightLocal (~$35/mo) or Moz Local. Tier 1 (Google, Bing, Apple Maps, BBB) first, then data aggregators.</span></div>
+    <div class="chk"><span class="b">→</span><span><b>Backlinks (compound)</b> — local press (Bucks County Courier Times), chambers of commerce, manufacturer dealer pages (Okna/ProVia), HOA newsletters, local sponsorships. One press feature beats 50 directory citations.</span></div>
+    <h6>New category to own</h6>
+    <div class="chk"><span class="b">→</span><span><b>Gutters silo</b> — wide-open gap (only PJ Fitzpatrick + Munz cover it). Hub + town + cost + comparison pages. (Only if you add gutters as a service.)</span></div>
+    <h6>Geographic expansion</h6>
+    <div class="chk"><span class="b">→</span><span><b>Bonus Bucks towns</b> — Doylestown + Buckingham (high-value, surfaced in the research).</span></div>
+    <div class="chk"><span class="b">→</span><span><b>Montgomery County</b> — Horsham, Maple Glen, Fort Washington, Huntingdon Valley, Jenkintown, Blue Bell.</span></div>
+    <div class="chk"><span class="b">→</span><span><b>South Jersey</b> — Cherry Hill, Haddonfield, Moorestown, Princeton.</span></div>
+    <h6>Deeper content</h6>
+    <div class="chk"><span class="b">→</span><span>Per-town <b>roofing / siding / door</b> pages (beyond windows-first).</span></div>
+    <div class="chk"><span class="b">→</span><span>More cost guides + comparison guides per service.</span></div>`;
+  wrap.appendChild(card);
+  return wrap;
+}
 function viewGuides(v){
   if(activeProgram()==='social'&&isPoster())return viewRuthGuide(v);
   if(activeProgram()==='social')return viewSocialGuides(v);
   v.appendChild(el('div','page-head',`<h2>Guide</h2><p>Your full task list is right up top — every step, with a badge showing what content the contributor still owes. Below it: the blog-writing playbook, the page-fix sheet, and a background library explaining each type of SEO.</p>`));
   v.appendChild(seoScopeSection());
+  v.appendChild(seoAfter90Section());
   const g=BLOG_GUIDE;
   const d=el('details','guide');d.open=true;
   d.innerHTML=`<summary><div class="gi" style="background:${g.bg}">${g.icon}</div><div><div class="gt">${esc(g.title)}</div><div class="gd">${esc(g.desc)}</div></div><span class="num">START HERE</span></summary>
