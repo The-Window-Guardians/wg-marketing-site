@@ -2383,6 +2383,92 @@ function seoBlogsCard(builder){
   else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b,builder)));c.appendChild(list); }
   return c;
 }
+/* ===================== SPRINT BOARD (Asana-style) =====================
+   2-week sprints across the 90 days; hour estimates set live in planning.
+   Tasks seed from the 7 plan sections (carry over any done state) + add live. */
+function sprintCount(){ return ST.sprintCount||6; }
+function seoSprints(){ const start=seoStart(),n=sprintCount(),a=[]; for(let i=0;i<n;i++)a.push({id:'s'+(i+1),name:'Sprint '+(i+1),start:start+i*14*86400000,end:start+((i+1)*14-1)*86400000}); return a; }
+function sprintById(id){ return seoSprints().find(s=>s.id===id)||null; }
+function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
+function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } return ST.sprintTasks; }
+function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
+function renderSprintBoard(box){
+  const tasks=sprintTasks();
+  const bar=el('div','sprintbar');
+  const seg=el('div','seg');[['list','☰ List'],['board','▦ Board']].forEach(([v,l])=>{const b=el('button','seg-b'+(sprintView()===v?' on':''),l);b.onclick=()=>{ST.sprintView=v;commit();render();};seg.appendChild(b);});
+  bar.appendChild(seg);
+  const add=el('button','btn-set primary','＋ Add task');add.onclick=()=>addSprintTask('backlog');bar.appendChild(add);
+  const tot=tasks.reduce((s,t)=>s+(+t.est||0),0),done=tasks.filter(t=>t.status==='done').reduce((s,t)=>s+(+t.est||0),0);
+  bar.appendChild(el('span','sprint-tot',tot+'h planned · '+done+'h done'));
+  box.appendChild(bar);
+  if(sprintView()==='board')renderSprintCols(box,tasks); else renderSprintList(box,tasks);
+}
+function renderSprintList(box,tasks){
+  seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(g=>{
+    const gt=tasks.filter(t=>(t.sprint||'backlog')===g.id);
+    const grp=el('div','sprintgrp');
+    const sub=g.id==='backlog'?'Unscheduled — assign during planning':fmtShort(g.start)+' – '+fmtShort(g.end);
+    const hrs=gt.reduce((s,t)=>s+(+t.est||0),0),dn=gt.filter(t=>t.status==='done').length;
+    grp.appendChild(el('div','sprintgrp-h',`<b>${esc(g.name)}</b> <span class="muted">· ${sub} · ${gt.length} task${gt.length===1?'':'s'} · ${hrs}h${gt.length?(' · '+dn+'/'+gt.length+' done'):''}</span>`));
+    gt.forEach(t=>grp.appendChild(sprintRow(t)));
+    const a=el('button','tbtn','＋ Add task');a.style.marginTop='6px';a.onclick=()=>addSprintTask(g.id);grp.appendChild(a);
+    box.appendChild(grp);
+  });
+}
+function sprintRow(t){
+  const r=el('div','sprintrow');
+  const st=el('button','sprintstat '+t.status,t.status==='done'?'✓':t.status==='doing'?'◐':'○');st.title='Change status';
+  st.onclick=(e)=>{e.stopPropagation();t.status=t.status==='todo'?'doing':t.status==='doing'?'done':'todo';commit();render();};
+  r.appendChild(st);
+  const main=el('div','sprintmain');
+  const tt=el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)'));
+  const tag=el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section||''));
+  main.appendChild(tt);main.appendChild(tag);main.onclick=()=>editSprintTask(t);r.appendChild(main);
+  const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
+  const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);
+  const x=el('button','sprintx','✕');x.onclick=(e)=>{e.stopPropagation();ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();render();};r.appendChild(x);
+  return r;
+}
+function renderSprintCols(box,tasks){
+  const wrap=el('div','sprintboardcols');
+  [['todo','To do'],['doing','In progress'],['done','Done']].forEach(([sid,label])=>{
+    const ct=tasks.filter(t=>t.status===sid);
+    const col=el('div','sprintcol');col.dataset.status=sid;
+    col.appendChild(el('div','sprintcol-h',`${esc(label)} <span class="muted">${ct.length} · ${ct.reduce((s,t)=>s+(+t.est||0),0)}h</span>`));
+    ct.forEach(t=>col.appendChild(sprintCard(t)));
+    col.ondragover=e=>{e.preventDefault();col.classList.add('dragover');};
+    col.ondragleave=()=>col.classList.remove('dragover');
+    col.ondrop=e=>{e.preventDefault();col.classList.remove('dragover');const id=e.dataTransfer.getData('text/plain');const tk=sprintTasks().find(z=>z.id===id);if(tk&&tk.status!==sid){tk.status=sid;commit();render();}};
+    wrap.appendChild(col);
+  });
+  box.appendChild(wrap);
+}
+function sprintCard(t){
+  const c=el('div','sprintcard');c.draggable=true;
+  c.ondragstart=e=>{e.dataTransfer.setData('text/plain',t.id);c.classList.add('dragging');};
+  c.ondragend=()=>c.classList.remove('dragging');
+  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div><div class="sc-meta"><span class="sprinttag">${t.sectionIcon||''} ${esc(t.section||'')}</span><span class="sc-hr">${t.est?(t.est+'h'):'—'}</span></div><div class="sc-sprint">${esc((sprintById(t.sprint)||{}).name||'Backlog')}</div>`;
+  c.onclick=()=>editSprintTask(t);
+  return c;
+}
+function addSprintTask(sprint){ editSprintTask({id:'spt_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),title:'',section:'Custom',sectionIcon:'•',est:0,status:'todo',sprint:sprint||'backlog'},true); }
+function editSprintTask(t,isNew){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');box.style.maxWidth='430px';
+  box.innerHTML=`<div class="cmp-head"><h3>${isNew?'New task':'Edit task'}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');const fld=(lab)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+lab+'</label>';return f;};
+  const tf=fld('Task');const ti=el('input','cmp-in');ti.value=t.title||'';ti.placeholder='What needs doing';ti.oninput=()=>t.title=ti.value;tf.appendChild(ti);bd.appendChild(tf);
+  const sf=fld('Section');const ss=el('select','cmp-in');['Custom'].concat(SEO_PLAYBOOK.map(s=>s.title)).forEach(name=>{const o=document.createElement('option');o.value=name;o.textContent=name;if((t.section||'Custom')===name)o.selected=true;ss.appendChild(o)});ss.onchange=()=>{t.section=ss.value;const m=SEO_PLAYBOOK.find(s=>s.title===ss.value);t.sectionIcon=m?m.icon:'•';};sf.appendChild(ss);bd.appendChild(sf);
+  const hf=fld('Estimate (hours) — set this live in planning');const hi=el('input','cmp-in');hi.type='number';hi.min='0';hi.step='0.5';hi.value=(t.est||'');hi.oninput=()=>t.est=+hi.value||0;hf.appendChild(hi);bd.appendChild(hf);
+  const stf=fld('Status');const sts=el('select','cmp-in');[['todo','To do'],['doing','In progress'],['done','Done']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.status||'todo')===v)o.selected=true;sts.appendChild(o)});sts.onchange=()=>t.status=sts.value;stf.appendChild(sts);bd.appendChild(stf);
+  const spf=fld('Sprint');const sps=el('select','cmp-in');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name+' ('+fmtShort(s.start)+'–'+fmtShort(s.end)+')'])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sps.appendChild(o)});sps.onchange=()=>t.sprint=sps.value;spf.appendChild(sps);bd.appendChild(spf);
+  const foot=el('div','cmp-foot');
+  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();closeComposer();render();toast('Task deleted');};foot.appendChild(del);}
+  const sp2=el('div');sp2.style.flex='1';foot.appendChild(sp2);
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!(t.title||'').trim()){toast('Add a task name');return;} if(isNew)sprintTasks().push(t); commit(); closeComposer(); render(); toast(isNew?'Task added':'Saved'); };
+  foot.appendChild(save);bd.appendChild(foot);
+}
 function viewSeoDashboard(v){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return seoIsBuilder()?viewSeoBuilder(v):viewSeoProvider(v); }
 function viewSeoProvider(v){
   v.appendChild(el('div','page-head',`<h2>What to give Bogdan</h2><p>Each month, provide these so Bogdan never waits. Fill it in or upload right here — he gets it instantly. Anything past its date is flagged so you know to send it ASAP.</p>`));
@@ -2391,15 +2477,17 @@ function viewSeoProvider(v){
   if(over.length){ const b=el('div','card pad');b.style.cssText='margin-bottom:4px;border-left:4px solid var(--red)';b.innerHTML=`<b style="color:var(--red)">⚠ ${over.length} item${over.length>1?'s':''} overdue</b> <span class="muted" style="font-size:13px">— Bogdan is waiting. Get ${over.length>1?'these':'this'} to him ASAP (marked “Rolled over” below).</span>`;v.appendChild(b); }
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
   v.appendChild(seoBlogsCard(false));
+  v.appendChild(seoAccordion('🏃','Sprint plan','Plan the 2-week sprints + set hour estimates with Bogdan — live in your call',false,renderSprintBoard));
 }
 function viewSeoBuilder(v){
-  v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>Everything in one place — tap a section to open it. Work the Plan top to bottom; pull the content Sebastian's provided as you go.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>Your sprints are up top — work the board. The content Sebastian's provided is in the sections below.</p>`));
   const items=seoAllItems();
   const waiting=items.filter(it=>!seoItemProvided(it));
   const ready=items.filter(seoItemProvided);
-  const overSteps=SEO_PLAYBOOK.filter(seoStepOverdue).length;
-  // most urgent first, all collapsed
-  v.appendChild(seoAccordion('🗺️','The Plan — do it in order',(overSteps?('⚠ '+overSteps+' section'+(overSteps>1?'s':'')+' overdue · '):'')+'7 steps, each with a deadline',false,seoPlaybookFill));
+  // sprint board — primary work surface (open)
+  const sb=el('div','card pad');
+  sb.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🏃</div><div><h3>Sprints</h3><small>2-week sprints. Estimates set live in planning; move tasks as you build.</small></div></div>`;
+  renderSprintBoard(sb); v.appendChild(sb);
   v.appendChild(seoAccordion('✅','Ready to build',(ready.length||'No')+' item'+(ready.length===1?'':'s')+' provided — open to use + download',false,function(box){ if(!ready.length){box.appendChild(el('p','muted','Nothing provided yet.'));return;} ready.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
   v.appendChild(seoAccordion('✍️','Blog briefs to build',seoBlogs().length+' brief'+(seoBlogs().length===1?'':'s'),false,function(box){ seoBlogsFill(box,true); }));
   v.appendChild(seoAccordion('⏳','Waiting on Sebastian',(waiting.length||'No')+' item'+(waiting.length===1?'':'s')+' still coming',false,function(box){ if(!waiting.length){box.appendChild(el('p','muted','Nothing outstanding — you have everything.'));return;} waiting.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
@@ -2414,11 +2502,12 @@ function viewSeoProgress(v){
   grid.appendChild(stat(blogs,12,'Blogs published'));grid.appendChild(stat(towns,7,'Town details provided'));grid.appendChild(stat(photos,'','Job photos provided'));
   v.appendChild(grid);
   const pbc=el('div','card pad');pbc.style.marginTop='16px';pbc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>Playbook ${pb}% complete</h3><small>Across all 7 build steps.</small></div></div><div class="bar green" style="margin-top:6px"><i style="width:${pb}%"></i></div>`;v.appendChild(pbc);
-  // plan-section deadlines (you + Bogdan both track these)
+  // sprint summary (you + Bogdan both track these)
   const dlc=el('div','card pad');dlc.style.marginTop='16px';
-  dlc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📆</div><div><h3>Plan deadlines</h3><small>Each build section + when it's due.</small></div></div>`;
-  SEO_PLAYBOOK.forEach(step=>{ const done=seoStepDone(step), od=seoStepOverdue(step); const r=el('div','seoitem');
-    r.innerHTML=`<div class="si-ic">${step.icon}</div><div class="si-main"><div class="si-t">${esc(step.title)}</div><div class="si-why">Deadline ${fmtShort(seoStepDueTs(step.id))}${seoStepRolled(step.id)?' · ↻ rolled':''}</div></div><div class="si-stat">${done?'<span class="pst posted">✅ done</span>':od?'<span class="pst" style="background:#fde7e7;color:#cf3b3b">⚠ overdue</span>':'<span class="pst draft">on track</span>'}</div>`;
+  dlc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🏃</div><div><h3>Sprints</h3><small>Each 2-week sprint, its hours + how far along.</small></div></div>`;
+  const allT=sprintTasks();
+  seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(s=>{ const ts=allT.filter(t=>(t.sprint||'backlog')===s.id); if(!ts.length&&s.id==='backlog')return; const hrs=ts.reduce((a,t)=>a+(+t.est||0),0),dn=ts.filter(t=>t.status==='done').length,pct=ts.length?Math.round(dn/ts.length*100):0; const r=el('div','seoitem');
+    r.innerHTML=`<div class="si-ic">🏃</div><div class="si-main"><div class="si-t">${esc(s.name)}${s.id!=='backlog'?` <span class="muted" style="font-weight:500;font-size:12px">${fmtShort(s.start)}–${fmtShort(s.end)}</span>`:''}</div><div class="si-why">${ts.length} task${ts.length===1?'':'s'} · ${hrs}h · ${dn}/${ts.length} done</div></div><div class="si-stat"><span class="pst ${(pct===100&&ts.length)?'posted':'draft'}">${pct}%</span></div>`;
     dlc.appendChild(r); });
   v.appendChild(dlc);
   const over=seoAllItems().filter(seoItemOverdue);
@@ -3177,11 +3266,11 @@ function seoScopeSection(){
   const intro=el('div');intro.style.cssText='margin:0 0 8px';intro.innerHTML='<p class="muted" style="font-size:13px">The whole job at a glance. The badge shows whether the contributor still owes content for that step. Check things off on the <b>Home</b> tab.</p>';
   wrap.appendChild(intro);
   SEO_PLAYBOOK.forEach(step=>{
-    const st=seoPbStep(step.id);
-    const doneN=step.tasks.filter((_,i)=>st.tasks[i]).length, all=doneN===step.tasks.length;
+    const sdone=i=>{const tk=sprintTasks().find(x=>x.id==='spt_'+step.id+'_'+i);return !!(tk&&tk.status==='done');};
+    const doneN=step.tasks.filter((_,i)=>sdone(i)).length, all=doneN===step.tasks.length;
     const dd=el('details','guide');
     dd.innerHTML=`<summary><div class="gi" style="background:${all?'var(--green-soft)':'var(--blue-soft)'}">${step.icon}</div><div><div class="gt">${esc(step.title)} ${seoContentBadge(step.id)}</div><div class="gd">${esc(step.sub)}</div></div><span class="num">${doneN}/${step.tasks.length}</span></summary>
-      <div class="guide-body">${step.tasks.map((t,i)=>`<div class="chk"><span class="b">${st.tasks[i]?'✓':'○'}</span><span style="${st.tasks[i]?'color:var(--muted);text-decoration:line-through':''}">${esc(t)}</span></div>`).join('')}</div>`;
+      <div class="guide-body">${step.tasks.map((t,i)=>`<div class="chk"><span class="b">${sdone(i)?'✓':'○'}</span><span style="${sdone(i)?'color:var(--muted);text-decoration:line-through':''}">${esc(t)}</span></div>`).join('')}</div>`;
     wrap.appendChild(dd);
   });
   return wrap;

@@ -734,3 +734,31 @@ textarea.cmp-in{resize:vertical}
 .seoacc-ar{transition:.15s;color:var(--muted);font-size:13px;flex:0 0 auto}
 .seoacc[open]>.seoacc-sum .seoacc-ar{transform:rotate(180deg)}
 .seoacc-body{padding:0 18px 16px}
+
+/* ---- Sprint board (Asana-style) ---- */
+.sprintbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 12px}
+.sprint-tot{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--muted)}
+.sprintgrp{margin-bottom:14px}
+.sprintgrp-h{font-size:14px;padding:6px 2px;border-bottom:2px solid var(--line2);margin-bottom:4px}
+.sprintrow{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line)}
+.sprintstat{flex:0 0 auto;width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);background:#fff;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.sprintstat.doing{border-color:#2f6df0;color:#2f6df0}
+.sprintstat.done{background:#1f7a4d;border-color:#1f7a4d;color:#fff}
+.sprintmain{flex:1;min-width:0;cursor:pointer}
+.sprinttitle{font-size:13.5px;font-weight:600;color:var(--ink)}
+.sprinttitle.done{color:var(--muted);text-decoration:line-through}
+.sprinttag{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--bg);border:1px solid var(--line2);border-radius:999px;padding:1px 7px;margin-top:2px}
+.sprinthr{width:54px;flex:0 0 auto;border:1px solid var(--line2);border-radius:8px;padding:5px 6px;font-size:13px;text-align:center;font-family:inherit}
+.sprintsel{flex:0 0 auto;max-width:104px;border:1px solid var(--line2);border-radius:8px;padding:5px 6px;font-size:12px;font-family:inherit;background:#fff}
+.sprintx{flex:0 0 auto;border:0;background:none;color:var(--faint);font-size:14px;cursor:pointer;padding:4px}
+.sprintx:hover{color:var(--red)}
+.sprintboardcols{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+.sprintcol{flex:1;min-width:200px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px}
+.sprintcol.dragover{outline:2px dashed var(--orange);outline-offset:-2px}
+.sprintcol-h{font-size:13px;font-weight:800;color:var(--ink2);margin-bottom:8px}
+.sprintcard{background:#fff;border:1px solid var(--line2);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 2px #0b1b3a0d}
+.sprintcard.dragging{opacity:.5}
+.sprintcard .sc-t{font-size:13px;font-weight:600;color:var(--ink);line-height:1.35}
+.sprintcard .sc-meta{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px}
+.sprintcard .sc-hr{font-size:11.5px;font-weight:800;color:var(--orange)}
+.sprintcard .sc-sprint{font-size:10.5px;color:var(--faint);margin-top:4px}
