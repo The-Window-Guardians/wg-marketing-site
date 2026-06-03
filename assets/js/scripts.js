@@ -5087,13 +5087,19 @@ function mountProgSwitcher(){
   const br=$('#btnReset');if(br)br.onclick=resetAll;
   const bi=$('#btnImport');if(bi)bi.onclick=()=>{const f=$('#importFile');if(f)f.click()};
   const fi=$('#importFile');if(fi)fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
-    r.onload=()=>{try{const d=JSON.parse(r.result);if(d.state){S=d.state;ensureAuth();commit();enterApp();toast('Backup restored')}else toast('Not a valid backup')}catch(x){toast('Could not read that file')}};
+    r.onload=async ()=>{try{const d=JSON.parse(r.result);if(!d.state){toast('Not a valid backup');return;}
+      if(typeof isOwner==='function'&&!isOwner()){toast('Only Sebastian can restore a backup — it overwrites the whole team’s data.');return;}
+      const ok=await uiConfirm('This REPLACES the entire shared dataset for everyone on the team (posts, content records, SEO, accounts) with this file. It can’t be undone. Continue?',{title:'Restore backup for the whole team?',confirmText:'Restore',danger:true});
+      if(!ok)return;
+      S=d.state;ensureAuth();commit();enterApp();toast('Backup restored')
+    }catch(x){toast('Could not read that file')}};
     r.readAsText(f);e.target.value='';};
 })();
 
 async function resetAll(){
-  if(!confirm('Start fresh for Day One?\n\nThis clears EVERYTHING you touched while testing:\n• every checked step\n• all KPI numbers\n• all notes & roll-overs\n• everything typed or uploaded into the “Deliver to…” boxes (text + files)\n\nUse this ONCE — the morning you go live (Tuesday). It cannot be undone.'))return;
-  if(!confirm('Last check — really wipe it all to a clean Day One?'))return;
+  if(typeof isOwner==='function'&&!isOwner()){toast('Only Sebastian can reset — this wipes the whole team’s data.');return;}
+  if(!await uiConfirm('This wipes the ENTIRE TEAM’s data on every device (checked steps, KPIs, notes, roll-overs, deliverables). Everyone gets a clean slate. Use this ONCE — go-live morning. It cannot be undone.',{title:'Reset the whole team to Day One?',confirmText:'Continue',danger:true}))return;
+  if(!await uiConfirm('Last check — really wipe everything for the whole team to a clean Day One?',{title:'Final confirm',confirmText:'Wipe it all',danger:true}))return;
   try{const files=await fileList();for(const f of files)await fileDel(f.id);}catch(e){}
   const role=S.role,users=S.users,uid=S.uid; S=freshState(); S.role=role; S.users=users; S.uid=uid; commit();
   enterApp(); toast('Reset to Day One — clean slate. Go win Tuesday.');
