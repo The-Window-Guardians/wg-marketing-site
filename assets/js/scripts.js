@@ -1161,6 +1161,21 @@ function postMedia(p){
   return p.media;
 }
 function savePost(p){const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);if(i>=0)arr[i]=p;else arr.push(p);ST.posts=arr;commit()}
+/* Backfill Before/After labels on a post's photos (sim #4). Drive-imported photos don't
+   carry a role, so inherit it from the source job (p.fromJob) or the pool item itself.
+   Only fills MISSING roles — never overwrites a label Sebastian set by hand. */
+function fillMediaRoles(p){
+  if(!p||!Array.isArray(p.media))return (p&&p.media)||[];
+  var jobRole={};
+  if(p.fromJob){ var j=socBaJobs().find(function(x){return x.id===p.fromJob;}); if(j)jobItems(j).forEach(function(it){ if(it.role)jobRole[it.id]=it.role; }); }
+  p.media.forEach(function(m){
+    if(m.role)return;
+    if(jobRole[m.id]){m.role=jobRole[m.id];return;}
+    var pm=socPool().find(function(x){return x.id===m.id;});
+    if(pm&&pm.role)m.role=pm.role;
+  });
+  return p.media;
+}
 /* When a post goes to Ruth, make it self-contained: copy every photo into the shared
    cloud (Firestore) under its EXISTING id, so cloudFileGet resolves it on ANY device.
    Drive photos live in Sebastian's private Drive — Ruth can't reach those — so without
@@ -1295,26 +1310,25 @@ async function poolAddFiles(fileList,folder){
   return files.length;
 }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
-function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'archived');}
+function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
   const ids=new Set((p.media||[]).map(m=>m.id));
   const jobIds=new Set();socBaJobs().forEach(j=>jobItems(j).forEach(x=>jobIds.add(x.id)));
   socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used'&&!jobIds.has(m.id))m.status='available'});
 }
-/* free storage once a post is posted: delete its media BLOBS from IndexedDB unless
-   another active (not-yet-posted) post or a saved job still needs them. The tiny pool
-   record is kept + marked purged so a Drive re-sync won't re-download posted content. */
+/* free the local IndexedDB BLOB cache once a post is posted (unless an active post/job still
+   needs it), but KEEP the pool record + its shared CLOUD copy so the photo stays REUSABLE for
+   a follow-up or correction (sim #7). The record is marked status='posted' + purged so it moves
+   to "Recently posted" and a Drive re-sync won't re-download the blob. Content is never lost —
+   the cloud copy still resolves on any device, and reuse re-publishes straight from it. */
 async function purgePostedMedia(post){
   const ids=(postMedia(post)||[]).map(m=>m.id);
   const keep=new Set();
   socPosts().forEach(p=>{if(p.id!==post.id&&p.status!=='posted')postMedia(p).forEach(m=>keep.add(m.id));});
   socBaJobs().forEach(j=>jobItems(j).forEach(x=>keep.add(x.id)));
   for(const id of ids){ if(keep.has(id))continue;
-    try{await fileDel(id);}catch(e){}
-    // also free the shared CLOUD copy so it doesn't pile up in Firestore — but never
-    // pull an hf_ file an SEO blog/town page still points at.
-    try{ if(!(id.indexOf('hf_')===0 && typeof hfReferenced==='function' && hfReferenced(id))) await cloudFileDel(id); }catch(e){}
-    const pm=socPool().find(x=>x.id===id); if(pm){pm.status='archived';pm.purged=true;} }
+    try{await fileDel(id);}catch(e){}     // drop only the local cache; cloud copy stays for reuse
+    const pm=socPool().find(x=>x.id===id); if(pm){pm.status='posted';pm.purged=true;pm.postedAt=Date.now();} }
   commit();
 }
 /* delete a shared media doc from Firestore (poolfiles/hfiles). Mirror of cloudFileGet's routing. */
@@ -2215,7 +2229,17 @@ function navItems(){
 function currentView(){return (document.body&&document.body.dataset.view)||'dashboard'}
 function render(){
   const v=$('#view');if(!v)return;v.innerHTML='';
+  const nb=noEmailBanner();if(nb)v.appendChild(nb);
   ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader}[currentView()]||viewDashboard)(v);
+}
+/* Cloud sync logs in with the user's email — an account with no email never authenticates,
+   so it silently can't see or share content. Warn clearly instead of failing quietly (sim #13). */
+function noEmailBanner(){
+  if(!window.WG_FB_READY)return null;                 // no cloud configured → nothing to warn about
+  const me=curUser(); if(!me||me.email)return null;   // not logged in, or email present → fine
+  const b=el('div','nobanner');
+  b.innerHTML=`⚠ <b>No email on your account.</b> You won’t see shared photos or send posts to the team until Sebastian adds your email in Settings. (Your local work is safe.)`;
+  return b;
 }
 /* ---------- MARKETING HUB (birds-eye over every program) ---------- */
 function viewMarketingHub(v){
@@ -2475,7 +2499,11 @@ function seoStepDueTs(id){ const o=(ST.pbDue&&ST.pbDue[id])||0; return o||(seoSt
 function seoStepDone(step){ const st=seoPbStep(step.id); return step.tasks.every((_,i)=>st.tasks[i]); }
 function seoStepOverdue(step){ return !seoStepDone(step) && Date.now()>seoStepDueTs(step.id); }
 function seoStepRolled(id){ return !!(ST.pbRolled&&ST.pbRolled[id]); }
-function rolloverStep(id){ openDateModal('New deadline for this section',seoStepDueTs(id),function(ms){ if(!ST.pbDue)ST.pbDue={}; ST.pbDue[id]=ms; if(!ST.pbRolled)ST.pbRolled={}; ST.pbRolled[id]=true; commit(); }); }
+/* one shared rollover history (sim #14) — every deadline change is logged with old→new + when */
+function logRoll(id,label,from,to){ if(!Array.isArray(ST.rollLog))ST.rollLog=[]; ST.rollLog.push({id:id,label:label,from:from||0,to:to,at:Date.now()}); if(ST.rollLog.length>200)ST.rollLog=ST.rollLog.slice(-200); }
+function rollLast(id){ if(!Array.isArray(ST.rollLog))return null; for(var i=ST.rollLog.length-1;i>=0;i--){ if(ST.rollLog[i].id===id)return ST.rollLog[i]; } return null; }
+function rollCount(id){ return Array.isArray(ST.rollLog)?ST.rollLog.filter(function(e){return e.id===id;}).length:0; }
+function rolloverStep(id){ openDateModal('New deadline for this section',seoStepDueTs(id),function(ms){ var from=seoStepDueTs(id); if(!ST.pbDue)ST.pbDue={}; ST.pbDue[id]=ms; if(!ST.pbRolled)ST.pbRolled={}; ST.pbRolled[id]=true; logRoll(id,'section',from,ms); commit(); }); }
 /* collapsible section shell for the Build Queue (all start collapsed) */
 function seoAccordion(icon,title,sub,open,fill){
   const d=el('details','card seoacc'); if(open)d.open=true;
@@ -2491,7 +2519,7 @@ function seoPlaybookFill(box){
     const dueChip=()=>{ if(allDone())return '<span class="pst posted">✅ done</span>'; return Date.now()>seoStepDueTs(step.id)?'<span class="pst" style="background:#fde7e7;color:#cf3b3b">⚠ overdue</span>':`<span class="pst draft">⏳ ${fmtShort(seoStepDueTs(step.id))}</span>`; };
     const d=el('details','jobgroup');
     const summ=el('summary','jobsum');
-    const refresh=()=>{summ.innerHTML=`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length} ${dueChip()}${seoStepRolled(step.id)?' <span class="cb wait" style="margin-left:4px">↻ rolled</span>':''}`;};
+    const refresh=()=>{ if(allDone()&&ST.pbRolled&&ST.pbRolled[step.id]){delete ST.pbRolled[step.id];} summ.innerHTML=`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length} ${dueChip()}${(!allDone()&&seoStepRolled(step.id))?(' <span class="cb wait" style="margin-left:4px">↻ rolled '+rollCount(step.id)+'×</span>'):''}`;};
     refresh();d.appendChild(summ);
     const body=el('div');body.style.cssText='padding:2px 10px 12px';
     body.appendChild(el('div','muted',esc(step.sub))).style.cssText='font-size:12.5px;margin:0 0 8px';
@@ -2500,6 +2528,7 @@ function seoPlaybookFill(box){
     const dtxt=el('span','muted','Section deadline: '+fmtShort(seoStepDueTs(step.id)));dtxt.style.fontSize='12.5px';dl.appendChild(dtxt);
     const roll=el('button','btn-set','↻ Roll over — pick new date');roll.onclick=()=>rolloverStep(step.id);dl.appendChild(roll);
     body.appendChild(dl);
+    const _rl=rollLast(step.id); if(_rl&&!allDone()){ const h=el('div','muted','↻ Moved '+(_rl.from?fmtShort(_rl.from)+' → ':'')+fmtShort(_rl.to)+' · '+agoShort(_rl.at));h.style.cssText='font-size:11.5px;margin-top:5px;color:#8a6d1f';body.appendChild(h); }
     const note=el('textarea','cmp-in');note.rows=2;note.placeholder='Notes / questions for the team…';note.value=st.note||'';note.style.marginTop='8px';note.oninput=()=>{st.note=note.value;};note.onblur=()=>commit();
     body.appendChild(note);d.appendChild(body);box.appendChild(d);
   });
@@ -2548,7 +2577,7 @@ function openDateModal(title,currentMs,onSave,resetLabel,onReset){
   foot.appendChild(save);bd.appendChild(foot);
 }
 function openStartEditor(){ openDateModal('When does the 90-day plan start?',seoStart(),function(ms){ST.seoStart=ms;commit();}); }
-function openDueEditor(it){ openDateModal('Due date — '+it.label,seoDueTs(it),function(ms){if(!ST.dueOverride)ST.dueOverride={};ST.dueOverride[it.id]=ms;commit();},'Use default',function(){if(ST.dueOverride)delete ST.dueOverride[it.id];commit();}); }
+function openDueEditor(it){ openDateModal('Due date — '+it.label,seoDueTs(it),function(ms){var from=seoDueTs(it);if(!ST.dueOverride)ST.dueOverride={};ST.dueOverride[it.id]=ms;logRoll(it.id,it.label,from,ms);commit();},'Use default',function(){if(ST.dueOverride)delete ST.dueOverride[it.id];if(Array.isArray(ST.rollLog))ST.rollLog=ST.rollLog.filter(function(e){return e.id!==it.id;});commit();}); }
 function seoOpenItem(it,builder){ if(it.type==='town')return openTownFacts(it.town,builder); if(it.type==='media')return openSeoMedia(builder); if(it.type==='blog')return openSeoBlogs(builder); }
 function seoMonthCard(mo,builder){
   const card=el('div','card pad');card.style.marginTop='12px';
@@ -2649,7 +2678,8 @@ function sprintRow(t,showMove){
   {const nc=taskNeedsContent(t); if(nc)main.appendChild(el('span','needbadge'+(nc.ready?' ready':''),nc.ready?('✓ '+nc.town+' details in'):('⏳ needs '+nc.town+' details')));}
   main.onclick=()=>editSprintTask(t);r.appendChild(main);
   const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
-  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);}
+  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{const oldId=t.sprint||'backlog';if(sel.value!==oldId){t.movedFrom=(oldId==='backlog')?'Backlog':((sprintById(oldId)||{}).name||'a sprint');t.movedAt=Date.now();}t.sprint=sel.value;commit();render();};r.appendChild(sel);}
+  if(t.movedFrom&&t.movedAt)main.appendChild(el('span','movedtag','↪ from '+esc(t.movedFrom)+' · '+agoShort(t.movedAt)));
   const x=el('button','sprintx','✕');x.onclick=(e)=>{e.stopPropagation();ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();render();};r.appendChild(x);
   return r;
 }
@@ -3629,7 +3659,7 @@ async function exportBackup(){
     a.download='wg_marketing_backup_'+new Date().toISOString().slice(0,10)+'.json';
     document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
-    const onlyDevice=socPool().filter(m=>!m.driveId&&m.status!=='archived').length;
+    const onlyDevice=socPool().filter(m=>!m.driveId&&m.status!=='archived'&&m.status!=='posted').length;
     toast('Backup saved (posts, captions, notes, progress). Photos & videos are NOT in this file — they live in your Google Drive folder.'+(onlyDevice?(' ⚠ '+onlyDevice+' item'+(onlyDevice>1?'s':'')+' you uploaded directly aren’t in Drive — keep those originals safe.'):''));
   }catch(e){toast('Backup failed — try again.')}
 }
@@ -4384,7 +4414,32 @@ function socLibrary(v){
   poolCard.appendChild(blank);
   v.appendChild(poolCard);
 
-  // ---- POSTS: drafts + waiting queue (posted ones disappear into archive) ----
+  // ---- RECENTLY POSTED → reuse for a follow-up / correction (sim #7) ----
+  const postedItems=socPool().filter(m=>m.status==='posted').sort((a,b)=>(b.postedAt||0)-(a.postedAt||0));
+  if(postedItems.length){
+    const rc=el('details','card pad');rc.style.marginTop='12px';
+    const rsum=el('summary','seoacc-sum');rsum.innerHTML=`<div class="chip" style="background:var(--green-soft)">♻️</div><div class="seoacc-tt"><h3>Recently posted</h3><small>${postedItems.length} — tap Reuse to post one again (follow-up or correction)</small></div><span class="seoacc-ar">▾</span>`;
+    rc.appendChild(rsum);
+    const rbody=el('div','seoacc-body');
+    const rgrid=el('div','poolgrid');
+    postedItems.slice(0,40).forEach(m=>{
+      const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+      const cell=el('div','poolcell');
+      const img=el('img','poolimg');const ph=el('span','poolph',isVid?'🎬':'🖼️');
+      img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';});
+      if(VTHUMB[m.id])img.src=VTHUMB[m.id];else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;}else thumbInto(img,m.id);
+      cell.appendChild(img);cell.appendChild(ph);
+      cell.appendChild(el('span','postedtag','POSTED'));
+      const reuse=el('button','reusebtn','♻️ Reuse');
+      reuse.onclick=(e)=>{e.stopPropagation();m.status='available';delete m.purged;commit();toast('Back in Your content — tick it to make a new post');rerenderCal();};
+      cell.appendChild(reuse);
+      cell.onclick=()=>openMediaPreview(m.id,m.name);
+      rgrid.appendChild(cell);
+    });
+    rbody.appendChild(rgrid);rc.appendChild(rbody);v.appendChild(rc);
+  }
+
+  // ---- POSTS: drafts + waiting queue (posted ones move to "Recently posted") ----
   const active=socPosts().filter(p=>p.status!=='posted');
   const drafts=active.filter(p=>p.status==='draft');
   const queued=active.filter(p=>p.status==='approved');
@@ -4412,6 +4467,7 @@ function readyCard(p){
       <div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}</b> — on Instagram/Facebook tap <b>Add location</b> and choose “${esc(p.town||'your town')}, PA”. Google &amp; Nextdoor are already local.</div>
       <div class="rcnote">📋 ${esc(p.ruthNote||aiRuthNote(p))}</div>
     </div>`;
+  fillMediaRoles(p);                 // make sure Drive photos show their Before/After labels
   const mm=postMedia(p);
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
   if(mm[0]){const rcimg=card.querySelector('.rcimg');rcimg.style.cursor='pointer';rcimg.title='Tap to preview';rcimg.onclick=()=>openMediaPreview(mm[0].id,mm[0].name);}
@@ -4472,7 +4528,7 @@ function openComposer(idOrPost,isNew){
   const tf0=el('div','cmp-field');tf0.innerHTML='<label>Post type</label>';
   const tseg=el('div','seg');
   if(!p.type)p.type='photo';
-  SOC_TYPES.forEach(ty=>{const btn=el('button','seg-b'+(p.type===ty.id?' on':''),`${ty.icon} ${ty.t}`);btn.onclick=()=>{p.type=ty.id;tseg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on')};tseg.appendChild(btn)});
+  SOC_TYPES.forEach(ty=>{const btn=el('button','seg-b'+(p.type===ty.id?' on':''),`${ty.icon} ${ty.t}`);btn.onclick=()=>{p.type=ty.id;tseg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on');if(typeof renderMedia==='function')renderMedia();};tseg.appendChild(btn)});
   tf0.appendChild(tseg);b.appendChild(tf0);
 
   // category segmented
@@ -4491,7 +4547,9 @@ function openComposer(idOrPost,isNew){
   const media=el('div','mediabox');
   const renderMedia=()=>{
     media.innerHTML='';
+    fillMediaRoles(p);                 // inherit Before/After from the job/pool first
     const arr=postMedia(p);
+    const baType = p.type==='beforeafter';
     const grid=el('div','medgrid');
     arr.forEach((m,i)=>{
       const cell=el('div','medcell');
@@ -4499,7 +4557,16 @@ function openComposer(idOrPost,isNew){
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
       const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);renderMedia()};
       const nm=el('div','medname',esc(m.name||'attached'));
-      cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);cell.appendChild(nm);grid.appendChild(cell);
+      cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);cell.appendChild(nm);
+      // Before/After tag — Drive photos arrive unlabeled; let Sebastian set it here so Ruth posts them right
+      const isVidCell=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
+      if(!isVidCell){
+        const pill=el('button','rolepill '+(m.role||'none'), m.role==='before'?'BEFORE':m.role==='after'?'AFTER':'＋ tag');
+        pill.title='Tap to label Before / After';
+        pill.onclick=(e)=>{e.stopPropagation();m.role=(!m.role)?'before':m.role==='before'?'after':'';renderMedia();};
+        cell.appendChild(pill);
+      }
+      grid.appendChild(cell);
     });
     // always-present add zone (multiple)
     const drop=el('label','meddrop'+(arr.length?' small':''),arr.length?'＋ Add more':'📷 Tap to add photos or videos — pick several at once');
@@ -4534,6 +4601,12 @@ function openComposer(idOrPost,isNew){
       picker.style.display='';fromBtn.textContent='✕ Close library';
     };
     media.appendChild(fromBtn);media.appendChild(picker);
+    // Before/After posts read backwards if unlabeled — nudge (not a hard block) when tags are missing
+    const photos=arr.filter(m=>!/\.(mp4|mov|m4v|webm)$/i.test(m.name||''));
+    if(baType && photos.length>=2 && !photos.some(m=>m.role)){
+      const hint=el('div','medhint','💡 Before/After post — tap “＋ tag” on each photo to mark Before vs After so Ruth posts them in the right order.');
+      media.appendChild(hint);
+    }
   };
   renderMedia();mf.appendChild(media);b.appendChild(mf);
 
