@@ -1306,9 +1306,41 @@ async function poolAddFiles(fileList,folder){
   }
   ST.pool=pool;commit();
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
-  if(imgFailed)setTimeout(function(){toast('⚠️ '+imgFailed+' photo'+(imgFailed>1?'s':'')+' couldn’t be shared to the team (saved on this device only). Try again, or use a smaller photo.')},900);
+  if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
+  if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500); // try the backbone right away in case it was a transient hiccup
   return files.length;
 }
+/* Is this content safely on the shared backbone (so every device + the team can see it)?
+   - pf_ id or cloud flag  → already a Firestore cloud copy
+   - driveId               → lives in Google Drive, re-syncable any time
+   An f_ id with neither is an in-app upload that only made it to THIS device's cache. */
+function poolSynced(m){ if(!m)return false; if(m.cloud)return true; if(m.driveId)return true; return String(m.id||'').indexOf('pf_')===0; }
+function isVideoItem(m){ return /\.(mp4|mov|m4v|webm)$/i.test((m&&m.name)||'')||/^video\//.test((m&&m.type)||''); }
+/* EVENTUAL SYNC: push any device-only PHOTO up to the shared cloud the moment we're online.
+   Closes the gap where a photo uploaded offline / before login never reaches the backbone.
+   Videos are skipped (too big for Firestore — those need Google Drive) and flagged in the UI. */
+var _backfilling=false;
+async function backfillLocalPhotos(){
+  if(_backfilling||!window.WG_FB_READY||!WG_AUTH.currentUser)return 0;
+  _backfilling=true; let done=0;
+  try{
+    const pending=socPool().filter(m=>m&&!poolSynced(m)&&!isVideoItem(m)&&String(m.id||'').indexOf('f_')===0);
+    for(const m of pending){
+      try{
+        const rec=await fileGet(m.id); if(!rec||!rec.blob)continue;
+        const dataUrl=await imgToWebp(rec.blob);
+        const mime=dataUrl.slice(5,(dataUrl.indexOf(';')||13))||'image/webp';
+        await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(m.id)
+          .set({name:m.name||rec.name||'photo',type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+        m.cloud=true; VTHUMB[m.id]=dataUrl; done++;
+      }catch(e){ /* leave it device-only; we'll retry next online/sync */ }
+    }
+  }catch(e){}
+  _backfilling=false;
+  if(done){ commit(); if(typeof render==='function')render(); }
+  return done;
+}
+if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} }); }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
@@ -1928,6 +1960,7 @@ async function fbSyncStart(){
       try{ if(typeof amPoster==='function'&&amPoster()&&ST&&Array.isArray(ST.posts)) toast('🔄 Queue updated'); }catch(e){}
     }, function(err){ _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} }); // stop quietly if the session ends
     if(typeof render==='function')render();
+    setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} },1200); // push any device-only photos to the backbone now that we're online
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
 /* Manual one-shot pull — for Ruth's "Check for new posts" button when she's been
@@ -4362,6 +4395,11 @@ function socLibrary(v){
     else thumbInto(img,m.id);
     cell.appendChild(img);cell.appendChild(ph);
     if(isVid)cell.appendChild(el('span','poolplay','▶'));
+    // backbone status — so Sebastian can see what's shared vs still only on this device
+    if(!poolSynced(m)){
+      if(isVid){ const lb=el('span','localbadge vid','📵 device only — add to Drive to share'); lb.title='Video is too big for the cloud. Put it in your Google Drive folder to share it.'; cell.appendChild(lb); }
+      else { const lb=el('span','localbadge','⏳ syncing…'); lb.title='Saved here — uploading to the team backbone. Will turn shared automatically.'; cell.appendChild(lb); }
+    }
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(POOL_SEL.has(m.id))POOL_SEL.delete(m.id);else POOL_SEL.add(m.id);cell.classList.toggle('sel');updateMakeBtn();};
     cell.appendChild(ck);
