@@ -4712,11 +4712,13 @@ function mountProgSwitcher(){
   const allowed = PROGRAM_ORDER.filter(id=>PROGRAMS[id] && (isOwner()||!S.uid||canProg(id)));
   const opts = ((isOwner()||!S.uid||allowed.length>1)?[`<option value="all"${curId==='all'?' selected':''}>All dashboards</option>`]:[])
     .concat(allowed.map(id=>
-      `<option value="${id}"${curId===id?' selected':''}>${esc(PROGRAMS[id].name)}</option>`)).join('');
+      `<option value="${id}"${curId===id?' selected':''}>${esc(PROGRAMS[id].name)}</option>`))
+    .concat(isOwner()?[`<option value="founder">🔐 Founder HQ</option>`]:[])   // owner-only command center
+    .join('');
   pill.classList.add('progswitch');pill.classList.remove('open');pill.style.display='';
   pill.innerHTML=`<span class="ps-ico">${curIco}</span><select class="ps-sel" title="Switch dashboard">${opts}</select>`;
   const sel=pill.querySelector('.ps-sel');
-  sel.onchange=()=>{const v=sel.value;location.href=(v==='all')?'marketing.html':PROGRAMS[v].home;};
+  sel.onchange=()=>{const v=sel.value;location.href=(v==='all')?'marketing.html':(v==='founder')?'founder.html':PROGRAMS[v].home;};
 }
 
 /* top bar actions (all guarded — each page only has the shared chrome) */
