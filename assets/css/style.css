@@ -62,6 +62,9 @@ button{font-family:inherit;cursor:pointer}
 .tb-btn:hover{background:#ffffff1f}
 .tb-btn.primary{background:var(--orange);border-color:var(--orange)}
 .tb-btn.primary:hover{background:var(--orange-2)}
+.tb-sync{display:inline-flex;align-items:center;font-size:12px;font-weight:700;border-radius:9px;padding:6px 10px;white-space:nowrap}
+.tb-sync.on{background:#10381f;color:#7ee0a6;border:1px solid #1f8a4c55}
+.tb-sync.mid{background:#3a2f10;color:#e8c97a;border:1px solid #8a6d1f55}
 .role-chip{display:flex;align-items:center;gap:8px;background:#ffffff12;border:1px solid #ffffff20;border-radius:999px;padding:4px 5px 4px 10px}
 .role-chip .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px}
 .role-chip select{background:transparent;border:0;color:#fff;font-weight:700;font-size:13px;outline:none}

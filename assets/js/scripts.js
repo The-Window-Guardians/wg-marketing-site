@@ -1487,7 +1487,7 @@ function renderSavedJobs(container){
     body.appendChild(hint);
     const foot=el('div','rcactions');
     const post=el('button','btn-set primary','Make this post');post.onclick=()=>{post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before||after)?'beforeafter':(its.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
-    const del=el('button','btn-set danger','Delete');del.onclick=()=>{if(confirm('Delete this job?')){delBaJob(j.id);render();}};
+    const del=el('button','btn-set danger','Delete');del.onclick=async()=>{if(await uiConfirm('This removes the saved Before/After job. The photos stay in your content.',{title:'Delete this job?',confirmText:'Delete',danger:true})){delBaJob(j.id);render();toast('Job deleted');}};
     foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
     d.appendChild(body);
     container.appendChild(d);
@@ -1960,6 +1960,7 @@ async function fbSyncStart(){
       try{ if(typeof amPoster==='function'&&amPoster()&&ST&&Array.isArray(ST.posts)) toast('🔄 Queue updated'); }catch(e){}
     }, function(err){ _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} }); // stop quietly if the session ends
     if(typeof render==='function')render();
+    if(typeof ensureSyncPill==='function')ensureSyncPill();
     setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} },1200); // push any device-only photos to the backbone now that we're online
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
@@ -2132,7 +2133,7 @@ function toastUndo(msg,onUndo,onExpire){
 }
 /* Activity feed — a small shared log of team motion (approvals, posts, blog updates). Lives on
    the program slice and merges across users (see _MERGE_ARRAYS), capped so it never bloats. */
-function logActivity(text){ if(!ST)return; if(!Array.isArray(ST.activity))ST.activity=[]; ST.activity.push({id:'ac_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),who:(((typeof curUser==='function')&&curUser())||{}).name||'Someone',text:text,at:Date.now()}); if(ST.activity.length>60)ST.activity=ST.activity.slice(-60); }
+function logActivity(text){ if(!ST)return; if(!Array.isArray(ST.activity))ST.activity=[]; var now=Date.now(); var who=(((typeof curUser==='function')&&curUser())||{}).name||'Someone'; var last=ST.activity[ST.activity.length-1]; if(last&&last.text===text&&last.who===who&&(now-(last.at||0))<4000)return; /* skip accidental duplicate */ ST.activity.push({id:'ac_'+now+'_'+Math.random().toString(36).slice(2,5),who:who,text:text,at:now}); if(ST.activity.length>60)ST.activity=ST.activity.slice(-60); }
 function activityCard(){
   var acts=(ST&&Array.isArray(ST.activity))?ST.activity.slice().sort(function(a,b){return (b.at||0)-(a.at||0);}):[];
   var d=el('details','card pad');d.style.marginTop='12px';
@@ -3798,10 +3799,10 @@ function usersAdminCard(){
       if(!on&&u.perm==='owner'&&activeOwners().length<=1){toast('Can’t deactivate the only Owner.');e.target.checked=true;return;}
       u.active=on;commit();};
     const _upw=row.querySelector('.upw'); if(_upw)_upw.onclick=()=>{const v=prompt('New password for '+u.name+':');if(v==null)return;u.pass=hashPw(v);u.seeded=false;commit();render();toast('Password updated for '+u.name);};
-    row.querySelector('.urem').onclick=()=>{
+    row.querySelector('.urem').onclick=async()=>{
       if(me){toast('You can’t remove yourself.');return;}
       if(u.perm==='owner'&&activeOwners().length<=1){toast('Can’t remove the only Owner.');return;}
-      if(!confirm('Remove '+u.name+'? They won’t be able to log in anymore.'))return;
+      if(!await uiConfirm('They won’t be able to log in anymore. (Their cloud login still exists in Firebase — remove it there too if needed.)',{title:'Remove '+u.name+'?',confirmText:'Remove',danger:true}))return;
       S.users=(S.users||[]).filter(x=>x.id!==u.id);commit();render();toast('Removed '+u.name);};
     wrap.appendChild(row);
   });
@@ -3847,7 +3848,7 @@ function viewSettings(v){
     <div class="setrow"><span>Go-live</span><b>Tuesday, June 2 2026 · 12pm</b></div>
     <div class="setrow"><span>Cadence</span><b>Weekly · Tuesdays · 12 weeks</b></div>
     <div class="setrow"><span>Overall progress</span><b>${overallPct('all')}% complete</b></div>
-    <div class="setrow"><span>Sync status</span><span class="syncbadge off">● Local only — not yet synced</span></div>`;
+    <div class="setrow"><span>Sync status</span>${syncStatusBadge()}</div>`;
   v.appendChild(proj);
 
   const sync=el('div','card pad');sync.style.marginBottom='16px';
@@ -4908,7 +4909,7 @@ function renderGate(){
       <label class="login-lbl">Password</label>
       <input type="password" id="gatePw" class="login-pw" placeholder="Enter your password" autocomplete="current-password">
       <div class="login-actions"><button class="btn-set" id="gateBack">← Back</button><button class="btn-set primary" id="gateGo">Log in</button></div>
-      <div class="login-hint">Prototype login — real security turns on with the backend.</div>
+      <div class="login-hint">${window.WG_FB_READY?'🔒 Secure login — your work syncs to the team.':'Prototype login — real security turns on with the backend.'}</div>
     </div>`;
     const pw=$('#gatePw'); if(pw)pw.focus();
     const enter=()=>{S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();};
@@ -4944,6 +4945,20 @@ function logout(){ S.uid=null; S.role='all'; commit();
   _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;}
   if(window.WG_FB_READY&&WG_AUTH.currentUser){try{WG_AUTH.signOut()}catch(e){}}
   const app=$('#app'); if(app)app.style.display='none'; const g=$('#gate'); if(g)g.classList.remove('hidden'); renderGate(); }
+/* live sync state — used by the Settings row + the top-bar pill so the team can TRUST
+   that their work is shared (not stuck local). */
+function syncState(){ if(!window.WG_FB_READY||!(WG_AUTH&&WG_AUTH.currentUser))return 'off'; return (_fbSync&&_fbSync.on)?'on':'mid'; }
+function syncStatusBadge(){ const s=syncState();
+  return s==='on' ? '<span class="syncbadge on">● Live — synced to the team</span>'
+    : s==='mid' ? '<span class="syncbadge mid">● Connecting…</span>'
+    : '<span class="syncbadge off">● Local only on this device</span>'; }
+function ensureSyncPill(){
+  const bar=document.querySelector('.topbar'); if(!bar)return;
+  let p=document.getElementById('tbSync');
+  if(!window.WG_FB_READY||!(WG_AUTH&&WG_AUTH.currentUser)){ if(p)p.remove(); return; }
+  if(!p){ p=el('span','tb-sync'); p.id='tbSync'; const before=document.getElementById('btnPw')||document.getElementById('btnLogout')||document.getElementById('btnReset'); bar.insertBefore(p,before||null); }
+  const on=syncState()==='on'; p.className='tb-sync '+(on?'on':'mid'); p.title=on?'Your work is shared with the team in real time':'Connecting to the team…'; p.textContent=on?'● Synced':'● Connecting';
+}
 function ensureLogoutBtn(){
   const bar=document.querySelector('.topbar'); if(!bar)return;
   let b=document.getElementById('btnLogout');
@@ -5014,7 +5029,7 @@ function enterApp(){
     if(isHub()){ if(allowed.length<2){const home=(PROGRAMS[allowed[0]]||{}).home; if(home){location.href=home;return;}} }
     else if(allowed.indexOf(activeProgram())<0){ const home=(PROGRAMS[allowed[0]]||{}).home; if(home&&currentFile()!==home){location.href=home;return;} }
   }
-  ensureLogoutBtn(); ensurePwBtn();
+  ensureLogoutBtn(); ensurePwBtn(); ensureSyncPill();
   buildNav();render();
 }
 function isOwner(){const u=curUser();return !!u&&u.perm==='owner'}
