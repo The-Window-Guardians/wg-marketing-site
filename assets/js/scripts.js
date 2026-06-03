@@ -2368,8 +2368,8 @@ function seoDueTs(it){ const o=(ST.dueOverride&&ST.dueOverride[it.id])||0; retur
 function fmtShort(ts){ try{return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});}catch(e){return '';} }
 function seoTownFacts(){ if(!ST.townFacts||typeof ST.townFacts!=='object')ST.townFacts={}; return ST.townFacts; }
 /* a town's details now hold text + photos + links (migrates an old plain-string value) */
-function townFact(town){ const all=seoTownFacts(); let t=all[town]; if(typeof t==='string')t={text:t,media:[],links:[]}; if(!t||typeof t!=='object')t={text:'',media:[],links:[]}; if(typeof t.text!=='string')t.text=''; if(!Array.isArray(t.media))t.media=[]; if(!Array.isArray(t.links))t.links=[]; all[town]=t; return t; }
-function townProvided(town){ const t=townFact(town); return !!(t.text.trim()||t.media.length); }
+function townFact(town){ const all=seoTownFacts(); let t=all[town]; if(typeof t==='string')t={text:t}; if(!t||typeof t!=='object')t={}; ['text','neighborhoods','housing','story'].forEach(function(k){ if(typeof t[k]!=='string')t[k]=''; }); if(!Array.isArray(t.media))t.media=[]; if(!Array.isArray(t.links))t.links=[]; all[town]=t; return t; }
+function townProvided(town){ const t=townFact(town); return !!(t.neighborhoods.trim()||t.housing.trim()||t.story.trim()||t.text.trim()||t.media.length); }
 function seoMediaPool(){ if(!Array.isArray(ST.seoMedia))ST.seoMedia=[]; return ST.seoMedia; }
 function seoAllItems(){ return SEO_PLAN.reduce((a,mo)=>a.concat(mo.items.map(it=>Object.assign({month:mo.m},it))),[]); }
 function seoItemProvided(it){
@@ -2665,15 +2665,21 @@ function openTownFacts(town,builder){
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
   const bd=$('#cmpBody');
   if(builder){
-    const f=el('div','cmp-field');f.innerHTML='<label>Local details from Sebastian</label>';f.appendChild(el('div','robox',esc(tf.text||'— not provided yet —')));bd.appendChild(f);
+    const ro=(lab,val)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+lab+'</label>';f.appendChild(el('div','robox',esc(val||'— not provided yet —')));bd.appendChild(f);};
+    ro('Neighborhoods & landmarks',tf.neighborhoods);
+    ro('Housing stock + common problem',tf.housing);
+    ro('Real customer story (name · problem · result)',tf.story);
+    if(tf.text&&tf.text.trim())ro('Other notes',tf.text);
     if(tf.media.length){const pf=el('div','cmp-field');pf.innerHTML='<label>Photos — tap to download</label>';const g=el('div','medgrid');tf.media.forEach(m=>{const cell=el('div','medcell');cell.style.cursor='pointer';const img=el('img','medthumb');thumbInto(img,m.id);cell.appendChild(img);cell.appendChild(el('span','meddl','⬇'));cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||'photo.webp';a.click();}};g.appendChild(cell);});pf.appendChild(g);bd.appendChild(pf);}
     if(tf.links.length){const lf=el('div','cmp-field');lf.innerHTML='<label>Links</label>';tf.links.forEach(l=>{const a=el('a','',esc(l.url));a.href=l.url;a.target='_blank';a.style.cssText='display:block;font-size:12.5px;margin:2px 0;color:var(--orange)';lf.appendChild(a);});bd.appendChild(lf);}
     return;
   }
-  const f=el('div','cmp-field');f.innerHTML=`<label>3–5 real, local things about ${esc(town)} <span class="muted" style="font-weight:600">— neighborhoods, landmarks, what the homes are like, why folks there call you</span></label>`;
-  const ta=el('textarea','cmp-in');ta.rows=5;ta.value=tf.text;ta.placeholder='e.g. lots of 1980s colonials near Flowers Mill; older windows fogging up; close to Core Creek Park; customers love same-week installs…';ta.oninput=()=>tf.text=ta.value;
-  f.appendChild(ta);bd.appendChild(f);
-  // optional photos
+  bd.appendChild(el('div','muted',`These are the ingredients of a deep ${esc(town)} page that competitors can’t copy. Real + specific beats long.`)).style.cssText='font-size:12.5px;margin-bottom:8px';
+  const gf=(lab,hint,key,rows)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+lab+(hint?' <span class="muted" style="font-weight:600">— '+hint+'</span>':'')+'</label>';const ta=el('textarea','cmp-in');ta.rows=rows||2;ta.value=tf[key]||'';ta.oninput=()=>tf[key]=ta.value;f.appendChild(ta);bd.appendChild(f);return ta;};
+  gf('Neighborhoods & landmarks','name 2–3 real ones',`neighborhoods`,2).placeholder='e.g. Flowers Mill, Oxford Valley, near Core Creek Park';
+  gf('Housing stock + the common problem','what the homes are like + what’s failing',`housing`,2).placeholder='e.g. lots of 1980s colonials with original drafty/fogging double-hungs';
+  gf('ONE real customer story','first name · their problem · the result (your EEAT moat)',`story`,3).placeholder='e.g. The Riccis on Maple Ave — drafty 30-yr-old windows, freezing dining room. Installed 12 Okna double-hungs in a day; their Jan heating bill dropped noticeably.';
+  // photos
   const pf=el('div','cmp-field');pf.innerHTML='<label>Photos <span class="muted" style="font-weight:600">— optional: a couple street/job shots from this town</span></label>';const media=el('div','mediabox');
   const drawM=()=>{ media.innerHTML='';const g=el('div','medgrid');
     tf.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}tf.media.splice(i,1);drawM();};cell.appendChild(img);cell.appendChild(x);g.appendChild(cell);});
@@ -3437,11 +3443,32 @@ function seoAfter90Section(){
   wrap.appendChild(card);
   return wrap;
 }
+/* the bar every town page must clear — the uncopyable moat */
+function seoDeepTownSpec(){
+  const wrap=el('div');
+  wrap.appendChild(el('div','nav-sec','🏘️ Deep Town Page — the build spec (your moat)'));
+  const card=el('div','card pad');
+  card.innerHTML=`<p class="muted" style="font-size:13px;margin:0 0 10px">Google's 2026 update gutted thin, templated town pages (60–90% traffic loss). Each of your 7 town pages must clear this bar — that's the moat competitors can't copy. <b>Never</b> swap a city name into a template.</p>
+    <h6>Every town page must have</h6>
+    <div class="chk"><span class="b">✓</span><span><b>Unique 800–1,200 words</b> — genuinely different per town, not city-name swaps.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Local intro</b> — 2–3 real neighborhoods/landmarks + the housing stock + the common window problem there.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>ONE real project case study</b> — named neighborhood, before/after photos, the product (Okna), named installer, first-name customer + result.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>1–3 real local reviews</b> embedded (with Review schema).</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Town-specific FAQ</b> (5–8 Q&amp;A) + FAQPage schema.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Schema</b> — HomeAndConstructionBusiness + areaServed (this town) + AggregateRating + Review + FAQ.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Image alt text</b> — "window replacement before &amp; after in [town], PA — [detail]".</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Keyword placement</b> — "window replacement [town] PA" in the title, H1, first paragraph + one H2.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Internal links</b> — to the /windows/ hub, the Bucks County cost guide, and a related service page.</span></div>
+    <div class="chk"><span class="b">✓</span><span><b>Clear CTA + phone</b> (215) 709-8793 + a "free in-home estimate" button.</span></div>`;
+  wrap.appendChild(card);
+  return wrap;
+}
 function viewGuides(v){
   if(activeProgram()==='social'&&isPoster())return viewRuthGuide(v);
   if(activeProgram()==='social')return viewSocialGuides(v);
   v.appendChild(el('div','page-head',`<h2>Guide</h2><p>Your full task list is right up top — every step, with a badge showing what content the contributor still owes. Below it: the blog-writing playbook, the page-fix sheet, and a background library explaining each type of SEO.</p>`));
   v.appendChild(seoScopeSection());
+  v.appendChild(seoDeepTownSpec());
   v.appendChild(seoAfter90Section());
   const g=BLOG_GUIDE;
   const d=el('details','guide');d.open=true;
