@@ -5292,15 +5292,35 @@ function openPwChange(){
   };
   setTimeout(()=>{const f=$('#pwCur');if(f)f.focus();},50);
 }
+/* MASTER KEY: owner picks a teammate from the top bar → sees their exact dashboard. If that
+   teammate lives in a different program (e.g. Ruth=Social while you're on SEO), jump to their
+   home so you land on the right screen. The choice persists across pages (see onAuthStateChanged). */
+function setViewAs(roleVal){
+  S.role=roleVal; commit();
+  if(roleVal!=='all' && typeof isOwner==='function' && isOwner()){
+    var u=userById(roleVal);
+    if(u){ var progs=userProgs(u); if(progs.indexOf(activeProgram())<0){ var home=(PROGRAMS[progs[0]]||{}).home; if(home && currentFile()!==home){ location.href=home; return; } } }
+  }
+  enterApp();
+}
 function enterApp(){
   const gate=$('#gate');if(gate)gate.classList.add('hidden');
   const app=$('#app');if(app)app.style.display='block';
   const sel=$('#roleSel');
   if(sel){
-    if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown; an owner previewing one keeps it to switch back
-    else{
+    if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown
+    else if(isOwner()){
+      // MASTER KEY: owner can view the dashboard AS any teammate, and it sticks across pages
       sel.style.display='';
-      if(S.role!=='all' && ORDER.indexOf(S.role)===-1) S.role='all';
+      if(S.role!=='all' && !userById(S.role)) S.role='all';   // only reset if the viewed account no longer exists
+      const roleLabel=u=>u.perm==='owner'?'Owner':u.perm==='poster'?'Poster':u.perm==='contributor'?'SEO contributor':'Editor';
+      const us=(S.users||[]).filter(u=>u.active!==false);
+      sel.innerHTML='<option value="all">★ Everyone (you)</option>'+us.map(u=>`<option value="${u.id}">👁 View as ${esc(u.name)} — ${roleLabel(u)}</option>`).join('');
+      sel.value=S.role;
+    }
+    else{ // editor previewing within their program
+      sel.style.display='';
+      if(S.role!=='all' && !userById(S.role) && ORDER.indexOf(S.role)===-1) S.role='all';
       sel.innerHTML='<option value="all">Everyone</option>'+ORDER.map(r=>`<option value="${r}">${esc(personOf(r).name)}</option>`).join('');
       sel.value=S.role;
     }
@@ -5362,7 +5382,7 @@ function mountProgSwitcher(){
 
 /* top bar actions (all guarded — each page only has the shared chrome) */
 (function wireTopbar(){
-  const sel=$('#roleSel');if(sel)sel.onchange=e=>{S.role=e.target.value;commit();enterApp()};
+  const sel=$('#roleSel');if(sel)sel.onchange=e=>setViewAs(e.target.value);
   const bp=$('#btnPrint');if(bp)bp.onclick=()=>window.print();
   const be=$('#btnExport');if(be)be.onclick=async()=>{
     const files=await fileList();
@@ -5402,7 +5422,11 @@ if(window.WG_FB_READY){
   try{ WG_AUTH.onAuthStateChanged(function(u){
     if(u){
       var acct=(S.users||[]).find(function(x){return x.email&&x.email.toLowerCase()===String(u.email||'').toLowerCase();});
-      if(acct){ S.uid=acct.id; S.role=PEOPLE[acct.id]?acct.id:'all'; commit(); fbSyncStart(); enterApp(); }
+      if(acct){ S.uid=acct.id;
+        // preserve the owner's "view as" choice across page loads; everyone else is locked to themselves
+        var keepView = acct.perm==='owner' && S.role && (S.role==='all' || userById(S.role));
+        if(!keepView) S.role = PEOPLE[acct.id]?acct.id:'all';
+        commit(); fbSyncStart(); enterApp(); }
       else { // signed in, but this email has no team account — don't drop into a broken half-logged-in state
         try{WG_AUTH.signOut()}catch(e){}
         S.uid=null; var g2=$('#gate'); if(g2)g2.classList.remove('hidden'); var ap2=$('#app'); if(ap2)ap2.style.display='none'; renderGate();
