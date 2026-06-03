@@ -1710,44 +1710,74 @@ function aiHashtags(town,pid){
     fun:'#familybusiness #behindthescenes',customer:'#5stars #customerreview'}[pid]||'#windowreplacement';
   return `${local} ${proj} #WindowGuardians #DoneRight`;
 }
-function aiCaption(town,pid,note){
-  const where=town?` in ${town}`:'';
-  const j=(note||'').trim();
-  const tail='Free estimate → link in bio.';
-  const tpl={
-    portfolio:`Another one done right${where}. ${j||'Old, drafty windows out — clean, efficient, built-to-last in.'} We do it once because we do it right. ${tail}`,
-    edu:`${j||'Wondering if it’s time to replace your windows?'} Here’s what to know before you do${where?` — straight from our ${town} jobs`:''}. ${tail}`,
-    fun:`${j||`Behind the scenes with the crew${where} today.`} People hire people — here’s the team behind the work. 👋 ${tail}`,
-    customer:`${j||'"Couldn’t be happier with the crew and the result."'} Reviews like this${where?` from ${town}`:''} are why we do this. ⭐ ${tail}`
-  };
-  return (tpl[pid]||tpl.portfolio);
+function aiCaption(town,pid,note){ return aiCaptionOptions({town:town,pillar:pid,jobNote:note,type:'photo'})[0]; }
+/* ============================================================
+   SCRIPTED "EXPERT MARKETER" ENGINE
+   Reads the actual job note (town, product, type of work) and writes on-brand,
+   benefit-led captions + hashtags — and rotates seasonal angles so it stays fresh.
+   Town accuracy is the #1 rule: whatever town the user names/picks is used verbatim,
+   and it NEVER silently defaults to Langhorne.
+   ============================================================ */
+/* Detect the town the user means. Known target towns first; then ANY "<City>, PA" /
+   "in <City>" / "<City> PA" phrasing so a city we don't have on the list still wins. */
+function detectCity(note){
+  var n=(note||'').trim(); if(!n)return '';
+  for(var i=0;i<SOC_TOWNS.length;i++){ var t=SOC_TOWNS[i]; if(new RegExp('\\b'+t.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&')+'\\b','i').test(n))return t; }
+  // generic: "<City>, PA" or "<City> PA" (1–3 capitalized words)
+  var m=n.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,2}),?\s+PA\b/);
+  if(m)return m[1];
+  // "in <City>" / "near <City>" (1–2 capitalized words, not a sentence start word)
+  m=n.match(/\b(?:in|near|around|over in)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,1})\b/);
+  if(m && !/^(The|This|That|We|Our|Today|Another|Old|New|People|Free|Window|Windows|Door|Doors|Siding|Roof)$/.test(m[1].split(' ')[0]))return m[1];
+  return '';
 }
-/* expert suggestions — three caption angles + two hashtag sets the user can swap in.
-   Service-industry tuned (results, local trust, clear CTA). Scripted now; real AI later. */
-/* if you name a known town in the job note, that wins over the dropdown default */
-function townInNote(note){const n=(note||'');return SOC_TOWNS.find(t=>new RegExp('\\b'+t.replace(/[-/\\^$*+?.()|[\]{}]/g,'')+'\\b','i').test(n));}
-function effectiveTown(p){return townInNote(p&&p.jobNote)||(p&&p.town)||SOC_TOWNS[0];}
-/* Polished, ready-to-post caption options per category + post type.
-   NOTE: these are clean expert samples — they intentionally do NOT paste your
-   raw note in verbatim (that produced garbage). The LIVE AI (after the backend)
-   reads your note, writes a custom caption, fixes grammar, and keeps improving. */
+function townInNote(note){ return detectCity(note); }            // back-compat (composer uses it)
+/* The town to actually use: what they typed in the note wins; else the dropdown pick; else
+   blank (captions then read naturally with no city — never a wrong default). */
+function effectiveTown(p){ return detectCity(p&&p.jobNote) || (p&&p.town) || ''; }
+/* Pull marketing signals out of the note so copy can name the real product + work. */
+function noteSignals(note){
+  var n=(note||'').toLowerCase();
+  var brands=['Okna','Andersen','Pella','ProVia','Marvin','Sunrise','Harvey','James Hardie','Hardie','Simonton'];
+  var product=''; for(var i=0;i<brands.length;i++){ if(n.indexOf(brands[i].toLowerCase())>=0){product=brands[i]==='Hardie'?'James Hardie':brands[i];break;} }
+  var work = /\b(roof|shingle|gutter)/.test(n)?'roof' : /\b(siding|hardie|james hardie)/.test(n)?'siding' : /\b(door|entry|patio|slider)/.test(n)?'door' : 'window';
+  return {product:product, work:work};
+}
+var WORK_NOUN={window:'windows',door:'doors',siding:'siding',roof:'roof'};
+/* Seasonal angle that rotates by date — gives a fresh, "updated every couple weeks" feel
+   without a live model. (Runs in the browser, so Date is fine here.) */
+function seasonAngle(){
+  var d; try{d=new Date();}catch(e){return {hook:'',tag:'#HomeUpgrade'};}
+  var mo=d.getMonth(); // 0=Jan
+  if(mo<=1||mo===11) return {hook:'Winter drafts and high heating bills? This is the fix.',tag:'#WinterReady #EnergySavings'};
+  if(mo<=4) return {hook:'Spring refresh season — boost your curb appeal before summer.',tag:'#SpringRefresh #CurbAppeal'};
+  if(mo<=7) return {hook:'Beat the summer heat (and the AC bill) with a tighter, cooler home.',tag:'#SummerComfort #EnergyEfficient'};
+  return {hook:'Get the house buttoned up before the cold rolls back in.',tag:'#FallProjects #WinterPrep'};
+}
+/* a stable 2-week bucket so the suggested angle ORDER refreshes about every two weeks */
+function _biweek(){ try{var d=new Date();return Math.floor(((d.getMonth()*31)+d.getDate())/14);}catch(e){return 0;} }
+function _rot(arr){ if(!arr||!arr.length)return arr; var k=_biweek()%arr.length; return arr.slice(k).concat(arr.slice(0,k)); }
+/* Polished, ready-to-post caption options — town-accurate, product-aware, seasonal. */
 function aiCaptionOptions(p){
   const town=effectiveTown(p), where=town?` in ${town}`:'';
+  const sig=noteSignals(p&&p.jobNote); const noun=WORK_NOUN[sig.work]||'windows';
+  const prod=sig.product?(sig.product+' '):'';
   const cta='📲 Free, no-pressure estimate — link in bio.';
+  const season=seasonAngle();
   const sets={
     portfolio:[
-      `Another one done right${where}. Old, drafty windows out — clean, energy-saving, built-to-last in. We do it once because we do it right. ${cta}`,
-      `Craftsmanship you can see${where}: tight lines, clean trim, and zero mess left behind. That’s the Window Guardians standard. ${cta}`,
-      `${p.type==='beforeafter'||p.type==='carousel'?'Swipe for the transformation':'Fresh install'}${where} — quality products installed by a local crew that treats your home like our own. ${cta}`
+      `Another ${prod}${noun} job done right${where}. Old and worn out — clean, energy-saving, built-to-last in. We do it once because we do it right. ${cta}`,
+      `Craftsmanship you can see${where}: tight lines, clean trim, zero mess left behind. That’s the Window Guardians standard${prod?` — and why we install ${sig.product}`:''}. ${cta}`,
+      `${p.type==='beforeafter'||p.type==='carousel'?'Swipe for the transformation':'Fresh '+noun}${where} — premium ${prod}products installed by a local crew that treats your home like our own. ${cta}`
     ],
     edu:[
-      `Quick tip: if your windows fog up between the panes, the seal has failed — and a patch rarely lasts. Here’s what to check before you replace. ${cta}`,
-      `Thinking about new windows${where}? Three things actually matter: the glass package, the install, and who stands behind it. We’ll walk you through all three. ${cta}`,
-      `Energy bills creeping up? Drafty, single-pane windows are usually the culprit. Here’s how the right replacement pays you back. ${cta}`
+      `${season.hook} ${sig.work==='window'?'If your windows fog between the panes or you feel a draft, the seal’s gone — and a patch rarely lasts.':'Here’s what actually matters before you start your '+noun+' project.'} ${cta}`,
+      `Thinking about new ${noun}${where}? Three things decide the result: the product, the install, and who stands behind it${prod?` — we install ${sig.product} and back every job`:''}. ${cta}`,
+      `Energy bills creeping up? Drafty ${noun} are usually the culprit. Here’s how the right replacement pays you back. ${cta}`
     ],
     fun:[
       `${p.type==='reel'?'Watch the crew in action':'Behind the scenes with the crew'}${where} today 👷. People hire people — here’s the team that shows up, cleans up, and gets it done right. ${cta}`,
-      `Good people, hard work, and a result the homeowner loves${where}. Proud of this crew. ${cta}`,
+      `Good people, hard work, and a ${noun} result the homeowner loves${where}. Proud of this crew. ${cta}`,
       `This is what “done right” looks like in motion${where}. ${cta}`
     ],
     customer:[
@@ -1756,16 +1786,23 @@ function aiCaptionOptions(p){
       `Real reviews from real local homeowners${where} — that trust is the whole job. ${cta}`
     ]
   };
-  return sets[p.pillar]||sets.portfolio;
+  return _rot(sets[p.pillar]||sets.portfolio);   // rotate order ~every 2 weeks for freshness
 }
 function aiHashtagOptions(p){
-  const town=effectiveTown(p);
-  return [aiHashtags(town,p.pillar), `#WindowGuardians #BucksCountyPA #${(town||'Langhorne').replace(/[^a-z]/gi,'')}PA #windowreplacement #homeupgrade #localbusiness`];
+  const town=effectiveTown(p), sig=noteSignals(p&&p.jobNote), season=seasonAngle();
+  const cityTag=town?(' #'+town.replace(/[^a-z]/gi,'')+'PA'):'';
+  const prodTag=sig.product?(' #'+sig.product.replace(/[^a-z]/gi,'')):'';
+  const workTag={window:'#windowreplacement',door:'#entrydoors',siding:'#jameshardiesiding',roof:'#roofreplacement'}[sig.work]||'#windowreplacement';
+  return [
+    (aiHashtags(town,p.pillar)+prodTag).trim(),
+    ('#WindowGuardians #BucksCountyPA'+cityTag+' '+workTag+prodTag+' '+season.tag+' #localcontractor').replace(/\s+/g,' ').trim()
+  ];
 }
 function aiRuthNote(p){
   const plats=SOC_PLATFORMS.filter(x=>p.platforms&&p.platforms[x.id]).map(x=>x.t).join(' + ')||'Instagram + Facebook';
   const when=p.time?` at ${p.time}`:'';
-  return `Post to ${plats}${when}. Set location to ${p.town||'the job town'}. Paste caption + hashtags as written. Done.`;
+  const town=effectiveTown(p);
+  return `Post to ${plats}${when}. Set location to ${town||'the job town'}. Paste caption + hashtags as written. Done.`;
 }
 /* completeness — which strategic fields are still missing on a post */
 function postGaps(p){
@@ -2401,14 +2438,16 @@ function runTour(steps,name){
   function close(){ try{ov.remove();}catch(e){} }
   draw();
 }
+function tourRole(){ return (typeof amPoster==='function'&&amPoster())?'poster' : (typeof seoIsBuilder==='function'&&seoIsBuilder())?'builder' : 'owner'; }
+/* replay on demand — for the top-bar "Tour" button (anyone, anytime) */
+function startTour(){ try{ runTour(TOUR_STEPS[tourRole()]||TOUR_STEPS.owner, (curUser()||{}).name||'there'); }catch(e){} }
 function maybeRunTour(){
   try{
     if(!S.uid)return;
     var key='wg_tour_'+S.uid;
     if(localStorage.getItem(key))return;
     localStorage.setItem(key,'1');   // mark seen up front so it shows exactly once
-    var role = (typeof amPoster==='function'&&amPoster())?'poster' : (typeof seoIsBuilder==='function'&&seoIsBuilder())?'builder' : 'owner';
-    setTimeout(function(){ runTour(TOUR_STEPS[role]||TOUR_STEPS.owner, (curUser()||{}).name||'there'); }, 500);
+    setTimeout(startTour, 500);
   }catch(e){}
 }
 function render(){
@@ -4948,7 +4987,8 @@ function openComposer(idOrPost,isNew){
   // job note
   const jf=el('div','cmp-field');jf.innerHTML='<label>Job note <span class="muted" style="font-weight:600">— what you did, in your words (feeds the AI)</span></label>';
   const jn=el('textarea','cmp-in');jn.rows=2;jn.value=p.jobNote||'';jn.placeholder='e.g. swapped 8 drafty double-hungs for Okna, whole job in a day';
-  jn.oninput=()=>{p.jobNote=jn.value;const t=townInNote(jn.value);if(t&&t!==p.town){p.town=t;sel.value=t;}}; // name a town → Town field follows
+  jn.oninput=()=>{p.jobNote=jn.value;const t=detectCity(jn.value);if(t&&t!==p.town){p.town=t; // name ANY city → Town field follows (add it as an option if it's not one of the 7)
+    if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t;}};
   jf.appendChild(jn);b.appendChild(jf);
 
   // caption — you write it; the expert suggests options you can swap in
@@ -5190,6 +5230,13 @@ function ensureLogoutBtn(){
   else if(b){b.remove();}
 }
 /* self-service password change (Firebase) — available to everyone in the top bar */
+function ensureTourBtn(){
+  const bar=document.querySelector('.topbar'); if(!bar||!S.uid)return;
+  if(document.getElementById('btnTour'))return;
+  const b=el('button','tb-btn','❔ Tour');b.id='btnTour';b.title='Replay the welcome tour';b.onclick=startTour;
+  const before=document.getElementById('btnPw')||document.getElementById('btnLogout')||document.getElementById('btnReset');
+  bar.insertBefore(b,before||null);
+}
 function ensurePwBtn(){
   const bar=document.querySelector('.topbar'); if(!bar)return;
   let b=document.getElementById('btnPw');
@@ -5253,7 +5300,7 @@ function enterApp(){
     if(isHub()){ if(allowed.length<2){const home=(PROGRAMS[allowed[0]]||{}).home; if(home){location.href=home;return;}} }
     else if(allowed.indexOf(activeProgram())<0){ const home=(PROGRAMS[allowed[0]]||{}).home; if(home&&currentFile()!==home){location.href=home;return;} }
   }
-  ensureLogoutBtn(); ensurePwBtn(); ensureSyncPill();
+  ensureLogoutBtn(); ensurePwBtn(); ensureSyncPill(); ensureTourBtn();
   buildNav();render();
   if(typeof maybeRunTour==='function')maybeRunTour();
 }
