@@ -2117,12 +2117,10 @@ const SHARED_NAV=[
   {sec:'Shared'},
   {ic:'📁',label:'Files',file:'files.html'},
   {sec:'Admin'},
-  {ic:'⚙️',label:'Settings',file:'settings.html'},
-  /* OWNER-ONLY: Founder HQ. Front-end role gate only (visible/redirect by role).
-     BACKEND HOOK: the PHP/MySQL programmer must enforce real owner auth server-side —
-     the role check below is a UX deterrent, NOT security. */
-  {sec:'Owner only',owner:true},
-  {ic:'🔐',label:'Founder HQ',file:'founder.html',owner:true}
+  {ic:'⚙️',label:'Settings',file:'settings.html'}
+  /* Founder HQ (founder.html) is intentionally NOT in the public deploy, so it's
+     not linked here — it would 404 / fall back to the home page. Re-add a nav item
+     only if founder.html is deployed AND gated on real owner auth (see founder.html). */
 ];
 function currentFile(){const p=(location.pathname||'').split('/').pop();return p||'index.html'}
 // "All dashboards" / combined hub mode (the Marketing Overview page)
@@ -3981,15 +3979,18 @@ function videoThumb(blob){
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(!rec||!rec.blob){ // no local copy — try the cloud (synced WebP), cache it
-      if(VTHUMB[mediaId]){img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
-      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;} return; }
-    if(/image/.test(rec.type)){
-      // show only once the browser actually decodes it; HEIC etc. that Chrome
-      // can't render fail silently to the emoji placeholder instead of a broken icon
+    if(!rec||!rec.blob){ // no local copy — try cached → cloud → the Drive thumbnail
+      if(VTHUMB[mediaId]){img.onerror=()=>{img.style.display='none';delete VTHUMB[mediaId];};img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
+      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;return;}
+      const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;   // Drive-synced photo with no local blob
+      if(pm&&pm.driveThumb){img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=pm.driveThumb;}
+      return; }
+    if(/image/.test(rec.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(rec.name||'')){
+      var blob=rec.blob;
+      if(/hei[cf]/i.test(rec.type||'')||/\.hei[cf]$/i.test(rec.name||'')){ try{ const lib=await loadHeicLib(); if(lib){ const out=await lib({blob:rec.blob,toType:'image/jpeg',quality:0.9}); blob=Array.isArray(out)?out[0]:out; } }catch(e){} } // Chrome can't decode raw HEIC — convert first
       img.onload=()=>{img.style.display='block';try{URL.revokeObjectURL(img.src)}catch(e){}};
       img.onerror=()=>{img.style.display='none';try{URL.revokeObjectURL(img.src)}catch(e){}};
-      img.src=URL.createObjectURL(rec.blob);
+      img.src=URL.createObjectURL(blob);
     } else if(/video/.test(rec.type)||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||'')){
       const d=await videoThumb(rec.blob);
       if(d){img.src=d;img.style.display='block';}
@@ -4010,9 +4011,9 @@ async function openMediaPreview(mediaId,name){
   try{const rec=await fileGet(mediaId);
     body.innerHTML='';
     if(!rec||!rec.blob){ const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){const im=document.createElement('img');im.src=c.dataUrl;im.className='mprev-media';body.appendChild(im);if(name)box.appendChild(el('div','mprev-cap',esc(name)));}else body.appendChild(el('div','muted','Preview unavailable.')); return; }
-    const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(name||'');
     if(isVid){
+      const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
       const wrap=el('div');wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px';
       const vid=document.createElement('video');vid.src=url;vid.controls=true;vid.autoplay=true;vid.playsInline=true;vid.className='mprev-media';
       const note=el('div');note.style.cssText='color:#fff;opacity:.9;font-size:12.5px;max-width:540px;text-align:center;display:none';
@@ -4023,7 +4024,10 @@ async function openMediaPreview(mediaId,name){
       wrap.appendChild(vid);wrap.appendChild(note);wrap.appendChild(dl);
       body.appendChild(wrap);
     }else{
-      const img=document.createElement('img');img.src=url;img.className='mprev-media';body.appendChild(img);
+      var iblob=rec.blob;
+      if(/hei[cf]/i.test(rec.type||'')||/\.hei[cf]$/i.test(name||'')){ try{ const lib=await loadHeicLib(); if(lib){ const out=await lib({blob:rec.blob,toType:'image/jpeg',quality:0.9}); iblob=Array.isArray(out)?out[0]:out; } }catch(e){} }
+      const iurl=URL.createObjectURL(iblob);_mprevUrl=iurl;
+      const img=document.createElement('img');img.src=iurl;img.className='mprev-media';img.onerror=()=>{img.style.display='none';};body.appendChild(img);
     }
     if(name)box.appendChild(el('div','mprev-cap',esc(name)));
   }catch(e){body.innerHTML='<div class="muted">Preview unavailable.</div>';}
@@ -4207,7 +4211,7 @@ function socLibrary(v){
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
     img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
-    if(VTHUMB[m.id])img.src=VTHUMB[m.id];
+    if(VTHUMB[m.id]){img.onerror=()=>{img.style.display='none';ph.style.display='';delete VTHUMB[m.id];thumbInto(img,m.id);};img.src=VTHUMB[m.id];}
     else if(isVid&&m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} // Google's video thumbnail (works for HEVC); fall back to a local frame-grab
     else thumbInto(img,m.id);
     cell.appendChild(img);cell.appendChild(ph);
