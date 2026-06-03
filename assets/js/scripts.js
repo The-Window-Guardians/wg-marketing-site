@@ -2603,6 +2603,17 @@ function viewSeoDashboard(v){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return se
 function viewSeoProvider(v){
   v.appendChild(el('div','page-head',`<h2>What to give Bogdan</h2><p>Each month, provide these so Bogdan never waits. Fill it in or upload right here — he gets it instantly. Anything past its date is flagged so you know to send it ASAP.</p>`));
   const sMs=seoStart();const startRow=el('div','seostart');startRow.innerHTML=`<span>📅 90-day plan starts <b style="color:var(--ink)">${fmtShort(sMs)}, ${new Date(sMs).getFullYear()}</b></span>`;const chg=el('button','tbtn','Change');chg.onclick=()=>openStartEditor();startRow.appendChild(chg);v.appendChild(startRow);
+  v.appendChild(seoAccordion('💡','Tips — content that actually ranks','Quick rules of thumb for whoever provides blogs, photos + town details',false,function(box){
+    box.innerHTML=`<ol class="seotips">
+      <li><b>Name the town + a real local detail</b> (a neighborhood, landmark, school). "Langhorne, near Flowers Mill" beats "your area." Generic = invisible.</li>
+      <li><b>Real photos only</b> — your actual before/afters + crew, never stock.</li>
+      <li><b>One real customer story per town</b> — first name, the problem, the result. The EEAT moat competitors can’t fake.</li>
+      <li><b>Name the product + town in your notes</b> ("Okna, Langhorne colonial") — Bogdan weaves it into the page.</li>
+      <li><b>Reviews: ask same-day</b>, and coach the customer to mention the <b>town + "Okna" + one detail</b> — Google reads the words, not just the stars.</li>
+      <li><b>Provide a town’s details + photos BEFORE its sprint</b> — Bogdan can’t build what he doesn’t have. Speed of providing = speed of ranking.</li>
+      <li><b>Deep beats thin</b> — one rich, true page per town beats five generic ones (Google now penalizes thin pages).</li>
+    </ol>`;
+  }));
   const over=seoAllItems().filter(seoItemOverdue);
   if(over.length){ const b=el('div','card pad');b.style.cssText='margin-bottom:4px;border-left:4px solid var(--red)';b.innerHTML=`<b style="color:var(--red)">⚠ ${over.length} item${over.length>1?'s':''} overdue</b> <span class="muted" style="font-size:13px">— Bogdan is waiting. Get ${over.length>1?'these':'this'} to him ASAP (marked “Rolled over” below).</span>`;v.appendChild(b); }
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
