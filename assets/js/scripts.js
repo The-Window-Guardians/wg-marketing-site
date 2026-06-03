@@ -1208,6 +1208,30 @@ function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
 /* ---- CONTENT POOL: raw uploaded media, separate from posts ----
    Lifecycle: available → used (attached to a post) → archived (post got posted). */
 function socPool(){return (ST&&Array.isArray(ST.pool))?ST.pool:[]}
+/* saved caption / hashtag snippets (reusable, synced) */
+function socSnips(){ if(!ST)return []; if(!Array.isArray(ST.snippets))ST.snippets=[]; return ST.snippets; }
+/* a row of saved snippets (tap to insert) + a "save current" button, for the caption + hashtag fields */
+function snippetBar(kind,getText,setText){
+  const wrap=el('div','snipbar');
+  const redraw=()=>{
+    wrap.innerHTML='';
+    socSnips().filter(s=>s.kind===kind).forEach(s=>{
+      const chip=el('span','snipchip');
+      const use=el('button','snipuse',esc(s.text.length>30?s.text.slice(0,30)+'…':s.text));use.title=s.text;
+      use.onclick=()=>{ setText(s.text); toast('Inserted'); };
+      const x=el('button','snipx','✕');x.title='Delete saved snippet';
+      x.onclick=(e)=>{ e.stopPropagation(); ST.snippets=socSnips().filter(z=>z.id!==s.id); commit(); redraw(); };
+      chip.appendChild(use);chip.appendChild(x);wrap.appendChild(chip);
+    });
+    const save=el('button','snipsave','📌 Save current');
+    save.onclick=()=>{ const txt=(getText()||'').trim(); if(!txt){toast('Nothing to save yet');return;}
+      if(socSnips().some(s=>s.kind===kind&&s.text===txt)){toast('Already saved');return;}
+      socSnips().push({id:'sn_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),kind:kind,text:txt,_ct:Date.now()}); commit(); redraw(); toast('Saved — tap it to reuse anytime'); };
+    wrap.appendChild(save);
+  };
+  redraw();
+  return wrap;
+}
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
 function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
 /* fetch a cloud-stored media file (WebP) by id — social pool photos (pf_) or handoff photos (hf_) */
@@ -1921,7 +1945,7 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia){
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets'];
 /* Stamp a permanent creation time on every mergeable record so deletes/merges are reliable
    for base36 ids too. Cheap; runs in commit() before each save, so a record always carries
    _ct before it can ever reach the shared doc. */
@@ -4507,6 +4531,14 @@ let POOL_KIND='all'; // content filter: all | photos | videos
 let POOL_GROUP='off'; // off | job (group by location)
 let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
+/* Lazy-load: only run an expensive thumbnail fetch once its cell scrolls near view. Keeps the
+   content library snappy on phones with hundreds of photos. Falls back to immediate if no IO. */
+var _lazyIO=null, _lazyCb=(typeof WeakMap!=='undefined')?new WeakMap():null;
+function lazyView(elm,fn){
+  if(typeof IntersectionObserver==='undefined'||!_lazyCb){ try{fn()}catch(e){}; return; }
+  if(!_lazyIO){ _lazyIO=new IntersectionObserver(function(ents){ ents.forEach(function(e){ if(e.isIntersecting){ var cb=_lazyCb.get(e.target); _lazyCb.delete(e.target); _lazyIO.unobserve(e.target); if(cb){try{cb()}catch(_){}} } }); },{rootMargin:'250px'}); }
+  _lazyCb.set(elm,fn); _lazyIO.observe(elm);
+}
 /* "What needs me now" — one glance at everything waiting on the owner, across BOTH programs.
    Reads raw S.prog so it works regardless of the active dashboard. Only shows rows that matter. */
 function actionCenterCard(){
@@ -4626,9 +4658,9 @@ function socLibrary(v){
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
     img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
-    if(VTHUMB[m.id]){img.onerror=()=>{img.style.display='none';ph.style.display='';delete VTHUMB[m.id];thumbInto(img,m.id);};img.src=VTHUMB[m.id];}
-    else if(isVid&&m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} // Google's video thumbnail (works for HEVC); fall back to a local frame-grab
-    else thumbInto(img,m.id);
+    if(VTHUMB[m.id]){img.onerror=()=>{img.style.display='none';ph.style.display='';delete VTHUMB[m.id];lazyView(cell,()=>thumbInto(img,m.id));};img.src=VTHUMB[m.id];} // in-memory thumb is cheap → immediate
+    else if(isVid&&m.driveThumb){lazyView(cell,()=>{img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;});} // Google's video thumbnail; deferred until near view
+    else lazyView(cell,()=>thumbInto(img,m.id)); // defer the IndexedDB/cloud fetch until the cell scrolls near
     cell.appendChild(img);cell.appendChild(ph);
     if(isVid)cell.appendChild(el('span','poolplay','▶'));
     // backbone status — so Sebastian can see what's shared vs still only on this device
@@ -4930,7 +4962,9 @@ function openComposer(idOrPost,isNew){
     caOpts.dataset.open='1';
     aiCaptionOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
   };
-  cf.appendChild(ca);cf.appendChild(caAI);cf.appendChild(caOpts);b.appendChild(cf);
+  cf.appendChild(ca);cf.appendChild(caAI);cf.appendChild(caOpts);
+  cf.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  b.appendChild(cf);
 
   // hashtags — same pattern
   const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags</label>';
@@ -4943,7 +4977,9 @@ function openComposer(idOrPost,isNew){
     haOpts.dataset.open='1';
     aiHashtagOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
   };
-  hf.appendChild(ha);hf.appendChild(haAI);hf.appendChild(haOpts);b.appendChild(hf);
+  hf.appendChild(ha);hf.appendChild(haAI);hf.appendChild(haOpts);
+  hf.appendChild(snippetBar('hashtags',()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
+  b.appendChild(hf);
 
   // date + time
   const dr=el('div','cmp-row');
