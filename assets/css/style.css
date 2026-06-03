@@ -79,6 +79,25 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .storbar{height:12px;border-radius:999px;background:var(--line2);overflow:hidden}
 .storbar i{display:block;height:100%;border-radius:999px;transition:width .4s}
 .storbar i.good{background:#1f9d57}.storbar i.warn{background:#e0a72b}.storbar i.bad{background:#e23b3b}
+/* action center ("what needs you now") */
+.actionctr{border-left:4px solid var(--orange)}
+.actrowbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px 13px;margin-top:8px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer}
+.actrowbtn:hover:not(:disabled){background:#fff;border-color:var(--orange)}
+.actrowbtn:disabled{opacity:.75;cursor:default}
+.actrowbtn .ac-ic{font-size:17px}
+.actrowbtn .ac-arrow{margin-left:auto;color:var(--orange);font-weight:800}
+/* content search box */
+.poolsearch{margin-left:8px;min-width:160px;flex:1}
+/* first-run tour */
+.tour-ov{position:fixed;inset:0;z-index:10000;background:#0c1c3dcc;display:grid;place-items:center;padding:18px}
+.tour-box{background:#fff;border-radius:16px;max-width:380px;width:100%;box-shadow:0 24px 70px #00000055;overflow:hidden}
+.tour-body{padding:24px 22px 6px}
+.tour-body h3{margin:0 0 8px;font-size:19px;color:var(--ink)}
+.tour-body p{margin:0;color:var(--ink2);line-height:1.5;font-size:14.5px}
+.tour-dots{display:flex;gap:6px;justify-content:center;padding:14px 0 4px}
+.tour-dot{width:7px;height:7px;border-radius:50%;background:var(--line2)}
+.tour-dot.on{background:var(--orange)}
+.tour-foot{display:flex;align-items:center;gap:8px;padding:12px 16px 16px}
 .role-chip{display:flex;align-items:center;gap:8px;background:#ffffff12;border:1px solid #ffffff20;border-radius:999px;padding:4px 5px 4px 10px}
 .role-chip .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px}
 .role-chip select{background:transparent;border:0;color:#fff;font-weight:700;font-size:13px;outline:none}

@@ -2336,6 +2336,57 @@ function navItems(){
    RENDER ROUTER  (view comes from <body data-view="...">)
    ============================================================ */
 function currentView(){return (document.body&&document.body.dataset.view)||'dashboard'}
+/* First-run mini-tour — a short, role-aware welcome the FIRST time each person logs in on a
+   device. Stored in localStorage so it shows once and never nags. */
+var TOUR_STEPS={
+  owner:[
+    {t:'Welcome to your Marketing OS 👋',b:'This is your command center for Social + SEO. Quick tour — 4 taps.'},
+    {t:'1. Add content & make posts',b:'Upload photos (phone or desktop), tick a few, and tap “Make a post.” The caption helper writes options for you.'},
+    {t:'2. Approve → it goes to Ruth',b:'When a post looks good, Approve it. It lands in Ruth’s queue automatically for her to post.'},
+    {t:'3. See what needs you',b:'Your home’s “What needs you now” card and the Scorecard keep you on track. That’s it — go win.'}
+  ],
+  poster:[
+    {t:'Hey — this is your posting queue 👋',b:'Everything Sebastian approves shows up here, ready to post. Quick 3-step tour.'},
+    {t:'1. Grab the post',b:'Each card has the caption, hashtags, location, and the photo(s) in order.'},
+    {t:'2. Copy & download',b:'Tap Copy for the caption/hashtags, Download for the media, then post it on your channels.'},
+    {t:'3. Mark as posted',b:'Hit “✅ Mark as posted” and it leaves your list. Done!'}
+  ],
+  builder:[
+    {t:'Welcome — your SEO build queue 👋',b:'Everything Sebastian provides shows here, sprint-ready. Quick tour.'},
+    {t:'1. Work the sprints',b:'Your sprint board is up top. Move tasks To-do → Doing → Done as you build.'},
+    {t:'2. Open provided content',b:'“Ready to build” holds the town details, photos and blog briefs — open to use + download.'},
+    {t:'3. Leave a note back',b:'Inside a brief you can leave Sebastian a note (questions/status). He sees it on the card.'}
+  ]
+};
+function runTour(steps,name){
+  if(!steps||!steps.length)return;
+  var i=0;
+  var ov=el('div','tour-ov');var box=el('div','tour-box');ov.appendChild(box);document.body.appendChild(ov);
+  function dots(){ return steps.map(function(_,k){return '<span class="tour-dot'+(k===i?' on':'')+'"></span>';}).join(''); }
+  function draw(){
+    var s=steps[i];
+    box.innerHTML='<div class="tour-body"><h3>'+esc(s.t)+'</h3><p>'+esc(s.b)+'</p></div>'+
+      '<div class="tour-dots">'+dots()+'</div>'+
+      '<div class="tour-foot"><button class="btn-set tour-skip">Skip</button><span style="flex:1"></span>'+
+      (i>0?'<button class="btn-set tour-back">Back</button>':'')+
+      '<button class="btn-set primary tour-next">'+(i===steps.length-1?'Got it ✓':'Next →')+'</button></div>';
+    box.querySelector('.tour-skip').onclick=close;
+    var b=box.querySelector('.tour-back'); if(b)b.onclick=function(){i--;draw();};
+    box.querySelector('.tour-next').onclick=function(){ if(i===steps.length-1)close(); else {i++;draw();} };
+  }
+  function close(){ try{ov.remove();}catch(e){} }
+  draw();
+}
+function maybeRunTour(){
+  try{
+    if(!S.uid)return;
+    var key='wg_tour_'+S.uid;
+    if(localStorage.getItem(key))return;
+    localStorage.setItem(key,'1');   // mark seen up front so it shows exactly once
+    var role = (typeof amPoster==='function'&&amPoster())?'poster' : (typeof seoIsBuilder==='function'&&seoIsBuilder())?'builder' : 'owner';
+    setTimeout(function(){ runTour(TOUR_STEPS[role]||TOUR_STEPS.owner, (curUser()||{}).name||'there'); }, 500);
+  }catch(e){}
+}
 function render(){
   if(typeof enforceAccess==='function'&&enforceAccess())return;   // deactivated/removed → kicked to the gate
   const v=$('#view');if(!v)return;v.innerHTML='';
@@ -4451,13 +4502,34 @@ function ruthQueue(v){
   v.appendChild(activityCard());
 }
 let POOL_SEL=new Set();
+let POOL_Q=''; // content library search text
 let POOL_KIND='all'; // content filter: all | photos | videos
 let POOL_GROUP='off'; // off | job (group by location)
 let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
+/* "What needs me now" — one glance at everything waiting on the owner, across BOTH programs.
+   Reads raw S.prog so it works regardless of the active dashboard. Only shows rows that matter. */
+function actionCenterCard(){
+  var soc=(S.prog&&S.prog.social)||{}, seo=(S.prog&&S.prog.seo)||{};
+  var posts=Array.isArray(soc.posts)?soc.posts:[];
+  var toApprove=posts.filter(function(p){ return p.status==='draft' && (typeof postReady==='function'?postReady(p):true); });
+  var inQueue=posts.filter(function(p){ return p.status==='approved'; }).length;
+  var blogs=Array.isArray(seo.blogs)?seo.blogs:[];
+  var unreadNotes=blogs.filter(function(b){ return b&&b.builderNote&&(b.builderNote||'').trim()&&!b.noteSeen; }).length;
+  var rows=[];
+  if(toApprove.length) rows.push({icon:'✅',txt:toApprove.length+' post'+(toApprove.length>1?'s':'')+' ready to approve',go:function(){ openComposer(toApprove[0].id); }});
+  if(unreadNotes) rows.push({icon:'💬',txt:unreadNotes+' note'+(unreadNotes>1?'s':'')+' from Bogdan to read',go:function(){ location.href='seo.html'; }});
+  if(inQueue) rows.push({icon:'📤',txt:inQueue+' post'+(inQueue>1?'s':'')+' waiting for Ruth to post',go:null});
+  var c=el('div','card pad actionctr');
+  c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⚡</div><div><h3>What needs you now</h3><small>'+(rows.length?'Tap an item to jump to it':'You’re all caught up')+'</small></div></div>';
+  if(!rows.length){ c.appendChild(el('p','muted','✅ Nothing waiting on you right now — nice.')); return c; }
+  rows.forEach(function(r){ var row=el('button','actrowbtn'); row.innerHTML='<span class="ac-ic">'+r.icon+'</span><span>'+esc(r.txt)+'</span>'+(r.go?'<span class="ac-arrow">→</span>':''); if(r.go)row.onclick=r.go; else row.disabled=true; c.appendChild(row); });
+  return c;
+}
 function socLibrary(v){
   const cw=currentWeek();
   const wk=cw?cw.id:(WEEKS[0]&&WEEKS[0].id)||1;
+  v.appendChild(actionCenterCard());
 
   // coach
   if(cw){
@@ -4535,6 +4607,13 @@ function socLibrary(v){
     srcSel.onchange=()=>{POOL_SEL.clear();POOL_SRC=srcSel.value;rerenderCal()};
     ctrls.appendChild(srcSel);
   }
+  // live search across the content library (name, town, note, folder)
+  const q=el('input','cmp-in poolsearch');q.type='search';q.placeholder='🔍 Search content — name, town…';q.value=POOL_Q||'';
+  q.oninput=()=>{ POOL_Q=(q.value||'').toLowerCase().trim();
+    poolCard.querySelectorAll('.poolcell').forEach(function(cell){ var hay=cell.dataset.search||''; cell.style.display=(!POOL_Q||hay.indexOf(POOL_Q)>=0)?'':'none'; });
+    poolCard.querySelectorAll('details.jobgroup').forEach(function(g){ var any=Array.prototype.some.call(g.querySelectorAll('.poolcell'),function(c){return c.style.display!=='none';}); g.style.display=(!POOL_Q||any)?'':'none'; });
+  };
+  ctrls.appendChild(q);
   poolCard.appendChild(ctrls);
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
@@ -4542,6 +4621,8 @@ function socLibrary(v){
   const buildCell=(m)=>{
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
     const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
+    cell.dataset.search=((m.name||'')+' '+(m.town||'')+' '+(m.desc||'')+' '+(m.folder||'')).toLowerCase();
+    if(POOL_Q&&cell.dataset.search.indexOf(POOL_Q)<0)cell.style.display='none'; // honor an active search after re-render
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
     img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
@@ -5138,6 +5219,7 @@ function enterApp(){
   }
   ensureLogoutBtn(); ensurePwBtn(); ensureSyncPill();
   buildNav();render();
+  if(typeof maybeRunTour==='function')maybeRunTour();
 }
 function isOwner(){const u=curUser();return !!u&&u.perm==='owner'}
 function navVisible(n){return !n.owner||isOwner()}
