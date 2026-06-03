@@ -52,7 +52,15 @@ button{font-family:inherit;cursor:pointer}
 
 /* ===== Shell ===== */
 #app{display:none;min-height:100vh}
-.topbar{position:sticky;top:0;z-index:30;background:var(--navy);color:#fff;display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--navy-line)}
+.topbar{position:sticky;top:0;z-index:30;background:var(--navy);color:#fff;display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--navy-line);flex-wrap:wrap}
+/* keyboard / screen-reader: a visible focus ring on every interactive control */
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible,[role="button"]:focus-visible{outline:3px solid var(--orange);outline-offset:2px;border-radius:6px}
+@media (max-width:560px){
+  .topbar{gap:8px;padding:8px 10px}
+  .tb-btn{padding:6px 9px;font-size:12px}
+  .tb-sync{padding:5px 8px;font-size:11px}
+  .brand small{display:none}
+}
 .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.01em}
 .brand .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--orange),var(--orange-2));display:grid;place-items:center;color:#fff;font-weight:900;font-size:15px}
 .brand small{display:block;font-size:11px;font-weight:600;color:#9fb0cc;letter-spacing:.04em}
@@ -65,6 +73,12 @@ button{font-family:inherit;cursor:pointer}
 .tb-sync{display:inline-flex;align-items:center;font-size:12px;font-weight:700;border-radius:9px;padding:6px 10px;white-space:nowrap}
 .tb-sync.on{background:#10381f;color:#7ee0a6;border:1px solid #1f8a4c55}
 .tb-sync.mid{background:#3a2f10;color:#e8c97a;border:1px solid #8a6d1f55}
+.storrow{font-size:14px;color:var(--ink2);margin:2px 0 7px}
+.stor-pct{font-weight:800;margin-left:6px}
+.stor-pct.good{color:#1f8a4c}.stor-pct.warn{color:#8a6d1f}.stor-pct.bad{color:#cf3b3b}
+.storbar{height:12px;border-radius:999px;background:var(--line2);overflow:hidden}
+.storbar i{display:block;height:100%;border-radius:999px;transition:width .4s}
+.storbar i.good{background:#1f9d57}.storbar i.warn{background:#e0a72b}.storbar i.bad{background:#e23b3b}
 .role-chip{display:flex;align-items:center;gap:8px;background:#ffffff12;border:1px solid #ffffff20;border-radius:999px;padding:4px 5px 4px 10px}
 .role-chip .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px}
 .role-chip select{background:transparent;border:0;color:#fff;font-weight:700;font-size:13px;outline:none}

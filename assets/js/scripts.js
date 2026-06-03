@@ -1160,7 +1160,7 @@ function postMedia(p){
   if(!Array.isArray(p.media)){p.media = p.mediaId?[{id:p.mediaId,name:p.mediaName||'attached'}]:[];delete p.mediaId;delete p.mediaName;}
   return p.media;
 }
-function savePost(p){const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);if(i>=0)arr[i]=p;else arr.push(p);ST.posts=arr;commit()}
+function savePost(p){p._ut=Date.now();const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);if(i>=0)arr[i]=p;else arr.push(p);ST.posts=arr;commit()}
 /* Backfill Before/After labels on a post's photos (sim #4). Drive-imported photos don't
    carry a role, so inherit it from the source job (p.fromJob) or the pool item itself.
    Only fills MISSING roles — never overwrites a label Sebastian set by hand. */
@@ -1375,7 +1375,7 @@ async function cloudFileDel(id){
 function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
 /* next "Job N" number, derived from existing job names so it always follows order */
 function nextBaNum(){let max=0;socBaJobs().forEach(j=>{const m=/^job\s+(\d+)$/i.exec((j.name||'').trim());if(m){const n=+m[1];if(n>max)max=n;}});return max+1;}
-function saveBaJob(j){const arr=socBaJobs();const i=arr.findIndex(x=>x.id===j.id);if(i>=0)arr[i]=j;else arr.unshift(j);ST.bajobs=arr;commit();}
+function saveBaJob(j){j._ut=Date.now();const arr=socBaJobs();const i=arr.findIndex(x=>x.id===j.id);if(i>=0)arr[i]=j;else arr.unshift(j);ST.bajobs=arr;commit();}
 function delBaJob(id){
   const j=socBaJobs().find(x=>x.id===id);
   if(j){const ids=new Set(jobItems(j).map(x=>x.id));socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used')m.status='available'});} // photos return to Your content
@@ -1903,12 +1903,20 @@ function recCt(r){ return (r&&typeof r._ct==='number'&&r._ct)?r._ct:_tsFromId(r&
    have deleted a photo it never received). */
 function _mergeById(remoteArr,localArr,sinceTs,isMedia){
   var out=Array.isArray(remoteArr)?remoteArr.slice():[];
-  var have={}; out.forEach(function(r){ if(r&&r.id)have[r.id]=true; });
+  var idx={}; out.forEach(function(r,i){ if(r&&r.id)idx[r.id]=i; });
   (Array.isArray(localArr)?localArr:[]).forEach(function(l){
-    if(!l||!l.id||have[l.id])return;
-    if(isMedia && typeof poolSynced==='function' && !poolSynced(l)){ out.push(l); return; } // device-only photo not yet on the backbone → never drop
+    if(!l||!l.id)return;
+    if(idx[l.id]!==undefined){
+      // SAME record on both sides → keep whichever was edited most recently (by _ut), so a
+      // stale remote snapshot can't clobber a fresher local edit to the same post/blog.
+      var rem=out[idx[l.id]];
+      var lu=(typeof l._ut==='number')?l._ut:0, ru=(typeof rem._ut==='number')?rem._ut:0;
+      if(lu>ru) out[idx[l.id]]=l;
+      return;
+    }
+    if(isMedia && typeof poolSynced==='function' && !poolSynced(l)){ out.push(l); idx[l.id]=out.length-1; return; } // device-only photo not yet on the backbone → never drop
     var ts=recCt(l);
-    if(ts===0 || ts>=(sinceTs-120000)) out.push(l);   // truly new local (2-min skew grace) → keep; older + remote-absent = deleted remotely → drop
+    if(ts===0 || ts>=(sinceTs-120000)){ out.push(l); idx[l.id]=out.length-1; }   // truly new local (2-min skew grace) → keep; older + remote-absent = deleted remotely → drop
   });
   return out;
 }
@@ -2573,13 +2581,16 @@ function hfReferenced(id,exceptBlogId){
 function hfSafeDel(id,exceptBlogId){ if(id && !hfReferenced(id,exceptBlogId)){ try{hfDel(id)}catch(e){} } }
 function seoMediaPool(){ if(!Array.isArray(ST.seoMedia))ST.seoMedia=[]; return ST.seoMedia; }
 function seoAllItems(){ return SEO_PLAN.reduce((a,mo)=>a.concat(mo.items.map(it=>Object.assign({month:mo.m},it))),[]); }
+/* a brief only "counts" once it has a real topic — an empty placeholder shouldn't flip the
+   plan item to Provided (sim #11). */
+function seoRealBlogs(){ return seoBlogs().filter(function(b){ return b&&(b.title||'').trim(); }); }
 function seoItemProvided(it){
   if(it.type==='town') return townProvided(it.town);
   if(it.type==='media') return seoMediaPool().length >= (it.target||1);
-  if(it.type==='blog') return seoBlogs().length >= (it.target||1);
+  if(it.type==='blog') return seoRealBlogs().length >= (it.target||1);
   return false;
 }
-function seoItemProgress(it){ if(it.type==='media')return {have:seoMediaPool().length,need:it.target}; if(it.type==='blog')return {have:seoBlogs().length,need:it.target}; return null; }
+function seoItemProgress(it){ if(it.type==='media')return {have:seoMediaPool().length,need:it.target}; if(it.type==='blog')return {have:seoRealBlogs().length,need:it.target}; return null; }
 /* PARTIAL = some content has arrived but the target isn't met yet. Lets Bogdan pull what's
    there instead of staring at a disabled "Waiting" button (sim #9). Town is binary. */
 function seoItemPartial(it){ if(seoItemProvided(it))return false; const p=seoItemProgress(it); return !!(p&&p.have>0&&p.have<p.need); }
@@ -2825,7 +2836,7 @@ function editSprintTask(t,isNew){
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();closeComposer();render();toast('Task deleted');};foot.appendChild(del);}
   const sp2=el('div');sp2.style.flex='1';foot.appendChild(sp2);
-  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!(t.title||'').trim()){toast('Add a task name');return;} if(isNew)sprintTasks().push(t); commit(); closeComposer(); render(); toast(isNew?'Task added':'Saved'); };
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!(t.title||'').trim()){toast('Add a task name');return;} t._ut=Date.now(); if(isNew)sprintTasks().push(t); commit(); closeComposer(); render(); toast(isNew?'Task added':'Saved'); };
   foot.appendChild(save);bd.appendChild(foot);
 }
 function viewSeoDashboard(v){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return seoIsBuilder()?viewSeoBuilder(v):viewSeoProvider(v); }
@@ -3062,7 +3073,7 @@ function openBlogBuilder(blog){
   const sf=el('div','cmp-field');sf.innerHTML='<label>Status</label>';const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((blog.status||'todo')===val)o.selected=true;ss.appendChild(o)});sf.appendChild(ss);bd.appendChild(sf);
   const bf=el('div','cmp-field');bf.innerHTML='<label>Your note back to Sebastian <span class="muted" style="font-weight:600">— questions / status</span></label>';const bn=el('textarea','cmp-in');bn.rows=2;bn.value=blog.builderNote||'';bf.appendChild(bn);bd.appendChild(bf);
   const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){const noteChanged=(arr[i].builderNote||'')!==bn.value;const statusChanged=(arr[i].status||'todo')!==ss.value;arr[i].status=ss.value;arr[i].builderNote=bn.value;if(noteChanged&&bn.value.trim()){arr[i].noteAt=Date.now();arr[i].noteBy=((typeof curUser==='function'&&curUser())||{}).name||'Builder';arr[i].noteSeen=false;}if(statusChanged)logActivity('moved "'+(blog.title||'a blog')+'" → '+({todo:'To do',building:'Building',done:'Done'}[ss.value]||ss.value));ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){const noteChanged=(arr[i].builderNote||'')!==bn.value;const statusChanged=(arr[i].status||'todo')!==ss.value;arr[i].status=ss.value;arr[i].builderNote=bn.value;if(noteChanged&&bn.value.trim()){arr[i].noteAt=Date.now();arr[i].noteBy=((typeof curUser==='function'&&curUser())||{}).name||'Builder';arr[i].noteSeen=false;}if(statusChanged)logActivity('moved "'+(blog.title||'a blog')+'" → '+({todo:'To do',building:'Building',done:'Done'}[ss.value]||ss.value));arr[i]._ut=Date.now();ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
   foot.appendChild(save);bd.appendChild(foot);
 }
 /* "2h ago" / "3d ago" — coarse relative time for the builder-note badge */
@@ -3118,7 +3129,7 @@ function openBlogEditor(blog,isNew){
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{const snap=JSON.parse(JSON.stringify(b));ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();closeComposer();render();toastUndo('Brief deleted',function(){seoBlogs().push(snap);commit();render();toast('Brief restored');},function(){(snap.media||[]).forEach(m=>hfSafeDel(m.id,snap.id));});};foot.appendChild(del);}
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);if(isNew)logActivity('added a blog brief: "'+b.title.trim()+'"');ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
+  const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} b._ut=Date.now(); const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);if(isNew)logActivity('added a blog brief: "'+b.title.trim()+'"');ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
   foot.appendChild(save);bd.appendChild(foot);
 }
 function viewDashboard(v){
@@ -3867,8 +3878,25 @@ function usersAdminCard(){
   card.appendChild(add);
   return card;
 }
+/* Size of the one shared workspace file (what syncs to Firestore). Photos/videos are NOT in
+   it — they live in separate docs — so this is just the text/metadata that counts toward the
+   ~1 MB ceiling. Good-enough proxy for a "fuel gauge" so Sebastian sees the limit coming. */
+function _docBytes(){ try{ var s=JSON.stringify({prog:S.prog,users:S.users}); return (typeof TextEncoder!=='undefined')?new TextEncoder().encode(s).length:s.length; }catch(e){ return 0; } }
+function storageHealthCard(){
+  var bytes=_docBytes(), max=1048576, pct=Math.min(100,Math.round(bytes/max*1000)/10), kb=Math.round(bytes/1024);
+  var tone=pct<60?'good':pct<85?'warn':'bad';
+  var note=pct<60?'Plenty of room — years of use at your current pace.'
+    :pct<85?'Filling up. Good time to plan the storage upgrade in the coming weeks.'
+    :'⚠ Nearly full — ask Claude or Bogdan to expand storage soon so new changes keep saving.';
+  var c=el('div','card pad');c.style.marginBottom='16px';
+  c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📦</div><div><h3>Storage</h3><small>How full the shared workspace file is</small></div></div>'
+    +'<div class="storrow"><b>'+kb+' KB</b> of ~1,024 KB used <span class="stor-pct '+tone+'">'+pct+'%</span></div>'
+    +'<div class="storbar"><i class="'+tone+'" style="width:'+Math.max(2,pct)+'%"></i></div>'
+    +'<p class="muted" style="font-size:12px;margin:8px 0 0">'+note+'<br>Photos &amp; videos don’t count — they’re stored separately.</p>';
+  return c;
+}
 function viewSettings(v){
-  v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, your data backup, the go-live runbook, and what unlocks after sync.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, storage, your data backup, and team logins.</p>`));
 
   const proj=el('div','card pad');proj.style.marginBottom='16px';
   proj.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📋</div><div><h3>This project</h3><small>Project 1 of your Marketing OS</small></div></div>
@@ -3889,6 +3917,7 @@ function viewSettings(v){
       <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 4px">Firebase isn't loaded on this page, so you're working in a local-only copy. Once Firebase Auth + Firestore are connected, the whole team shares one live dataset.</p>`;
   }
   v.appendChild(sync);
+  v.appendChild(storageHealthCard());
 
   const data=el('div','card pad');data.style.marginBottom='16px';
   const liveData=window.WG_FB_READY;
