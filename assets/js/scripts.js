@@ -1976,6 +1976,7 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia){
       return;
     }
     if(isMedia && typeof poolSynced==='function' && !poolSynced(l)){ out.push(l); idx[l.id]=out.length-1; return; } // device-only photo not yet on the backbone → never drop
+    if(/^spt_([a-z]+_\d+|[rm]\d+)$/.test(l.id)){ out.push(l); idx[l.id]=out.length-1; return; } // deterministic SEO seed task → never drop (self-heals + keeps status)
     var ts=recCt(l);
     if(ts===0 || ts>=(sinceTs-120000)){ out.push(l); idx[l.id]=out.length-1; }   // truly new local (2-min skew grace) → keep; older + remote-absent = deleted remotely → drop
   });
@@ -2611,14 +2612,29 @@ const RESEARCH_TASKS=[
   {title:'Claim + optimize the BBB profile',section:'Reviews engine',est:1,why:'Homeowners vet $20–50K jobs on BBB'},
   {title:'Set up a Houzz profile with project photos',section:'Reviews engine',est:1,why:'Design-forward platform + citation'}
 ]);
-function loadResearchOnce(){
-  if(ST.researchLoaded)return;
-  const cur=Array.isArray(ST.sprintTasks)?ST.sprintTasks:[];
-  const keep=cur.filter(function(t){ return t.status!=='todo' || !/^spt_(gbp|pages|towns|blogs|citations|reviews|links)_\d+$/.test(t.id); });
-  const have={}; keep.forEach(function(t){have[t.title]=1;});
-  const add=RESEARCH_TASKS.filter(function(rt){return !have[rt.title];}).map(function(rt,i){return {id:'spt_r'+i,title:rt.title,section:rt.section,sectionIcon:SECTION_ICON[rt.section]||'•',est:rt.est||0,status:'todo',sprint:'backlog',why:rt.why||''};});
-  ST.sprintTasks=keep.concat(add); ST.researchLoaded=true; commit();
+/* The deterministic SEO punch-list = playbook steps + research tasks (minus the trimmed
+   per-town cost guides) + the measurement foundation. STABLE ids so it self-heals. */
+function canonicalSeedTasks(){
+  var out=[];
+  SEO_PLAYBOOK.forEach(function(step){ var pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach(function(t,i){ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); });
+  RESEARCH_TASKS.forEach(function(rt,i){ if(/^Write the .+ window cost guide \/cost\/window-replacement-cost-/.test(rt.title))return; var o={id:'spt_r'+i,title:rt.title,section:rt.section,sectionIcon:SECTION_ICON[rt.section]||'•',est:rt.est||0,status:'todo',sprint:'backlog',why:rt.why||''}; if(rt.section==='Town pages'||rt.section==='Blogs')o.needs='content'; out.push(o); });
+  [{title:'Set up rank tracking + baseline all Tier 1/2 keywords (BrightLocal / Local Falcon)',section:'Technical',est:2,why:'Prove movement — baseline in Month 1'},
+   {title:'Verify Google Search Console + GA4 and submit the sitemap',section:'Technical',est:1.5,why:'Measurement foundation + indexing'},
+   {title:'Baseline the current map-pack + organic positions for the 7 towns',section:'Technical',est:1.5,why:'Know exactly where you started'}
+  ].forEach(function(m,i){ out.push({id:'spt_m'+i,title:m.title,section:m.section,sectionIcon:SECTION_ICON[m.section]||'🔧',est:m.est,status:'todo',sprint:'backlog',why:m.why}); });
+  return out;
 }
+/* SELF-HEALING: ensure every canonical task exists (by id). Restores the punch list no matter
+   what a sync did, while preserving each task's status, sprint, and any user-added tasks.
+   (Replaces the old one-shot researchLoaded gate that let an emptied list stay empty forever.) */
+function ensureBacklog(){
+  if(!Array.isArray(ST.sprintTasks))ST.sprintTasks=[];
+  var byId={}; ST.sprintTasks.forEach(function(t){ if(t&&t.id)byId[t.id]=1; });
+  var added=0; canonicalSeedTasks().forEach(function(c){ if(!byId[c.id]){ ST.sprintTasks.push(c); added++; } });
+  ST.researchLoaded=true; if(added)commit();
+  return added;
+}
+function loadResearchOnce(){ ensureBacklog(); }   // back-compat alias
 /* one-time refinements after analysis: trim thin pages, add measurement, tag content-blocked, seed Sprint 1 */
 function applySeoAdjustments(){
   if(ST.seoAdjV1 || !Array.isArray(ST.sprintTasks))return;
@@ -2843,7 +2859,7 @@ function editSprint(s){
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
 }
 function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
-function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } loadResearchOnce(); applySeoAdjustments(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
+function sprintTasks(){ ensureBacklog(); applySeoAdjustments(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
 function sprintSel(){ const sp=seoSprints(); if(!sp.length)return null; const f=sp.find(s=>s.id===ST.sprintSel); if(f)return f.id; const now=Date.now(); const cur=sp.find(s=>now>=s.start&&now<=s.end); return cur?cur.id:sp[0].id; }
 function renderSprintBoard(box){
