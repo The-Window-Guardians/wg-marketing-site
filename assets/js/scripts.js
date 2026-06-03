@@ -1304,7 +1304,7 @@ async function poolAddFiles(fileList,folder){
       pool.push(it);
     }
   }
-  ST.pool=pool;commit();
+  ST.pool=pool;if(files.length)logActivity('added '+files.length+' item'+(files.length>1?'s':'')+' to content');commit();
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500); // try the backbone right away in case it was a transient hiccup
@@ -1906,7 +1906,7 @@ function _mergeById(remoteArr,localArr,sinceTs){
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','seoMedia'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','seoMedia','activity'];
 // maps where we keep the union of keys (remote value wins per key)
 var _MERGE_MAPS=['tasks','kpis','deliv','townFacts'];
 function mergeProg(remoteProg,sinceTs){
@@ -2116,6 +2116,46 @@ const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
 function toast(m){const t=$('#toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200)}
+/* Undo toast — do the delete immediately, then give ~6s to take it back. onExpire runs the
+   irreversible cleanup (e.g. purging photos) only if the user did NOT undo. */
+function toastUndo(msg,onUndo,onExpire){
+  var old=document.getElementById('undobar'); if(old){ try{old._fin&&old._fin();}catch(e){} try{old.remove();}catch(e){} }
+  var bar=document.createElement('div');bar.className='undobar';bar.id='undobar';
+  var sp=document.createElement('span');sp.textContent=msg;bar.appendChild(sp);
+  var b=document.createElement('button');b.className='undobtn';b.textContent='Undo';bar.appendChild(b);
+  document.body.appendChild(bar);
+  var settled=false;
+  function fin(){ if(settled)return; settled=true; clearTimeout(to); bar.classList.remove('show'); setTimeout(function(){try{bar.remove()}catch(e){}},250); try{onExpire&&onExpire()}catch(e){} }
+  bar._fin=fin; var to=setTimeout(fin,6000);
+  b.onclick=function(){ if(settled)return; settled=true; clearTimeout(to); bar.classList.remove('show'); setTimeout(function(){try{bar.remove()}catch(e){}},250); try{onUndo&&onUndo()}catch(e){} };
+  setTimeout(function(){bar.classList.add('show')},20);
+}
+/* Activity feed — a small shared log of team motion (approvals, posts, blog updates). Lives on
+   the program slice and merges across users (see _MERGE_ARRAYS), capped so it never bloats. */
+function logActivity(text){ if(!ST)return; if(!Array.isArray(ST.activity))ST.activity=[]; ST.activity.push({id:'ac_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),who:(((typeof curUser==='function')&&curUser())||{}).name||'Someone',text:text,at:Date.now()}); if(ST.activity.length>60)ST.activity=ST.activity.slice(-60); }
+function activityCard(){
+  var acts=(ST&&Array.isArray(ST.activity))?ST.activity.slice().sort(function(a,b){return (b.at||0)-(a.at||0);}):[];
+  var d=el('details','card pad');d.style.marginTop='12px';
+  var sum=el('summary','seoacc-sum');sum.innerHTML='<div class="chip" style="background:var(--blue-soft)">🔔</div><div class="seoacc-tt"><h3>Recent activity</h3><small>'+(acts.length?('Latest: '+esc(acts[0].who)+' — '+esc(acts[0].text)+' · '+agoShort(acts[0].at)):'Team actions show up here')+'</small></div><span class="seoacc-ar">▾</span>';
+  d.appendChild(sum);
+  var body=el('div','seoacc-body');
+  if(!acts.length){ body.appendChild(el('p','muted','Nothing yet — approvals, posts and blog updates will appear here.')); }
+  else { acts.slice(0,14).forEach(function(a){ var r=el('div','actrow');r.innerHTML='<span class="actwho">'+esc(a.who)+'</span> <span class="acttxt">'+esc(a.text)+'</span> <span class="actago">'+agoShort(a.at)+'</span>';body.appendChild(r); }); }
+  d.appendChild(body);return d;
+}
+/* Content backup health — one glance at what's safely shared vs still only on this device */
+function contentHealthCard(){
+  var pool=socPool();
+  var photos=pool.filter(function(m){return !isVideoItem(m);});
+  var synced=photos.filter(poolSynced).length, deviceOnly=photos.length-synced, vids=pool.filter(isVideoItem).length;
+  var c=el('div','card pad');c.style.marginTop='12px';
+  c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🛡️</div><div><h3>Content backup</h3><small>Where your photos &amp; videos live</small></div></div>'+
+    '<div class="healthrow"><span class="hgood">✅ '+synced+' photo'+(synced===1?'':'s')+' shared</span>'+
+    (deviceOnly?'<span class="hwarn">⏳ '+deviceOnly+' syncing</span>':'')+
+    (vids?'<span class="hnote">🎬 '+vids+' video'+(vids===1?'':'s')+' · Google Drive</span>':'')+'</div>'+
+    '<p class="muted" style="font-size:12px;margin:6px 0 0">Shared photos are safe on the team backbone — visible on every device. Videos are shared through your Google Drive folder.</p>';
+  return c;
+}
 function av(role,cls){const p=personOf(role);return `<div class="${cls||'av'}" style="background:${p.bg};color:${p.c}">${p.av}</div>`}
 
 /* ---- dates / current week ---- */
@@ -2779,6 +2819,7 @@ function viewSeoProvider(v){
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
   v.appendChild(seoBlogsCard(false));
   v.appendChild(seoAccordion('🏃','Sprint plan','Plan the 2-week sprints + set hour estimates with Bogdan — live in your call',false,renderSprintBoard));
+  v.appendChild(activityCard());
 }
 function viewSeoBuilder(v){
   v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>Your sprints are up top — work the board. The content Sebastian's provided is in the sections below.</p>`));
@@ -2794,6 +2835,7 @@ function viewSeoBuilder(v){
   v.appendChild(seoAccordion('✅','Ready to build',(ready.length||'No')+' item'+(ready.length===1?'':'s')+' provided — open to use + download',false,function(box){ if(!ready.length){box.appendChild(el('p','muted','Nothing provided yet.'));return;} ready.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
   v.appendChild(seoAccordion('✍️','Blog briefs to build',seoBlogs().length+' brief'+(seoBlogs().length===1?'':'s'),false,function(box){ seoBlogsFill(box,true); }));
   v.appendChild(seoAccordion('⏳','Waiting on Sebastian',(waiting.length||'No')+' item'+(waiting.length===1?'':'s')+' still coming',false,function(box){ if(!waiting.length){box.appendChild(el('p','muted','Nothing outstanding — you have everything.'));return;} waiting.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
+  v.appendChild(activityCard());
 }
 function viewSeoProgress(v){
   v.appendChild(el('div','page-head',`<h2>Progress</h2><p>${esc(SEO_TARGET)}</p>`));
@@ -2957,7 +2999,13 @@ function seoBlogCard(b,builderMode){
       ${noteBadge}
     </div>`;
   if(mm[0])thumbInto(card.querySelector('img'),mm[0].id);
-  if(!builderMode){ const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){ST.blogs=seoBlogs().filter(x=>x.id!==b.id);(b.media||[]).forEach(m=>hfSafeDel(m.id,b.id));commit();render();toast('Brief deleted');}};card.appendChild(rm); }
+  if(!builderMode){ const rm=el('button','pcdel','✕');rm.onclick=(e)=>{e.stopPropagation();
+    const snap=JSON.parse(JSON.stringify(b));
+    ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();render();
+    toastUndo('Brief deleted',
+      function(){ seoBlogs().push(snap); commit(); render(); toast('Brief restored'); },
+      function(){ (snap.media||[]).forEach(m=>hfSafeDel(m.id,snap.id)); }); // purge photos only if not undone
+  };card.appendChild(rm); }
   card.onclick=()=>{ if(builderMode){openBlogBuilder(b);} else { if(b.builderNote&&!b.noteSeen){const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0){arr[i].noteSeen=true;ST.blogs=arr;commit();}} openBlogEditor(b,false);} };
   return card;
 }
@@ -2985,7 +3033,7 @@ function openBlogBuilder(blog){
   const sf=el('div','cmp-field');sf.innerHTML='<label>Status</label>';const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((blog.status||'todo')===val)o.selected=true;ss.appendChild(o)});sf.appendChild(ss);bd.appendChild(sf);
   const bf=el('div','cmp-field');bf.innerHTML='<label>Your note back to Sebastian <span class="muted" style="font-weight:600">— questions / status</span></label>';const bn=el('textarea','cmp-in');bn.rows=2;bn.value=blog.builderNote||'';bf.appendChild(bn);bd.appendChild(bf);
   const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){const noteChanged=(arr[i].builderNote||'')!==bn.value;arr[i].status=ss.value;arr[i].builderNote=bn.value;if(noteChanged&&bn.value.trim()){arr[i].noteAt=Date.now();arr[i].noteBy=((typeof curUser==='function'&&curUser())||{}).name||'Builder';arr[i].noteSeen=false;}ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){const noteChanged=(arr[i].builderNote||'')!==bn.value;const statusChanged=(arr[i].status||'todo')!==ss.value;arr[i].status=ss.value;arr[i].builderNote=bn.value;if(noteChanged&&bn.value.trim()){arr[i].noteAt=Date.now();arr[i].noteBy=((typeof curUser==='function'&&curUser())||{}).name||'Builder';arr[i].noteSeen=false;}if(statusChanged)logActivity('moved "'+(blog.title||'a blog')+'" → '+({todo:'To do',building:'Building',done:'Done'}[ss.value]||ss.value));ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
   foot.appendChild(save);bd.appendChild(foot);
 }
 /* "2h ago" / "3d ago" — coarse relative time for the builder-note badge */
@@ -3039,9 +3087,9 @@ function openBlogEditor(blog,isNew){
   const sf=field('Status');const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((b.status||'todo')===val)o.selected=true;ss.appendChild(o)});ss.onchange=()=>b.status=ss.value;sf.appendChild(ss);bd.appendChild(sf);
   const bf=field('Builder note (Bogdan)','questions / status back to Sebastian');const bn=el('textarea','cmp-in');bn.rows=2;bn.value=b.builderNote||'';bn.oninput=()=>b.builderNote=bn.value;bf.appendChild(bn);bd.appendChild(bf);
   const foot=el('div','cmp-foot');
-  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){ST.blogs=seoBlogs().filter(x=>x.id!==b.id);(b.media||[]).forEach(m=>hfSafeDel(m.id,b.id));commit();closeComposer();render();toast('Brief deleted');}};foot.appendChild(del);}
+  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{const snap=JSON.parse(JSON.stringify(b));ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();closeComposer();render();toastUndo('Brief deleted',function(){seoBlogs().push(snap);commit();render();toast('Brief restored');},function(){(snap.media||[]).forEach(m=>hfSafeDel(m.id,snap.id));});};foot.appendChild(del);}
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
+  const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);if(isNew)logActivity('added a blog brief: "'+b.title.trim()+'"');ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
   foot.appendChild(save);bd.appendChild(foot);
 }
 function viewDashboard(v){
@@ -3759,14 +3807,33 @@ function usersAdminCard(){
   });
   card.appendChild(wrap);
   const add=el('button','btn-set primary','＋ Add teammate');add.style.marginTop='12px';
-  add.onclick=()=>{
-    const name=prompt('New teammate’s name:');if(!name||!name.trim())return;
-    const pwd=prompt('Set a password for '+name.trim()+':')||'wgteam';
+  add.onclick=async()=>{
+    const name=(prompt('New teammate’s name:')||'').trim();if(!name)return;
     const COLORS=[['#7c3aed','#ede9fe'],['#0891b2','#cffafe'],['#c026d3','#fae8ff'],['#ca8a04','#fef9c3']];
     const ci=COLORS[(S.users||[]).length%COLORS.length];
+    let email='', pwd='';
+    if(window.WG_FB_READY){
+      email=(prompt('Login EMAIL for '+name+' (they sign in with this — required for shared content):')||'').trim();
+      if(!email){toast('Email is required so they can see shared content.');return;}
+      if((S.users||[]).some(u=>(u.email||'').toLowerCase()===email.toLowerCase())){toast('That email is already on the team.');return;}
+      pwd=prompt('Temporary password for '+name+' (6+ characters — they can change it later):')||'';
+      if(pwd.length<6){toast('Password must be at least 6 characters.');return;}
+      // Create the real Firebase login on a SECONDARY app instance so Sebastian stays logged in.
+      try{
+        const secName='wg-admin';
+        const sec=(firebase.apps||[]).find(a=>a.name===secName)||firebase.initializeApp(firebase.app().options,secName);
+        try{ await sec.auth().createUserWithEmailAndPassword(email,pwd); toast('Cloud login created for '+name); }
+        catch(err){ if(err&&err.code==='auth/email-already-in-use'){ toast('That email already had a login — linked it.'); }
+          else { toast('Couldn’t create cloud login: '+((err&&err.message)||err)+' — added them locally; create the login in Firebase if needed.'); } }
+        try{ await sec.auth().signOut(); }catch(e){}
+      }catch(e){ toast('Added locally — cloud login step skipped.'); }
+    } else {
+      pwd=prompt('Set a password for '+name+':')||'wgteam';
+    }
     // default a new teammate to the Social dashboard as a Creator — adjust with the two dropdowns
-    (S.users=S.users||[]).push({id:'u_'+Date.now().toString(36),name:name.trim(),title:'Team member',av:name.trim()[0].toUpperCase(),c:ci[0],bg:ci[1],perm:'editor',progs:['social'],pass:hashPw(pwd),active:true});
-    commit();render();toast(name.trim()+' added as a Social Creator — change their dashboard/role with the dropdowns.');
+    (S.users=S.users||[]).push({id:'u_'+Date.now().toString(36),name:name,title:'Team member',av:name[0].toUpperCase(),c:ci[0],bg:ci[1],perm:'editor',progs:['social'],email:email,pass:hashPw(pwd),active:true});
+    logActivity('added teammate '+name);
+    commit();render();toast(name+' added as a Social Creator — change their dashboard/role with the dropdowns.');
   };
   card.appendChild(add);
   return card;
@@ -4178,6 +4245,25 @@ async function openMediaPreview(mediaId,name){
   const body=el('div','mprev-body','<div class="muted" style="padding:30px">Loading…</div>');box.appendChild(body);
   ov.appendChild(box);document.body.appendChild(ov);
   ov.onclick=e=>{if(e.target===ov)closeMediaPreview()};
+  // Owner-only: permanently remove this piece of content (with undo + an in-use guard)
+  if(typeof isOwner==='function'&&isOwner()){
+    const pm=socPool().find(x=>x.id===mediaId);
+    if(pm){
+      const del=el('button','mprev-del','🗑 Delete permanently');
+      del.onclick=()=>{
+        const usedByPost=socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(m=>m.id===mediaId));
+        const usedByJob=socBaJobs().some(j=>jobItems(j).some(x=>x.id===mediaId));
+        if(usedByPost||usedByJob){ toast('In use by a post or job — remove it there first.'); return; }
+        const snap=JSON.parse(JSON.stringify(pm));
+        ST.pool=socPool().filter(x=>x.id!==mediaId); commit(); closeMediaPreview();
+        if(typeof rerenderCal==='function')rerenderCal();
+        toastUndo('Photo deleted',
+          function(){ socPool().push(snap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+          function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} }); // free blob + cloud only if not undone
+      };
+      box.appendChild(del);
+    }
+  }
   try{const rec=await fileGet(mediaId);
     body.innerHTML='';
     if(!rec||!rec.blob){ const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){const im=document.createElement('img');im.src=c.dataUrl;im.className='mprev-media';body.appendChild(im);if(name)box.appendChild(el('div','mprev-cap',esc(name)));}else body.appendChild(el('div','muted','Preview unavailable.')); return; }
@@ -4242,9 +4328,12 @@ function postCard(p){
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
   card.style.position='relative';
   const rm=el('button','pcdel','✕');rm.title='Remove this post';
-  rm.onclick=async(e)=>{e.stopPropagation();
-    const ok=await uiConfirm((p.status==='approved'?'It leaves your posts AND the posting queue.':'It leaves your posts.')+' The photos stay safe in your content.',{title:'Remove this post?',confirmText:'Remove',danger:true});
-    if(ok){ poolReleaseForPost(p); delPostRec(p.id); rerenderCal(); toast('Post removed — photos back in your content'); }
+  rm.onclick=(e)=>{e.stopPropagation();
+    const snap=JSON.parse(JSON.stringify(p));
+    poolReleaseForPost(p); delPostRec(p.id); rerenderCal();
+    toastUndo('Post removed — photos back in your content',function(){
+      ST.posts=socPosts().concat([snap]); poolSetStatus((snap.media||[]).map(m=>m.id),'used'); commit(); rerenderCal(); toast('Post restored');
+    });
   };
   card.appendChild(rm);
   card.onclick=()=>openComposer(p.id);
@@ -4294,6 +4383,7 @@ function ruthQueue(v){
   }
   ready.forEach(p=>q.appendChild(readyCard(p)));
   v.appendChild(q);
+  v.appendChild(activityCard());
 }
 let POOL_SEL=new Set();
 let POOL_KIND='all'; // content filter: all | photos | videos
@@ -4491,6 +4581,8 @@ function socLibrary(v){
     postsCard.appendChild(grid);
   }
   v.appendChild(postsCard);
+  v.appendChild(contentHealthCard());
+  v.appendChild(activityCard());
 }
 /* social-calendar.html (if visited directly) mirrors Home */
 function viewCalendar(v){return viewSocialDashboard(v);}
@@ -4522,7 +4614,7 @@ function readyCard(p){
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
   dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0;for(const m of arr){const rec=await fileGet(m.id);if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u);got++;}else{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();got++;}else{miss++;}}}toast(miss?(got?('Downloaded '+got+' — '+miss+" couldn’t be found (ask Sebastian to re-share)"):"Couldn’t find these files — ask Sebastian to open the post and re-approve"):(arr.length>1?'Downloading all '+arr.length:'Downloading'));};
-  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
+  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);logActivity('posted'+(post.town?' · '+post.town:''));savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
@@ -4702,7 +4794,7 @@ function openComposer(idOrPost,isNew){
       toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
       return;
     }
-    p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();
+    p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);closeComposer();rerenderCal();
     if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
       toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
     } else toast('Approved → posting queue ✓');
