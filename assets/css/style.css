@@ -774,3 +774,6 @@ textarea.cmp-in{resize:vertical}
 .seosub>summary{list-style:none;cursor:pointer;padding:10px 12px;font-size:13px;font-weight:800;color:var(--ink2)}
 .seosub>summary::-webkit-details-marker{display:none}
 .seosub>.sprintrow{padding-left:12px;padding-right:12px}
+
+/* ---- "needs your content" (Bogdan task blocked on Sebastian) ---- */
+.needbadge{display:inline-block;font-size:10px;font-weight:800;color:#cf3b3b;background:#fde7e7;border-radius:5px;padding:1px 6px;margin-left:6px;white-space:nowrap}

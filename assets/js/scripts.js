@@ -2307,6 +2307,30 @@ function loadResearchOnce(){
   const add=RESEARCH_TASKS.filter(function(rt){return !have[rt.title];}).map(function(rt,i){return {id:'spt_r'+i,title:rt.title,section:rt.section,sectionIcon:SECTION_ICON[rt.section]||'•',est:rt.est||0,status:'todo',sprint:'backlog',why:rt.why||''};});
   ST.sprintTasks=keep.concat(add); ST.researchLoaded=true; commit();
 }
+/* one-time refinements after analysis: trim thin pages, add measurement, tag content-blocked, seed Sprint 1 */
+function applySeoAdjustments(){
+  if(ST.seoAdjV1 || !Array.isArray(ST.sprintTasks))return;
+  // 1) trim the 7 thin per-town cost guides (keep the one Bucks County guide) — avoids the 2026 thin-page penalty
+  ST.sprintTasks=ST.sprintTasks.filter(function(t){ return !/^Write the .+ window cost guide \/cost\/window-replacement-cost-/.test(t.title); });
+  // 2) tag the tasks that are blocked until Sebastian provides content
+  ST.sprintTasks.forEach(function(t){ if(t.section==='Town pages'||t.section==='Blogs') t.needs='content'; });
+  // 3) add the measurement foundation (Month-1 per the doc)
+  var meas=[
+    {title:'Set up rank tracking + baseline all Tier 1/2 keywords (BrightLocal / Local Falcon)',section:'Technical',est:2,why:'Prove movement — the doc says baseline in Month 1'},
+    {title:'Verify Google Search Console + GA4 and submit the sitemap',section:'Technical',est:1.5,why:'Measurement foundation + indexing'},
+    {title:'Baseline the current map-pack + organic positions for the 7 towns',section:'Technical',est:1.5,why:'Know exactly where you started'}
+  ];
+  var have={}; ST.sprintTasks.forEach(function(t){have[t.title]=1;});
+  meas.forEach(function(m,i){ if(!have[m.title]) ST.sprintTasks.push({id:'spt_m'+i,title:m.title,section:m.section,sectionIcon:SECTION_ICON[m.section]||'🔧',est:m.est,status:'todo',sprint:'backlog',why:m.why}); });
+  // 4) pre-build a suggested Sprint 1 = the fast high-ROI wins (GBP + Philly fix + baseline)
+  if(!(Array.isArray(ST.sprints)&&ST.sprints.length)){
+    var s=addSprint(); s.name='Sprint 1 — Foundation';
+    ST.sprintTasks.forEach(function(t){
+      if(t.section==='Google Business Profile' || /Philadelphia/i.test(t.title) || /rank tracking|Search Console|map-pack/i.test(t.title)) t.sprint=s.id;
+    });
+  }
+  ST.seoAdjV1=true; commit();
+}
 function seoBlogs(){ if(!Array.isArray(ST.blogs))ST.blogs=[]; return ST.blogs; }
 function seoPB(){ if(!ST.pb||typeof ST.pb!=='object')ST.pb={}; return ST.pb; }
 function seoPbStep(id){ const pb=seoPB(); if(!pb[id]||typeof pb[id]!=='object')pb[id]={tasks:{},note:''}; if(!pb[id].tasks)pb[id].tasks={}; return pb[id]; }
@@ -2468,7 +2492,7 @@ function editSprint(s){
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
 }
 function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
-function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } loadResearchOnce(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
+function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } loadResearchOnce(); applySeoAdjustments(); const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
 function sprintSel(){ const sp=seoSprints(); if(!sp.length)return null; const f=sp.find(s=>s.id===ST.sprintSel); if(f)return f.id; const now=Date.now(); const cur=sp.find(s=>now>=s.start&&now<=s.end); return cur?cur.id:sp[0].id; }
 function renderSprintBoard(box){
@@ -2527,6 +2551,7 @@ function sprintRow(t,showMove){
   const main=el('div','sprintmain');
   main.appendChild(el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)')));
   if(t.section&&t.section!=='Custom')main.appendChild(el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section)));
+  if(t.needs==='content')main.appendChild(el('span','needbadge','⏳ needs your content'));
   main.onclick=()=>editSprintTask(t);r.appendChild(main);
   const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
   if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);}
@@ -2552,7 +2577,7 @@ function sprintCard(t,scope){
   c.ondragstart=e=>{e.dataTransfer.setData('text/plain',t.id);c.classList.add('dragging');};
   c.ondragend=()=>c.classList.remove('dragging');
   const meta=[]; if(t.est)meta.push('<span class="sc-hr">'+t.est+'h</span>'); if(scope==='all'||scope==='backlog'){meta.push('<span class="sc-sprint">'+esc((sprintById(t.sprint)||{}).name||'Backlog')+'</span>');}
-  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div>${meta.length?('<div class="sc-meta">'+meta.join('')+'</div>'):''}`;
+  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div>${t.needs==='content'?'<div class="needbadge" style="margin-top:5px">⏳ needs your content</div>':''}${meta.length?('<div class="sc-meta">'+meta.join('')+'</div>'):''}`;
   c.onclick=()=>editSprintTask(t);
   return c;
 }
