@@ -1333,6 +1333,8 @@ async function backfillLocalPhotos(){
         await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(m.id)
           .set({name:m.name||rec.name||'photo',type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
         m.cloud=true; VTHUMB[m.id]=dataUrl; done++;
+        // a now-cloud photo is no longer 'missing' — clear the stranded ⚠ badge on any queued post that used it
+        socPosts().forEach(function(p){ (Array.isArray(p.media)?p.media:[]).forEach(function(pm){ if(pm.id===m.id&&pm.failedToPublish&&pm.skipReason==='notsynced'){ delete pm.failedToPublish; delete pm.skipReason; } }); });
       }catch(e){ /* leave it device-only; we'll retry next online/sync */ }
     }
   }catch(e){}
@@ -1878,7 +1880,7 @@ let S=Store.load()||freshState();
   if(!S.view)S.view='dashboard';
 })();
 bindProgram(); // set the live bindings for this page before anything renders
-function commit(){Store.save(S);publishFeed();if(typeof fbStateSave==='function')fbStateSave();}
+function commit(){if(typeof stampCts==='function')stampCts();Store.save(S);publishFeed();if(typeof fbStateSave==='function')fbStateSave();}
 /* ============================================================
    Firestore LIVE SYNC (Path A). Shares only the shared state —
    S.prog (tasks/kpis/deliv/posts/pool/bajobs) and S.users (accounts).
@@ -1890,23 +1892,32 @@ function fbStateRef(){return WG_DB.collection('workspaces').doc('wg').collection
 /* Pull a creation timestamp (ms) out of an id like p_1700000000000_ab3 / ba_… / hf_….
    Returns 0 when the id carries no parseable decimal ms (e.g. base36 pf_/blog_ ids). */
 function _tsFromId(id){ var m=String(id||'').match(/(\d{12,14})/); return m?parseInt(m[1],10):0; }
-/* Union two arrays of {id} records. Remote wins on id conflicts (it's the newer save).
-   A local-only record is KEPT only if it looks freshly created on THIS device since our
-   last applied snapshot — otherwise it's treated as "remote deleted it" and dropped, so a
-   teammate's delete actually sticks instead of being resurrected. Unparseable ids (base36
-   media) are kept; they're harmless orphans cleaned up later by hfSafeDel. */
-function _mergeById(remoteArr,localArr,sinceTs){
+/* Every record's real creation time. We stamp rec._ct on creation (via stampCts in commit),
+   so this no longer has to guess from the id — which failed for base36 ids (blog_/pf_/spt_),
+   making their deletions resurrect. _tsFromId is only the fallback for un-stamped legacy rows. */
+function recCt(r){ return (r&&typeof r._ct==='number'&&r._ct)?r._ct:_tsFromId(r&&r.id); }
+/* Union two arrays of {id} records. Remote wins on id conflicts (newer save).
+   A local-only record is KEPT only if it is genuinely NEW since our last applied snapshot;
+   an older local record that's absent from remote means "a teammate deleted it" → drop, so
+   deletes actually stick for EVERY id type. Un-synced photos are always kept (a remote can't
+   have deleted a photo it never received). */
+function _mergeById(remoteArr,localArr,sinceTs,isMedia){
   var out=Array.isArray(remoteArr)?remoteArr.slice():[];
   var have={}; out.forEach(function(r){ if(r&&r.id)have[r.id]=true; });
   (Array.isArray(localArr)?localArr:[]).forEach(function(l){
     if(!l||!l.id||have[l.id])return;
-    var ts=_tsFromId(l.id);
-    if(ts===0 || ts>=(sinceTs-300000)) out.push(l);   // brand-new local (5-min skew grace) or non-ts id → keep
+    if(isMedia && typeof poolSynced==='function' && !poolSynced(l)){ out.push(l); return; } // device-only photo not yet on the backbone → never drop
+    var ts=recCt(l);
+    if(ts===0 || ts>=(sinceTs-120000)) out.push(l);   // truly new local (2-min skew grace) → keep; older + remote-absent = deleted remotely → drop
   });
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','seoMedia','activity'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity'];
+/* Stamp a permanent creation time on every mergeable record so deletes/merges are reliable
+   for base36 ids too. Cheap; runs in commit() before each save, so a record always carries
+   _ct before it can ever reach the shared doc. */
+function stampCts(){ try{ var prog=S.prog||{}; Object.keys(prog).forEach(function(pid){ var sl=prog[pid]||{}; _MERGE_ARRAYS.forEach(function(k){ var arr=sl[k]; if(Array.isArray(arr))arr.forEach(function(r){ if(r&&r.id&&typeof r._ct!=='number'){ r._ct=_tsFromId(r.id)||Date.now(); } }); }); }); }catch(e){} }
 // maps where we keep the union of keys (remote value wins per key)
 var _MERGE_MAPS=['tasks','kpis','deliv','townFacts'];
 function mergeProg(remoteProg,sinceTs){
@@ -1915,7 +1926,7 @@ function mergeProg(remoteProg,sinceTs){
   Object.keys(remoteProg).forEach(function(pid){
     var R=remoteProg[pid]||{}, L=(localProg[pid]||{}), slice={};
     Object.keys(R).forEach(function(k){ slice[k]=R[k]; });          // start from remote
-    _MERGE_ARRAYS.forEach(function(k){ if(Array.isArray(R[k])||Array.isArray(L[k])) slice[k]=_mergeById(R[k],L[k],sinceTs); });
+    _MERGE_ARRAYS.forEach(function(k){ if(Array.isArray(R[k])||Array.isArray(L[k])) slice[k]=_mergeById(R[k],L[k],sinceTs,(k==='pool'||k==='seoMedia')); });
     _MERGE_MAPS.forEach(function(k){
       if((R[k]&&typeof R[k]==='object')||(L[k]&&typeof L[k]==='object')){
         var m={}; var lk=L[k]||{}; Object.keys(lk).forEach(function(kk){ m[kk]=lk[kk]; }); // local-only keys preserved
@@ -2117,6 +2128,22 @@ const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e};
 function esc(s){return (s||'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))}
 function toast(m){const t=$('#toast');if(!t)return;t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200)}
+/* Honest copy-to-clipboard: only says "copied" when it actually worked, with a fallback for
+   insecure-origin / in-app-webview contexts where navigator.clipboard is missing. */
+async function copyOut(text,label){
+  text=text||'';
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); toast(label+' copied'); return; }
+    throw new Error('no clipboard');
+  }catch(e){
+    try{
+      var ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);ta.select();try{ta.setSelectionRange(0,text.length);}catch(_){}
+      var ok=document.execCommand('copy');document.body.removeChild(ta);
+      toast(ok?label+' copied':'Couldn’t copy — long-press the text to copy it');
+    }catch(_){ toast('Couldn’t copy — long-press the text to copy it'); }
+  }
+}
 /* Undo toast — do the delete immediately, then give ~6s to take it back. onExpire runs the
    irreversible cleanup (e.g. purging photos) only if the user did NOT undo. */
 function toastUndo(msg,onUndo,onExpire){
@@ -3852,22 +3879,20 @@ function viewSettings(v){
   v.appendChild(proj);
 
   const sync=el('div','card pad');sync.style.marginBottom='16px';
-  sync.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🚀</div><div><h3>Go-Live &amp; Sync runbook</h3><small>For the programmer — turn this front-end prototype into a live, shared team app</small></div></div>
-    <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 4px">Right now every person works in their own copy and data saves only on their device. To make all three share one live dataset and put it online, the programmer wires the PHP + MySQL backend behind the data layer.</p>
-    <ol class="set-steps">
-      <li><b>Phase 0 — Back up first.</b> Copy the build and confirm the go-live date. That copy is the instant rollback.</li>
-      <li><b>Phase 1 — Stand up MySQL.</b> Create the database, run the schema (app_state + app_files tables), set up the file storage path.</li>
-      <li><b>Phase 2 — Wire sync into the data layer.</b> Swap Store.load()/save() for PHP endpoints; route file uploads to the server. The data layer was built for exactly this — no UI rework.</li>
-      <li class="req"><b>Phase 3 — Lock down access (Auth + sessions).</b> <span class="reqpill">Required</span> PHP session login + per-row access. This is what makes per-member project access a real lock, not cosmetic.</li>
-      <li><b>Phase 4 — Host it.</b> Deploy to the server, password-protect or use the auth gate, optional custom domain.</li>
-      <li><b>Phase 5 — Day-One, with Sebastian.</b> Two-device acceptance test, one clean reset together, send the team the URL.</li>
-    </ol>
-    <div class="callout green" style="margin-top:12px"><p><b>Safety rail:</b> never put database credentials or any secret key in the front-end files — they belong only in server-side PHP config.</p></div>`;
+  if(window.WG_FB_READY){
+    sync.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🚀</div><div><h3>You're live</h3><small>Real accounts + shared cloud sync are ON</small></div></div>
+      <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 4px">The team shares one live dataset: a change or upload by one person shows up for everyone in seconds. Each person signs in with their own email + password, and photos sync automatically through the cloud (videos go through your Google Drive folder).</p>
+      <div class="callout green" style="margin-top:12px"><p><b>One step left for Bogdan:</b> publish the Firestore security rules (file <code>firestore.rules</code> in the project) so the database is locked to signed-in team members only.</p></div>`;
+  } else {
+    sync.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🚀</div><div><h3>Go-Live &amp; Sync runbook</h3><small>Connect Firebase to turn on real accounts + shared sync</small></div></div>
+      <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 4px">Firebase isn't loaded on this page, so you're working in a local-only copy. Once Firebase Auth + Firestore are connected, the whole team shares one live dataset.</p>`;
+  }
   v.appendChild(sync);
 
   const data=el('div','card pad');data.style.marginBottom='16px';
-  data.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">💾</div><div><h3>Your data</h3><small>While you're local-only, keep your own backup</small></div></div>
-    <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 10px">Until the backend sync is on, everything lives only in this browser on this device. Download a backup before clearing your browser, switching computers, or any risky change.</p>
+  const liveData=window.WG_FB_READY;
+  data.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">💾</div><div><h3>Your data</h3><small>${liveData?'Synced to the team — plus an optional personal backup':'While you\'re local-only, keep your own backup'}</small></div></div>
+    <p style="color:var(--ink2);font-size:13.5px;margin:2px 0 10px">${liveData?'Your posts, captions, notes and progress are saved to the shared cloud automatically. You can still download a personal backup file anytime for your own records.':'Until the backend sync is on, everything lives only in this browser on this device. Download a backup before clearing your browser, switching computers, or any risky change.'}</p>
     <div style="background:var(--orange-soft);border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px"><b>📷 Your photos &amp; videos are NOT in the backup file.</b> They live in your <b>Google Drive folder</b> — that is your media backup. Keep your content in Drive and it’s always safe. Anything you add by drag-drop (not from Drive) only exists on this device, so keep those originals too.</div>`;
   const eb=el('button','btn-set primary','⬇ Export backup (.json)');eb.onclick=exportBackup;
   data.appendChild(eb);
@@ -3890,14 +3915,23 @@ function viewSettings(v){
   v.appendChild(reset);
 
   const fut=el('div','card pad');
-  fut.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--amber-soft)">🔓</div><div><h3>Unlocks after go-live</h3><small>What the backend sync turns on</small></div></div>
-    <ul class="future-list">
-      <li><span class="lk">🔗</span><div><b>Live shared data</b> — a change or upload by one person appears on everyone's dashboard in seconds.</div></li>
-      <li><span class="lk">🗂️</span><div><b>Multiple projects</b> — this SEO build becomes Project 1; switch between marketing projects from one app.</div></li>
-      <li><span class="lk">🔐</span><div><b>Per-member access</b> — you assign who's on each project; members only see what you assign them.</div></li>
-      <li><span class="lk">✉️</span><div><b>Sign-in</b> — a real login per person instead of “pick your name.”</div></li>
-      <li><span class="lk">🤖</span><div><b>Live AI assistant</b> — reads the real dashboard and asks smart questions (the scripted nudge becomes real).</div></li>
-    </ul>`;
+  if(window.WG_FB_READY){
+    fut.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>What's on now</h3><small>Live features + what's still coming</small></div></div>
+      <ul class="future-list">
+        <li><span class="lk">✅</span><div><b>Live shared data</b> — a change or upload by one person appears on everyone's dashboard in seconds. <b>On.</b></div></li>
+        <li><span class="lk">✅</span><div><b>Per-member access</b> — you assign who's on Social vs SEO; members only see what you assign. <b>On.</b></div></li>
+        <li><span class="lk">✅</span><div><b>Real sign-in</b> — each person signs in with their own email + password. <b>On.</b></div></li>
+        <li><span class="lk">🗂️</span><div><b>Multiple projects</b> — switch between marketing projects from one app. <i>Coming.</i></div></li>
+        <li><span class="lk">🤖</span><div><b>Live AI assistant</b> — reads the real dashboard and asks smart questions. <i>Coming.</i></div></li>
+      </ul>`;
+  } else {
+    fut.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--amber-soft)">🔓</div><div><h3>Unlocks after go-live</h3><small>What connecting Firebase turns on</small></div></div>
+      <ul class="future-list">
+        <li><span class="lk">🔗</span><div><b>Live shared data</b> — one person's change appears on everyone's dashboard in seconds.</div></li>
+        <li><span class="lk">🔐</span><div><b>Per-member access</b> — members only see what you assign them.</div></li>
+        <li><span class="lk">✉️</span><div><b>Real sign-in</b> — a login per person instead of “pick your name.”</div></li>
+      </ul>`;
+  }
   v.appendChild(fut);
 }
 
@@ -4610,12 +4644,39 @@ function readyCard(p){
     mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):'')+(m.failedToPublish?' missing':''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));if(m.failedToPublish)t.appendChild(el('span','rcmiss',m.skipReason==='video'?'▶ video':'⚠ missing'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
-  card.querySelector('[data-copy="cap"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.caption||'');toast('Caption copied')};
-  card.querySelector('[data-copy="tags"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.hashtags||'');toast('Hashtags copied')};
+  card.querySelector('[data-copy="cap"]').onclick=()=>copyOut(p.caption,'Caption');
+  card.querySelector('[data-copy="tags"]').onclick=()=>copyOut(p.hashtags,'Hashtags');
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
-  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0;for(const m of arr){const rec=await fileGet(m.id);if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u);got++;}else{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();got++;}else{miss++;}}}toast(miss?(got?('Downloaded '+got+' — '+miss+" couldn’t be found (ask Sebastian to re-share)"):"Couldn’t find these files — ask Sebastian to open the post and re-approve"):(arr.length>1?'Downloading all '+arr.length:'Downloading'));};
-  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);logActivity('posted'+(post.town?' · '+post.town:''));savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
+  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0,vid=0;
+    for(const m of arr){
+      const isVid=m.skipReason==='video'||/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+      const rec=await fileGet(m.id);
+      if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||(isVid?'video':'media');a.click();URL.revokeObjectURL(u);got++;continue;}
+      if(isVid){vid++;continue;} // video can't live in the cloud — never tell Ruth to "re-share" it
+      const c=await cloudFileGet(m.id);
+      if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();got++;}else{miss++;}
+    }
+    const msg=[];
+    if(got)msg.push('Downloaded '+got);
+    if(vid)msg.push(vid+' video'+(vid>1?'s':'')+' must be sent another way (text/AirDrop) — video can’t sync through the app');
+    if(miss)msg.push(miss+' photo'+(miss>1?'s':'')+' couldn’t be found (ask Sebastian to re-approve)');
+    toast(msg.length?msg.join(' · '):(arr.length>1?'Downloading all '+arr.length:'Downloading'));
+  };
+  const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{
+    const post=postById(p.id); if(!post)return;
+    const missing=postMedia(post).filter(m=>m.failedToPublish);
+    if(missing.length){
+      const ok=await uiConfirm(missing.length+' photo'+(missing.length>1?'s':'')+' on this post never reached you. Mark it posted anyway? (Better: cancel and ask Sebastian to re-approve so the missing photo'+(missing.length>1?'s':'')+' come through.)',{title:'Some media never arrived',confirmText:'Mark posted anyway',danger:true});
+      if(!ok)return;
+    }
+    done.disabled=true;
+    post.status='posted';poolArchiveForPost(post);
+    if(post.fromJob&&!missing.length)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob); // keep the Before/After job if media is still missing, so it can be re-posted
+    logActivity('posted'+(post.town?' · '+post.town:''));savePost(post);bumpPostsKpi();
+    toast(missing.length?('Posted — but '+missing.length+' photo'+(missing.length>1?'s':'')+' still need to go out separately'):'Posted ✓ — nice! It’s off your list.');
+    await purgePostedMedia(post);rerenderCal();
+  };
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
