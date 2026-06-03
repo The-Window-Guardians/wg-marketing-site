@@ -1167,26 +1167,27 @@ function savePost(p){const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);
    this she sees blanks. Runs on the approver's device, which already holds the blob
    (Drive-synced or in-app). Videos are skipped (too big until Firebase Storage). */
 async function publishPostMedia(post){
-  if(!window.WG_FB_READY||!WG_AUTH.currentUser) return {done:0,skipped:0};
-  let done=0, skipped=0;
+  if(!window.WG_FB_READY||!WG_AUTH.currentUser) return {done:0,skipped:0,failed:[]};
+  let done=0, skipped=0; const failed=[];
   for(const m of postMedia(post)){
-    const id=m.id; if(!id){skipped++;continue;}
+    const id=m.id; delete m.failedToPublish; delete m.skipReason;          // recompute fresh each approve
+    if(!id){skipped++;continue;}
     if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
     try{ const ex=await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get();
          if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published
     let rec=null; try{ rec=await fileGet(id); }catch(e){}
-    if(!rec||!rec.blob){skipped++;continue;}                                 // no local blob to copy
+    if(!rec||!rec.blob){m.failedToPublish=true;m.skipReason='notsynced';skipped++;failed.push(m);continue;} // no local blob to copy
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||m.name||'');
-    if(isVid){skipped++;continue;}                                          // video can't go in Firestore yet
+    if(isVid){m.failedToPublish=true;m.skipReason='video';skipped++;failed.push(m);continue;}              // video can't go in Firestore yet
     try{
       const dataUrl=await imgToWebp(rec.blob);
       const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
       await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id)
         .set({name:(rec.name||m.name||'photo'),type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),fromPost:true});
       VTHUMB[id]=dataUrl; done++;
-    }catch(e){ skipped++; }
+    }catch(e){ m.failedToPublish=true;m.skipReason='toolarge';skipped++;failed.push(m); }
   }
-  return {done,skipped};
+  return {done,skipped,failed};
 }
 function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
 /* ---- CONTENT POOL: raw uploaded media, separate from posts ----
@@ -1310,8 +1311,17 @@ async function purgePostedMedia(post){
   socBaJobs().forEach(j=>jobItems(j).forEach(x=>keep.add(x.id)));
   for(const id of ids){ if(keep.has(id))continue;
     try{await fileDel(id);}catch(e){}
+    // also free the shared CLOUD copy so it doesn't pile up in Firestore — but never
+    // pull an hf_ file an SEO blog/town page still points at.
+    try{ if(!(id.indexOf('hf_')===0 && typeof hfReferenced==='function' && hfReferenced(id))) await cloudFileDel(id); }catch(e){}
     const pm=socPool().find(x=>x.id===id); if(pm){pm.status='archived';pm.purged=true;} }
   commit();
+}
+/* delete a shared media doc from Firestore (poolfiles/hfiles). Mirror of cloudFileGet's routing. */
+async function cloudFileDel(id){
+  if(!window.WG_DB||!id)return;
+  var cols = id.indexOf('hf_')===0?['hfiles']:id.indexOf('pf_')===0?['poolfiles']:['poolfiles','hfiles'];
+  for(const c of cols){ try{ await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).delete(); }catch(e){} }
 }
 /* ---- BEFORE / AFTER JOBS: saved before+after pairings ---- */
 function socBaJobs(){return (ST&&Array.isArray(ST.bajobs))?ST.bajobs:[]}
@@ -1831,10 +1841,52 @@ function commit(){Store.save(S);publishFeed();if(typeof fbStateSave==='function'
    ============================================================ */
 var _fbSync={on:false,unsub:null,applying:false,t:null,lastSavedAt:0,appliedAt:0};
 function fbStateRef(){return WG_DB.collection('workspaces').doc('wg').collection('state').doc('main');}
+/* Pull a creation timestamp (ms) out of an id like p_1700000000000_ab3 / ba_… / hf_….
+   Returns 0 when the id carries no parseable decimal ms (e.g. base36 pf_/blog_ ids). */
+function _tsFromId(id){ var m=String(id||'').match(/(\d{12,14})/); return m?parseInt(m[1],10):0; }
+/* Union two arrays of {id} records. Remote wins on id conflicts (it's the newer save).
+   A local-only record is KEPT only if it looks freshly created on THIS device since our
+   last applied snapshot — otherwise it's treated as "remote deleted it" and dropped, so a
+   teammate's delete actually sticks instead of being resurrected. Unparseable ids (base36
+   media) are kept; they're harmless orphans cleaned up later by hfSafeDel. */
+function _mergeById(remoteArr,localArr,sinceTs){
+  var out=Array.isArray(remoteArr)?remoteArr.slice():[];
+  var have={}; out.forEach(function(r){ if(r&&r.id)have[r.id]=true; });
+  (Array.isArray(localArr)?localArr:[]).forEach(function(l){
+    if(!l||!l.id||have[l.id])return;
+    var ts=_tsFromId(l.id);
+    if(ts===0 || ts>=(sinceTs-300000)) out.push(l);   // brand-new local (5-min skew grace) or non-ts id → keep
+  });
+  return out;
+}
+// id-keyed collections that live on every program slice
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','seoMedia'];
+// maps where we keep the union of keys (remote value wins per key)
+var _MERGE_MAPS=['tasks','kpis','deliv','townFacts'];
+function mergeProg(remoteProg,sinceTs){
+  if(!remoteProg||typeof remoteProg!=='object')return S.prog;
+  var localProg=S.prog||{}, merged={};
+  Object.keys(remoteProg).forEach(function(pid){
+    var R=remoteProg[pid]||{}, L=(localProg[pid]||{}), slice={};
+    Object.keys(R).forEach(function(k){ slice[k]=R[k]; });          // start from remote
+    _MERGE_ARRAYS.forEach(function(k){ if(Array.isArray(R[k])||Array.isArray(L[k])) slice[k]=_mergeById(R[k],L[k],sinceTs); });
+    _MERGE_MAPS.forEach(function(k){
+      if((R[k]&&typeof R[k]==='object')||(L[k]&&typeof L[k]==='object')){
+        var m={}; var lk=L[k]||{}; Object.keys(lk).forEach(function(kk){ m[kk]=lk[kk]; }); // local-only keys preserved
+        var rk=R[k]||{}; Object.keys(rk).forEach(function(kk){ m[kk]=rk[kk]; });           // remote overrides
+        slice[k]=m;
+      }
+    });
+    merged[pid]=slice;
+  });
+  // keep any program that exists only locally (e.g. a new program added before sync)
+  Object.keys(localProg).forEach(function(pid){ if(!merged[pid])merged[pid]=localProg[pid]; });
+  return merged;
+}
 function fbApplyRemote(data){
   if(!data)return;
   _fbSync.applying=true;
-  if(data.prog&&typeof data.prog==='object')S.prog=data.prog;
+  if(data.prog&&typeof data.prog==='object')S.prog=mergeProg(data.prog,_fbSync.appliedAt||0);
   if(Array.isArray(data.users))S.users=data.users;
   ensureAuth(); bindProgram();      // re-seed/guard + rebind ST to the (possibly new) S.prog
   if(data.updatedAt)_fbSync.appliedAt=data.updatedAt;
@@ -1854,12 +1906,26 @@ async function fbSyncStart(){
       if(!d.exists||_fbSync.applying)return;
       const data=d.data(); if(!data)return;
       if(data.updatedAt&&_fbSync.appliedAt&&data.updatedAt<=_fbSync.appliedAt)return; // ignore our own echo AND any snapshot older/equal to what we already have (never wipe fresh local changes like a Drive sync)
-      if(document.getElementById('cmpOv')||document.getElementById('mprevOv'))return; // don't disrupt an open editor
+      if(document.getElementById('cmpOv')){ _fbSync.pending=data; return; } // composer open → defer (don't yank the editor); applied on close
+      // NOTE: a media preview (mprevOv) no longer blocks updates — it floats above #view and
+      // survives a re-render, so Ruth's queue stays live instead of freezing behind a preview.
       fbApplyRemote(data);
       if(typeof render==='function')render();
+      try{ if(typeof amPoster==='function'&&amPoster()&&ST&&Array.isArray(ST.posts)) toast('🔄 Queue updated'); }catch(e){}
     }, function(err){ _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} }); // stop quietly if the session ends
     if(typeof render==='function')render();
   }catch(e){ /* network/rules issue — stay on the local cache */ }
+}
+/* Manual one-shot pull — for Ruth's "Check for new posts" button when she's been
+   backgrounded and the live listener may have been throttled by the OS. */
+async function fbSyncPull(){
+  if(!window.WG_FB_READY||!WG_AUTH.currentUser)return;
+  try{ const snap=await fbStateRef().get();
+    if(snap.exists&&snap.data()){ const data=snap.data();
+      if(!(data.updatedAt&&_fbSync.appliedAt&&data.updatedAt<=_fbSync.appliedAt)){ fbApplyRemote(data); }
+    }
+  }catch(e){}
+  if(typeof render==='function')render();
 }
 function fbStateSave(){
   if(!_fbSync.on||_fbSync.applying||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
@@ -2367,7 +2433,18 @@ function fmtShort(ts){ try{return new Date(ts).toLocaleDateString(undefined,{mon
 function seoTownFacts(){ if(!ST.townFacts||typeof ST.townFacts!=='object')ST.townFacts={}; return ST.townFacts; }
 /* a town's details now hold text + photos + links (migrates an old plain-string value) */
 function townFact(town){ const all=seoTownFacts(); let t=all[town]; if(typeof t==='string')t={text:t}; if(!t||typeof t!=='object')t={}; ['text','neighborhoods','housing','story'].forEach(function(k){ if(typeof t[k]!=='string')t[k]=''; }); if(!Array.isArray(t.media))t.media=[]; if(!Array.isArray(t.links))t.links=[]; all[town]=t; return t; }
-function townProvided(town){ const t=townFact(town); return !!(t.neighborhoods.trim()||t.housing.trim()||t.story.trim()||t.text.trim()||t.media.length); }
+function townProvided(town){ const t=townFact(town); return !!((t.neighborhoods.trim()&&t.story.trim())||t.text.trim()); } // real local detail + a customer story = the deep-page bar (photos alone aren't enough)
+/* a shared photo doc (hf_/pf_) can be referenced by several briefs/towns/the pool —
+   only hard-delete it when NOTHING else still points at it (prevents wiping shared content). */
+function hfReferenced(id,exceptBlogId){
+  if(!id)return false;
+  var b=(typeof seoBlogs==='function')?seoBlogs():[];
+  for(var i=0;i<b.length;i++){ if(exceptBlogId&&b[i].id===exceptBlogId)continue; if((b[i].media||[]).some(function(m){return m.id===id;}))return true; }
+  var tf=seoTownFacts(); for(var k in tf){ var t=tf[k]; if(t&&Array.isArray(t.media)&&t.media.some(function(m){return m.id===id;}))return true; }
+  if((Array.isArray(ST.seoMedia)?ST.seoMedia:[]).some(function(m){return m.id===id;}))return true;
+  return false;
+}
+function hfSafeDel(id,exceptBlogId){ if(id && !hfReferenced(id,exceptBlogId)){ try{hfDel(id)}catch(e){} } }
 function seoMediaPool(){ if(!Array.isArray(ST.seoMedia))ST.seoMedia=[]; return ST.seoMedia; }
 function seoAllItems(){ return SEO_PLAN.reduce((a,mo)=>a.concat(mo.items.map(it=>Object.assign({month:mo.m},it))),[]); }
 function seoItemProvided(it){
@@ -2377,6 +2454,20 @@ function seoItemProvided(it){
   return false;
 }
 function seoItemProgress(it){ if(it.type==='media')return {have:seoMediaPool().length,need:it.target}; if(it.type==='blog')return {have:seoBlogs().length,need:it.target}; return null; }
+/* PARTIAL = some content has arrived but the target isn't met yet. Lets Bogdan pull what's
+   there instead of staring at a disabled "Waiting" button (sim #9). Town is binary. */
+function seoItemPartial(it){ if(seoItemProvided(it))return false; const p=seoItemProgress(it); return !!(p&&p.have>0&&p.have<p.need); }
+/* Reactive content-dependency for a sprint task (sim #10): a Town-page task needs that
+   town's details from Sebastian. Returns null when the task needs nothing from him, else
+   {town, ready} computed live from townProvided() so the badge flips to green on its own. */
+function taskNeedsContent(t){
+  if(!t)return null;
+  var town=t.town||null;
+  if(!town){ var arr=(typeof SEO_TOWNS7!=='undefined')?SEO_TOWNS7:[]; for(var i=0;i<arr.length;i++){ if((t.title||'').indexOf(arr[i])>=0){town=arr[i];break;} } }
+  var depends=(t.section==='Town pages')||(t.needs==='content');
+  if(!depends||!town)return null;
+  return { town:town, ready:(typeof townProvided==='function')?townProvided(town):false };
+}
 function seoItemOverdue(it){ return !seoItemProvided(it) && Date.now() > seoDueTs(it); }
 /* per-SECTION deadlines for the playbook (Bogdan works section by section, not task by task) */
 const SEO_STEP_DUE={gbp:14,pages:28,towns:55,blogs:75,citations:80,reviews:85,links:90};
@@ -2428,8 +2519,14 @@ function seoItemRow(it,builder){
     : `<span class="pst draft">⏳ Due ${fmtShort(seoDueTs(it))}</span>`;
   const progTxt = prog ? ` <span class="muted" style="font-size:12px">(${Math.min(prog.have,prog.need)}/${prog.need})</span>` : '';
   row.innerHTML=`<div class="si-ic">${icon}</div><div class="si-main"><div class="si-t">${esc(it.label)}${progTxt}</div><div class="si-why">${esc(it.why)}</div></div><div class="si-stat">${stat}</div>`;
-  const act=el('button','btn-set'+(provided?'':' primary'));
-  if(builder){ act.textContent = provided ? 'Open' : 'Waiting'; if(!provided)act.disabled=true; act.onclick=()=>seoOpenItem(it,true); }
+  const partial = !provided && seoItemPartial(it);
+  const act=el('button','btn-set'+(provided||partial?'':' primary'));
+  if(builder){
+    if(provided){ act.textContent='Open'; }
+    else if(partial){ act.textContent = prog?('Open ('+Math.min(prog.have,prog.need)+'/'+prog.need+' so far)'):'Open'; }
+    else { act.textContent='Waiting'; act.disabled=true; }
+    act.onclick=()=>seoOpenItem(it,true);
+  }
   else { act.textContent = provided ? 'Edit' : (it.type==='blog'?'Add':it.type==='media'?'Upload':'Fill in'); act.onclick=()=>seoOpenItem(it,false); }
   if(!builder && !provided){ const dt=el('button','si-date','📅');dt.title='Change the due date';dt.onclick=()=>openDueEditor(it);row.appendChild(dt); }
   row.appendChild(act);
@@ -2549,7 +2646,7 @@ function sprintRow(t,showMove){
   const main=el('div','sprintmain');
   main.appendChild(el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)')));
   if(t.section&&t.section!=='Custom')main.appendChild(el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section)));
-  if(t.needs==='content')main.appendChild(el('span','needbadge','⏳ needs your content'));
+  {const nc=taskNeedsContent(t); if(nc)main.appendChild(el('span','needbadge'+(nc.ready?' ready':''),nc.ready?('✓ '+nc.town+' details in'):('⏳ needs '+nc.town+' details')));}
   main.onclick=()=>editSprintTask(t);r.appendChild(main);
   const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
   if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);}
@@ -2575,7 +2672,9 @@ function sprintCard(t,scope){
   c.ondragstart=e=>{e.dataTransfer.setData('text/plain',t.id);c.classList.add('dragging');};
   c.ondragend=()=>c.classList.remove('dragging');
   const meta=[]; if(t.est)meta.push('<span class="sc-hr">'+t.est+'h</span>'); if(scope==='all'||scope==='backlog'){meta.push('<span class="sc-sprint">'+esc((sprintById(t.sprint)||{}).name||'Backlog')+'</span>');}
-  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div>${t.needs==='content'?'<div class="needbadge" style="margin-top:5px">⏳ needs your content</div>':''}${meta.length?('<div class="sc-meta">'+meta.join('')+'</div>'):''}`;
+  const _nc=taskNeedsContent(t);
+  const ncBadge=_nc?('<div class="needbadge'+(_nc.ready?' ready':'')+'" style="margin-top:5px">'+(_nc.ready?('✓ '+esc(_nc.town)+' details in'):('⏳ needs '+esc(_nc.town)+' details'))+'</div>'):'';
+  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div>${ncBadge}${meta.length?('<div class="sc-meta">'+meta.join('')+'</div>'):''}`;
   c.onclick=()=>editSprintTask(t);
   return c;
 }
@@ -2621,8 +2720,10 @@ function viewSeoProvider(v){
 function viewSeoBuilder(v){
   v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>Your sprints are up top — work the board. The content Sebastian's provided is in the sections below.</p>`));
   const items=seoAllItems();
-  const waiting=items.filter(it=>!seoItemProvided(it));
-  const ready=items.filter(seoItemProvided);
+  // partial items (some content arrived) join "Ready to build" so Bogdan can pull them;
+  // only truly-empty items stay under "Waiting on Sebastian" (sim #9).
+  const ready=items.filter(it=>seoItemProvided(it)||seoItemPartial(it));
+  const waiting=items.filter(it=>!seoItemProvided(it)&&!seoItemPartial(it));
   // sprint board — primary work surface (open)
   const sb=el('div','card pad');
   sb.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🏃</div><div><h3>Sprints</h3><small>2-week sprints. Estimates set live in planning; move tasks as you build.</small></div></div>`;
@@ -2680,7 +2781,7 @@ function openTownFacts(town,builder){
   // photos
   const pf=el('div','cmp-field');pf.innerHTML='<label>Photos <span class="muted" style="font-weight:600">— optional: a couple street/job shots from this town</span></label>';const media=el('div','mediabox');
   const drawM=()=>{ media.innerHTML='';const g=el('div','medgrid');
-    tf.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}tf.media.splice(i,1);drawM();};cell.appendChild(img);cell.appendChild(x);g.appendChild(cell);});
+    tf.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{tf.media.splice(i,1);hfSafeDel(m.id);drawM();};cell.appendChild(img);cell.appendChild(x);g.appendChild(cell);});
     const drop=el('label','meddrop'+(tf.media.length?' small':''),tf.media.length?'＋ Add more':'📷 Add photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
     inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing…');for(const fl of files){try{const ref=await hfAdd('town_'+town,fl);tf.media.push(ref);}catch(_){}}drawM();};
     drop.appendChild(inp);g.appendChild(drop);media.appendChild(g); };
@@ -2712,7 +2813,7 @@ function openSeoMedia(builder){
       if(builder){cell.style.cursor='pointer';cell.title='Download';cell.appendChild(el('span','meddl','⬇'));cell.onclick=async()=>{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();toast('Downloading');}else toast('Photo not ready yet');};}
       else{
         const ck=el('span','medselck','✓');ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');updateMake();};cell.appendChild(ck);
-        const x=el('button','medx','✕');x.onclick=(e)=>{e.stopPropagation();try{hfDel(m.id)}catch(_){}sel.delete(m.id);const idx=seoMediaPool().findIndex(p=>p.id===m.id);if(idx>=0)seoMediaPool().splice(idx,1);commit();draw();updateMake();};cell.appendChild(x);
+        const x=el('button','medx','✕');x.onclick=(e)=>{e.stopPropagation();sel.delete(m.id);const idx=seoMediaPool().findIndex(p=>p.id===m.id);if(idx>=0)seoMediaPool().splice(idx,1);hfSafeDel(m.id);commit();draw();updateMake();};cell.appendChild(x);
         cell.style.cursor='pointer';cell.title='Tap to tag';cell.onclick=()=>openPhotoTags([m]);
       }
       grid.appendChild(cell);});
@@ -2782,15 +2883,19 @@ function seoStatusPill(s){const m={todo:['To do','draft'],building:['Building','
 function seoBlogCard(b,builderMode){
   const card=el('div','postcard');card.style.position='relative';
   const mm=b.media||[];
+  // builder note surfaced to Sebastian right on the card (sim #11) — unread gets a dot
+  const noteBadge = (!builderMode && b.builderNote && b.builderNote.trim())
+    ? `<div class="bnote${b.noteSeen?'':' unread'}">💬 ${esc(b.noteBy||'Builder')}: ${esc(b.builderNote.split('\n')[0].slice(0,60))}${b.noteAt?` · ${agoShort(b.noteAt)}`:''}</div>` : '';
   card.innerHTML=`<div class="pcimg"><img alt="" style="display:none"><span class="pcph">✍️</span>${mm.length?`<span class="pccount">📎 ${mm.length}</span>`:''}</div>
     <div class="pcbody">
       <div class="pcmeta">${seoStatusPill(b.status)}${b.town?`<span class="pchip">📍 ${esc(b.town)}</span>`:''}</div>
       <div class="pctown" style="font-weight:700;color:var(--ink)">${esc(b.title||'Untitled blog')}</div>
       <div class="pccap">${b.keyword?'🔑 '+esc(b.keyword):'<span class="muted">No keyword yet</span>'}</div>
+      ${noteBadge}
     </div>`;
   if(mm[0])thumbInto(card.querySelector('img'),mm[0].id);
-  if(!builderMode){ const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();render();toast('Brief deleted');}};card.appendChild(rm); }
-  card.onclick=()=>builderMode?openBlogBuilder(b):openBlogEditor(b,false);
+  if(!builderMode){ const rm=el('button','pcdel','✕');rm.onclick=async(e)=>{e.stopPropagation();const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){ST.blogs=seoBlogs().filter(x=>x.id!==b.id);(b.media||[]).forEach(m=>hfSafeDel(m.id,b.id));commit();render();toast('Brief deleted');}};card.appendChild(rm); }
+  card.onclick=()=>{ if(builderMode){openBlogBuilder(b);} else { if(b.builderNote&&!b.noteSeen){const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0){arr[i].noteSeen=true;ST.blogs=arr;commit();}} openBlogEditor(b,false);} };
   return card;
 }
 /* Bogdan's read-and-build view of a brief: read the content, download the photos,
@@ -2817,9 +2922,11 @@ function openBlogBuilder(blog){
   const sf=el('div','cmp-field');sf.innerHTML='<label>Status</label>';const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((blog.status||'todo')===val)o.selected=true;ss.appendChild(o)});sf.appendChild(ss);bd.appendChild(sf);
   const bf=el('div','cmp-field');bf.innerHTML='<label>Your note back to Sebastian <span class="muted" style="font-weight:600">— questions / status</span></label>';const bn=el('textarea','cmp-in');bn.rows=2;bn.value=blog.builderNote||'';bf.appendChild(bn);bd.appendChild(bf);
   const foot=el('div','cmp-foot');const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){arr[i].status=ss.value;arr[i].builderNote=bn.value;ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{const arr=seoBlogs();const i=arr.findIndex(x=>x.id===blog.id);if(i>=0){const noteChanged=(arr[i].builderNote||'')!==bn.value;arr[i].status=ss.value;arr[i].builderNote=bn.value;if(noteChanged&&bn.value.trim()){arr[i].noteAt=Date.now();arr[i].noteBy=((typeof curUser==='function'&&curUser())||{}).name||'Builder';arr[i].noteSeen=false;}ST.blogs=arr;commit();}closeComposer();render();toast('Updated');};
   foot.appendChild(save);bd.appendChild(foot);
 }
+/* "2h ago" / "3d ago" — coarse relative time for the builder-note badge */
+function agoShort(ms){ if(!ms)return ''; var s=Math.max(0,Math.floor((Date.now()-ms)/1000)); if(s<60)return 'just now'; var m=Math.floor(s/60); if(m<60)return m+'m ago'; var h=Math.floor(m/60); if(h<24)return h+'h ago'; var d=Math.floor(h/24); return d+'d ago'; }
 /* scripted "AI" suggestions — proven local-blog titles, keywords + a section outline */
 function seoSuggest(b){
   const town=(b.town||'your town'), yr=(new Date()).getFullYear();
@@ -2858,7 +2965,7 @@ function openBlogEditor(blog,isNew){
   sug.appendChild(sugBtn);sug.appendChild(sugBox);bd.appendChild(sug);
   const pf=field('Photos','before/after + job shots');const media=el('div','mediabox');
   const renderMedia=()=>{ media.innerHTML=''; const grid=el('div','medgrid');
-    b.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{try{hfDel(m.id)}catch(_){}b.media.splice(i,1);renderMedia();};cell.appendChild(img);cell.appendChild(x);grid.appendChild(cell);});
+    b.media.forEach((m,i)=>{const cell=el('div','medcell');const img=el('img','medthumb');thumbInto(img,m.id);const x=el('button','medx','✕');x.onclick=()=>{b.media.splice(i,1);hfSafeDel(m.id,b.id);renderMedia();};cell.appendChild(img);cell.appendChild(x);grid.appendChild(cell);});
     const drop=el('label','meddrop'+(b.media.length?' small':''),b.media.length?'＋ Add more':'📷 Add photos');const inp=el('input');inp.type='file';inp.accept='image/*,.heic,.heif';inp.multiple=true;inp.className='hidden';
     inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;if(files.some(isHeic))toast('Preparing photos…');for(const f of files){try{const ref=await hfAdd('blog_'+b.id,f);b.media.push(ref);}catch(_){toast('A photo could not be added')}}renderMedia();toast(files.length+' photo'+(files.length>1?'s':'')+' added');};
     drop.appendChild(inp);grid.appendChild(drop);media.appendChild(grid); };
@@ -2869,7 +2976,7 @@ function openBlogEditor(blog,isNew){
   const sf=field('Status');const ss=el('select','cmp-in');[['todo','To do'],['building','Building'],['done','Done']].forEach(([val,lab])=>{const o=document.createElement('option');o.value=val;o.textContent=lab;if((b.status||'todo')===val)o.selected=true;ss.appendChild(o)});ss.onchange=()=>b.status=ss.value;sf.appendChild(ss);bd.appendChild(sf);
   const bf=field('Builder note (Bogdan)','questions / status back to Sebastian');const bn=el('textarea','cmp-in');bn.rows=2;bn.value=b.builderNote||'';bn.oninput=()=>b.builderNote=bn.value;bf.appendChild(bn);bd.appendChild(bf);
   const foot=el('div','cmp-foot');
-  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){(b.media||[]).forEach(m=>{try{hfDel(m.id)}catch(_){}});ST.blogs=seoBlogs().filter(x=>x.id!==b.id);commit();closeComposer();render();toast('Brief deleted');}};foot.appendChild(del);}
+  if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('This removes the blog brief and its photos.',{title:'Delete this brief?',confirmText:'Delete',danger:true});if(ok){ST.blogs=seoBlogs().filter(x=>x.id!==b.id);(b.media||[]).forEach(m=>hfSafeDel(m.id,b.id));commit();closeComposer();render();toast('Brief deleted');}};foot.appendChild(del);}
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
   const save=el('button','btn-set primary','Save brief');save.onclick=()=>{ if(!b.title.trim()){toast('Add a topic/title first');return;} const arr=seoBlogs();const i=arr.findIndex(x=>x.id===b.id);if(i>=0)arr[i]=b;else arr.unshift(b);ST.blogs=arr;commit();closeComposer();render();toast(isNew?'Brief added for Bogdan':'Saved'); };
   foot.appendChild(save);bd.appendChild(foot);
@@ -4112,7 +4219,16 @@ function ruthQueue(v){
   const q=el('div','card pad');
   q.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📤</div><div><h3>Ready to post</h3><small><b>${ready.length}</b> waiting to post${posted?` · <b>${posted}</b> posted ✓`:''}</small></div></div>
     <p class="muted" style="font-size:12.5px;margin:2px 0 6px">For each one: copy the caption + hashtags, download the photo/video, post it on your channels — then tap <b>✅ Mark as posted</b> and it leaves the list.</p>`;
-  if(!ready.length)q.innerHTML+=`<p class="muted">🎉 All caught up — nothing waiting. New posts Sebastian approves will show up here.</p>`;
+  if(!ready.length){
+    const drafts=socPosts().filter(p=>p.status&&p.status!=='posted'&&p.status!=='approved').length;
+    const ctx = drafts ? `💡 ${drafts} post${drafts>1?'s are':' is'} still being finished — they’ll land here once Sebastian approves ${drafts>1?'them':'it'}.`
+      : '🎉 All caught up — nothing waiting. New posts Sebastian approves show up here automatically.';
+    const emp=el('div');emp.style.marginTop='4px';
+    emp.innerHTML=`<p class="muted">${ctx}</p>`;
+    const rf=el('button','btn-set','🔄 Check for new posts');
+    rf.onclick=()=>{ if(typeof fbSyncPull==='function'){fbSyncPull();} toast('Checking…'); };
+    emp.appendChild(rf); q.appendChild(emp);
+  }
   ready.forEach(p=>q.appendChild(readyCard(p)));
   v.appendChild(q);
 }
@@ -4304,14 +4420,14 @@ function readyCard(p){
     const body=card.querySelector('.rcbody');
     const sf=el('div','rcfield');sf.innerHTML='<label>Photos — post in this order'+(mm.some(m=>m.role)?' (labels shown)':'')+'</label>';
     const strip=el('div','rcstrip');
-    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
+    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):'')+(m.failedToPublish?' missing':''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));if(m.failedToPublish)t.appendChild(el('span','rcmiss',m.skipReason==='video'?'▶ video':'⚠ missing'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
   card.querySelector('[data-copy="cap"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.caption||'');toast('Caption copied')};
   card.querySelector('[data-copy="tags"]').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText(p.hashtags||'');toast('Hashtags copied')};
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
-  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}for(const m of arr){const rec=await fileGet(m.id);if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u);}else{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();}}}toast(arr.length>1?'Downloading all '+arr.length:'Downloading')};
+  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0;for(const m of arr){const rec=await fileGet(m.id);if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||'media';a.click();URL.revokeObjectURL(u);got++;}else{const c=await cloudFileGet(m.id);if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();got++;}else{miss++;}}}toast(miss?(got?('Downloaded '+got+' — '+miss+" couldn’t be found (ask Sebastian to re-share)"):"Couldn’t find these files — ask Sebastian to open the post and re-approve"):(arr.length>1?'Downloading all '+arr.length:'Downloading'));};
   const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{done.disabled=true;const post=postById(p.id);if(post){post.status='posted';poolArchiveForPost(post);if(post.fromJob)ST.bajobs=socBaJobs().filter(x=>x.id!==post.fromJob);savePost(post);bumpPostsKpi();toast('Posted ✓ — nice! It’s off your list.');await purgePostedMedia(post);rerenderCal()}};
   foot.appendChild(dlb);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
@@ -4465,10 +4581,27 @@ function openComposer(idOrPost,isNew){
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
   const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
   const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve & send to queue');
-  appr.onclick=async()=>{const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}appr.disabled=true;toast('Sharing photos to the team…');const r=await publishPostMedia(p);p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();toast(r&&r.skipped?('Approved → posting queue ('+r.skipped+' item'+(r.skipped>1?'s':'')+' couldn’t be shared)'):'Approved → posting queue ✓');};
+  appr.onclick=async()=>{
+    const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}
+    appr.disabled=true;toast('Sharing photos to the team…');
+    const r=await publishPostMedia(p); const mm=postMedia(p); const failed=r.failed||[];
+    if(mm.length && r.done===0){ // nothing reached the cloud — don't ship Ruth an empty/broken post
+      appr.disabled=false;
+      const allVid=failed.length&&failed.every(f=>f.skipReason==='video');
+      toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
+      return;
+    }
+    p.status='approved';p.ruthNote=aiRuthNote(p);savePost(p);closeComposer();rerenderCal();
+    if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
+      toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
+    } else toast('Approved → posting queue ✓');
+  };
   foot.appendChild(save);foot.appendChild(appr);b.appendChild(foot);
 }
-function closeComposer(){const o=$('#cmpOv');if(o)o.remove()}
+function closeComposer(){const o=$('#cmpOv');if(o)o.remove();
+  // flush any remote update that arrived while the composer was open (deferred in onSnapshot)
+  if(_fbSync&&_fbSync.pending){ var p=_fbSync.pending; _fbSync.pending=null; try{ fbApplyRemote(p); if(typeof render==='function')render(); }catch(e){} }
+}
 
 /* ============================================================
    BOOT  (multi-page: nav uses real <a href> links to .html files;
