@@ -2329,6 +2329,7 @@ function navItems(){
    ============================================================ */
 function currentView(){return (document.body&&document.body.dataset.view)||'dashboard'}
 function render(){
+  if(typeof enforceAccess==='function'&&enforceAccess())return;   // deactivated/removed → kicked to the gate
   const v=$('#view');if(!v)return;v.innerHTML='';
   const nb=noEmailBanner();if(nb)v.appendChild(nb);
   ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader}[currentView()]||viewDashboard)(v);
@@ -4954,12 +4955,15 @@ function renderGate(){
   ensureAuth();
   const users=()=>(S.users||[]).filter(u=>u.active!==false);
   const showList=()=>{
-    wrap.innerHTML=users().map(u=>
-      `<button data-uid="${u.id}">${av(u.id)}<div><div class="nm">${esc(u.name)}</div><div class="rl">${esc(u.title||'')}</div></div></button>`).join('')
+    wrap.innerHTML=users().map(u=>{
+      const noLogin=window.WG_FB_READY&&!u.email;   // can't sign in without an email in cloud mode
+      return `<button data-uid="${u.id}"${noLogin?' data-nologin="1" style="opacity:.6"':''}>${av(u.id)}<div><div class="nm">${esc(u.name)}</div><div class="rl">${noLogin?'No email yet — ask Sebastian':esc(u.title||'')}</div></div></button>`;
+    }).join('')
       +(window.WG_FB_READY?'':`<button data-uid="__guest" style="grid-column:1/-1;justify-content:center">👀 <div><div class="nm">Just looking — browse only</div></div></button>`);
     wrap.querySelectorAll('button').forEach(b=>b.onclick=()=>{
       const id=b.dataset.uid;
       if(id==='__guest'){S.uid=null;S.role='all';commit();enterApp();return;}
+      if(b.dataset.nologin){ toast('Sebastian needs to add your email in Team & logins before you can sign in.'); return; }
       showPw(userById(id));
     });
   };
@@ -5006,6 +5010,19 @@ function logout(){ S.uid=null; S.role='all'; commit();
   _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;}
   if(window.WG_FB_READY&&WG_AUTH.currentUser){try{WG_AUTH.signOut()}catch(e){}}
   const app=$('#app'); if(app)app.style.display='none'; const g=$('#gate'); if(g)g.classList.remove('hidden'); renderGate(); }
+/* If Sebastian deactivates or removes a teammate, their OPEN session must end — not wait for a
+   manual logout. Runs on every render + on each incoming sync; kicks a now-invalid session. */
+var _kicking=false;
+function enforceAccess(){
+  if(_kicking||!S.uid)return false;
+  var me=(typeof userById==='function')?userById(S.uid):null;
+  if(me&&me.active!==false)return false;            // still a valid, active account
+  _kicking=true;
+  try{ toast(me?'Your access was turned off by Sebastian.':'Your account was removed.'); }catch(e){}
+  try{ logout(); }catch(e){}
+  _kicking=false;
+  return true;
+}
 /* live sync state — used by the Settings row + the top-bar pill so the team can TRUST
    that their work is shared (not stuck local). */
 function syncState(){ if(!window.WG_FB_READY||!(WG_AUTH&&WG_AUTH.currentUser))return 'off'; return (_fbSync&&_fbSync.on)?'on':'mid'; }
