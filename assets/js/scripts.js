@@ -2392,50 +2392,65 @@ function sprintById(id){ return seoSprints().find(s=>s.id===id)||null; }
 function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
 function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
+function sprintSel(){ if(ST.sprintSel)return ST.sprintSel; const now=Date.now(); const cur=seoSprints().find(s=>now>=s.start&&now<=s.end); return cur?cur.id:'s1'; }
 function renderSprintBoard(box){
   const tasks=sprintTasks();
+  const scope=sprintSel();
+  // top: view toggle + add
   const bar=el('div','sprintbar');
   const seg=el('div','seg');[['list','☰ List'],['board','▦ Board']].forEach(([v,l])=>{const b=el('button','seg-b'+(sprintView()===v?' on':''),l);b.onclick=()=>{ST.sprintView=v;commit();render();};seg.appendChild(b);});
   bar.appendChild(seg);
-  const add=el('button','btn-set primary','＋ Add task');add.onclick=()=>addSprintTask('backlog');bar.appendChild(add);
-  const tot=tasks.reduce((s,t)=>s+(+t.est||0),0),done=tasks.filter(t=>t.status==='done').reduce((s,t)=>s+(+t.est||0),0);
-  bar.appendChild(el('span','sprint-tot',tot+'h planned · '+done+'h done'));
+  const add=el('button','btn-set primary','＋ Add task');add.onclick=()=>addSprintTask(scope==='all'?'backlog':scope);bar.appendChild(add);
   box.appendChild(bar);
-  if(sprintView()==='board')renderSprintCols(box,tasks); else renderSprintList(box,tasks);
+  // sprint tabs — focus one sprint at a time
+  const tabs=el('div','sprinttabs');
+  seoSprints().map(s=>[s.id,s.name.replace('Sprint ','Sprint ')]).concat([['backlog','Backlog'],['all','All']]).forEach(([id,lab])=>{const b=el('button','sprinttab'+(scope===id?' on':''),lab);b.onclick=()=>{ST.sprintSel=id;commit();render();};tabs.appendChild(b);});
+  box.appendChild(tabs);
+  // scope line
+  const inScope=scope==='all'?tasks:tasks.filter(t=>(t.sprint||'backlog')===scope);
+  const hrs=inScope.reduce((s,t)=>s+(+t.est||0),0),dn=inScope.filter(t=>t.status==='done').length;
+  const so=sprintById(scope);
+  box.appendChild(el('div','sprintscope',(scope==='all'?'All sprints':scope==='backlog'?'Backlog':so?(so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end)):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
+  if(sprintView()==='board')renderSprintCols(box,inScope,scope); else renderSprintList(box,inScope,scope);
 }
-function renderSprintList(box,tasks){
-  seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(g=>{
-    const gt=tasks.filter(t=>(t.sprint||'backlog')===g.id);
-    const grp=el('div','sprintgrp');
-    const sub=g.id==='backlog'?'Unscheduled — assign during planning':fmtShort(g.start)+' – '+fmtShort(g.end);
-    const hrs=gt.reduce((s,t)=>s+(+t.est||0),0),dn=gt.filter(t=>t.status==='done').length;
-    grp.appendChild(el('div','sprintgrp-h',`<b>${esc(g.name)}</b> <span class="muted">· ${sub} · ${gt.length} task${gt.length===1?'':'s'} · ${hrs}h${gt.length?(' · '+dn+'/'+gt.length+' done'):''}</span>`));
-    gt.forEach(t=>grp.appendChild(sprintRow(t)));
-    const a=el('button','tbtn','＋ Add task');a.style.marginTop='6px';a.onclick=()=>addSprintTask(g.id);grp.appendChild(a);
-    box.appendChild(grp);
-  });
+function renderSprintList(box,tasks,scope){
+  if(scope==='all'){
+    seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(g=>{
+      const gt=tasks.filter(t=>(t.sprint||'backlog')===g.id);
+      const grp=el('div','sprintgrp');
+      const sub=g.id==='backlog'?'Unscheduled':fmtShort(g.start)+' – '+fmtShort(g.end);
+      grp.appendChild(el('div','sprintgrp-h',`<b>${esc(g.name)}</b> <span class="muted">· ${sub} · ${gt.length} · ${gt.reduce((s,t)=>s+(+t.est||0),0)}h</span>`));
+      gt.forEach(t=>grp.appendChild(sprintRow(t,true)));
+      box.appendChild(grp);
+    });
+    return;
+  }
+  const grp=el('div','sprintgrp');
+  if(!tasks.length)grp.appendChild(el('p','muted','Nothing here yet — tap “＋ Add task”, or move some from the Backlog tab.'));
+  tasks.forEach(t=>grp.appendChild(sprintRow(t,scope==='backlog')));
+  box.appendChild(grp);
 }
-function sprintRow(t){
+function sprintRow(t,showMove){
   const r=el('div','sprintrow');
   const st=el('button','sprintstat '+t.status,t.status==='done'?'✓':t.status==='doing'?'◐':'○');st.title='Change status';
   st.onclick=(e)=>{e.stopPropagation();t.status=t.status==='todo'?'doing':t.status==='doing'?'done':'todo';commit();render();};
   r.appendChild(st);
   const main=el('div','sprintmain');
-  const tt=el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)'));
-  const tag=el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section||''));
-  main.appendChild(tt);main.appendChild(tag);main.onclick=()=>editSprintTask(t);r.appendChild(main);
+  main.appendChild(el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)')));
+  if(t.section&&t.section!=='Custom')main.appendChild(el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section)));
+  main.onclick=()=>editSprintTask(t);r.appendChild(main);
   const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
-  const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);
+  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{t.sprint=sel.value;commit();render();};r.appendChild(sel);}
   const x=el('button','sprintx','✕');x.onclick=(e)=>{e.stopPropagation();ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();render();};r.appendChild(x);
   return r;
 }
-function renderSprintCols(box,tasks){
+function renderSprintCols(box,tasks,scope){
   const wrap=el('div','sprintboardcols');
   [['todo','To do'],['doing','In progress'],['done','Done']].forEach(([sid,label])=>{
     const ct=tasks.filter(t=>t.status===sid);
     const col=el('div','sprintcol');col.dataset.status=sid;
-    col.appendChild(el('div','sprintcol-h',`${esc(label)} <span class="muted">${ct.length} · ${ct.reduce((s,t)=>s+(+t.est||0),0)}h</span>`));
-    ct.forEach(t=>col.appendChild(sprintCard(t)));
+    col.appendChild(el('div','sprintcol-h',`${esc(label)} <span class="muted">${ct.length}</span>`));
+    ct.forEach(t=>col.appendChild(sprintCard(t,scope)));
     col.ondragover=e=>{e.preventDefault();col.classList.add('dragover');};
     col.ondragleave=()=>col.classList.remove('dragover');
     col.ondrop=e=>{e.preventDefault();col.classList.remove('dragover');const id=e.dataTransfer.getData('text/plain');const tk=sprintTasks().find(z=>z.id===id);if(tk&&tk.status!==sid){tk.status=sid;commit();render();}};
@@ -2443,11 +2458,12 @@ function renderSprintCols(box,tasks){
   });
   box.appendChild(wrap);
 }
-function sprintCard(t){
+function sprintCard(t,scope){
   const c=el('div','sprintcard');c.draggable=true;
   c.ondragstart=e=>{e.dataTransfer.setData('text/plain',t.id);c.classList.add('dragging');};
   c.ondragend=()=>c.classList.remove('dragging');
-  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div><div class="sc-meta"><span class="sprinttag">${t.sectionIcon||''} ${esc(t.section||'')}</span><span class="sc-hr">${t.est?(t.est+'h'):'—'}</span></div><div class="sc-sprint">${esc((sprintById(t.sprint)||{}).name||'Backlog')}</div>`;
+  const meta=[]; if(t.est)meta.push('<span class="sc-hr">'+t.est+'h</span>'); if(scope==='all'||scope==='backlog'){meta.push('<span class="sc-sprint">'+esc((sprintById(t.sprint)||{}).name||'Backlog')+'</span>');}
+  c.innerHTML=`<div class="sc-t">${esc(t.title||'(untitled)')}</div>${meta.length?('<div class="sc-meta">'+meta.join('')+'</div>'):''}`;
   c.onclick=()=>editSprintTask(t);
   return c;
 }

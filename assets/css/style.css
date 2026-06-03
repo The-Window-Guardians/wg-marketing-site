@@ -762,3 +762,9 @@ textarea.cmp-in{resize:vertical}
 .sprintcard .sc-meta{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px}
 .sprintcard .sc-hr{font-size:11.5px;font-weight:800;color:var(--orange)}
 .sprintcard .sc-sprint{font-size:10.5px;color:var(--faint);margin-top:4px}
+
+/* ---- Sprint tabs + scope line (focus one sprint) ---- */
+.sprinttabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin:2px 0 4px;-webkit-overflow-scrolling:touch}
+.sprinttab{flex:0 0 auto;border:1px solid var(--line2);background:#fff;border-radius:999px;padding:5px 13px;font-size:12.5px;font-weight:700;color:var(--ink2);cursor:pointer;white-space:nowrap}
+.sprinttab.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.sprintscope{font-size:12px;font-weight:700;color:var(--muted);margin:2px 0 12px}
