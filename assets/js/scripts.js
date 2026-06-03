@@ -2386,49 +2386,66 @@ function seoBlogsCard(builder){
 /* ===================== SPRINT BOARD (Asana-style) =====================
    2-week sprints across the 90 days; hour estimates set live in planning.
    Tasks seed from the 7 plan sections (carry over any done state) + add live. */
-function sprintCount(){ return ST.sprintCount||6; }
-function seoSprints(){ const start=seoStart(),n=sprintCount(),a=[]; for(let i=0;i<n;i++)a.push({id:'s'+(i+1),name:'Sprint '+(i+1),start:start+i*14*86400000,end:start+((i+1)*14-1)*86400000}); return a; }
+function seoSprints(){ if(!Array.isArray(ST.sprints))ST.sprints=[]; return ST.sprints; }   // you create these — not pre-populated
 function sprintById(id){ return seoSprints().find(s=>s.id===id)||null; }
+function addSprint(){ const arr=seoSprints(); const last=arr[arr.length-1]; const start=last?last.end+86400000:seoStart(); const end=start+13*86400000; const s={id:'s_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),name:'Sprint '+(arr.length+1),start:start,end:end}; arr.push(s); commit(); return s; }
+function removeSprint(id){ sprintTasks().forEach(t=>{if(t.sprint===id)t.sprint='backlog';}); ST.sprints=seoSprints().filter(s=>s.id!==id); commit(); }
+function editSprint(s){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');box.style.maxWidth='400px';
+  box.innerHTML=`<div class="cmp-head"><h3>Edit sprint</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
+  const bd=$('#cmpBody');const fld=(l)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+l+'</label>';return f;};
+  const nf=fld('Name');const ni=el('input','cmp-in');ni.value=s.name||'';ni.oninput=()=>s.name=ni.value;nf.appendChild(ni);bd.appendChild(nf);
+  const sf=fld('Start');const si=el('input','cmp-in');si.type='date';try{si.value=new Date(s.start).toISOString().slice(0,10);}catch(e){}si.onchange=()=>{s.start=new Date(si.value+'T12:00:00').getTime();};sf.appendChild(si);bd.appendChild(sf);
+  const ef=fld('End');const ei=el('input','cmp-in');ei.type='date';try{ei.value=new Date(s.end).toISOString().slice(0,10);}catch(e){}ei.onchange=()=>{s.end=new Date(ei.value+'T12:00:00').getTime();};ef.appendChild(ei);bd.appendChild(ef);
+  const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=()=>{removeSprint(s.id);closeComposer();render();toast('Sprint removed — its tasks went to Backlog');};foot.appendChild(del);
+  const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
+  const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
+}
 function seedSprintTasks(){ const out=[]; SEO_PLAYBOOK.forEach(step=>{ const pst=(ST.pb&&ST.pb[step.id])||{tasks:{}}; step.tasks.forEach((t,i)=>{ out.push({id:'spt_'+step.id+'_'+i,title:t,section:step.title,sectionIcon:step.icon,est:0,status:(pst.tasks&&pst.tasks[i])?'done':'todo',sprint:'backlog'}); }); }); return out; }
-function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } return ST.sprintTasks; }
+function sprintTasks(){ if(!Array.isArray(ST.sprintTasks)){ ST.sprintTasks=seedSprintTasks(); commit(); } const ids=seoSprints().map(s=>s.id); ST.sprintTasks.forEach(t=>{ if(t.sprint&&t.sprint!=='backlog'&&ids.indexOf(t.sprint)<0)t.sprint='backlog'; }); return ST.sprintTasks; }
 function sprintView(){ return ST.sprintView==='board'?'board':'list'; }
-function sprintSel(){ if(ST.sprintSel)return ST.sprintSel; const now=Date.now(); const cur=seoSprints().find(s=>now>=s.start&&now<=s.end); return cur?cur.id:'s1'; }
+function sprintSel(){ const sp=seoSprints(); if(!sp.length)return null; const f=sp.find(s=>s.id===ST.sprintSel); if(f)return f.id; const now=Date.now(); const cur=sp.find(s=>now>=s.start&&now<=s.end); return cur?cur.id:sp[0].id; }
 function renderSprintBoard(box){
-  const tasks=sprintTasks();
-  const scope=sprintSel();
-  // top: view toggle + add
   const bar=el('div','sprintbar');
   const seg=el('div','seg');[['list','☰ List'],['board','▦ Board']].forEach(([v,l])=>{const b=el('button','seg-b'+(sprintView()===v?' on':''),l);b.onclick=()=>{ST.sprintView=v;commit();render();};seg.appendChild(b);});
   bar.appendChild(seg);
-  const add=el('button','btn-set primary','＋ Add task');add.onclick=()=>addSprintTask(scope==='all'?'backlog':scope);bar.appendChild(add);
+  const ns=el('button','btn-set','＋ New sprint');ns.onclick=()=>{const s=addSprint();ST.sprintSel=s.id;commit();render();};bar.appendChild(ns);
+  const add=el('button','btn-set primary','＋ Add task');add.onclick=()=>addSprintTask('backlog');bar.appendChild(add);
   box.appendChild(bar);
-  // sprint tabs — focus one sprint at a time
-  const tabs=el('div','sprinttabs');
-  seoSprints().map(s=>[s.id,s.name.replace('Sprint ','Sprint ')]).concat([['backlog','Backlog'],['all','All']]).forEach(([id,lab])=>{const b=el('button','sprinttab'+(scope===id?' on':''),lab);b.onclick=()=>{ST.sprintSel=id;commit();render();};tabs.appendChild(b);});
-  box.appendChild(tabs);
-  // scope line
-  const inScope=scope==='all'?tasks:tasks.filter(t=>(t.sprint||'backlog')===scope);
-  const hrs=inScope.reduce((s,t)=>s+(+t.est||0),0),dn=inScope.filter(t=>t.status==='done').length;
-  const so=sprintById(scope);
-  box.appendChild(el('div','sprintscope',(scope==='all'?'All sprints':scope==='backlog'?'Backlog':so?(so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end)):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
-  if(sprintView()==='board')renderSprintCols(box,inScope,scope); else renderSprintList(box,inScope,scope);
+  if(sprintView()==='board')renderSprintBoardView(box); else renderSprintListView(box);
 }
-function renderSprintList(box,tasks,scope){
-  if(scope==='all'){
-    seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(g=>{
-      const gt=tasks.filter(t=>(t.sprint||'backlog')===g.id);
-      const grp=el('div','sprintgrp');
-      const sub=g.id==='backlog'?'Unscheduled':fmtShort(g.start)+' – '+fmtShort(g.end);
-      grp.appendChild(el('div','sprintgrp-h',`<b>${esc(g.name)}</b> <span class="muted">· ${sub} · ${gt.length} · ${gt.reduce((s,t)=>s+(+t.est||0),0)}h</span>`));
-      gt.forEach(t=>grp.appendChild(sprintRow(t,true)));
-      box.appendChild(grp);
-    });
-    return;
-  }
-  const grp=el('div','sprintgrp');
-  if(!tasks.length)grp.appendChild(el('p','muted','Nothing here yet — tap “＋ Add task”, or move some from the Backlog tab.'));
-  tasks.forEach(t=>grp.appendChild(sprintRow(t,scope==='backlog')));
-  box.appendChild(grp);
+function renderSprintBoardView(box){
+  const sprints=seoSprints();
+  if(!sprints.length){ box.appendChild(el('p','muted','No sprints yet — tap “＋ New sprint”, then assign tasks from the List view’s Backlog.')); return; }
+  const scope=sprintSel();
+  const tabs=el('div','sprinttabs');
+  sprints.forEach(s=>{const b=el('button','sprinttab'+(scope===s.id?' on':''),esc(s.name));b.onclick=()=>{ST.sprintSel=s.id;commit();render();};tabs.appendChild(b);});
+  box.appendChild(tabs);
+  const so=sprintById(scope); const inScope=sprintTasks().filter(t=>t.sprint===scope);
+  const hrs=inScope.reduce((s,t)=>s+(+t.est||0),0),dn=inScope.filter(t=>t.status==='done').length;
+  box.appendChild(el('div','sprintscope',(so?so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
+  renderSprintCols(box,inScope,scope);
+}
+function renderSprintListView(box){
+  seoSprints().forEach(s=>box.appendChild(sprintAccordion(s,false)));
+  box.appendChild(sprintAccordion({id:'backlog',name:'Backlog'},true));
+}
+function sprintAccordion(g,isBacklog){
+  const tasks=sprintTasks().filter(t=>(t.sprint||'backlog')===g.id);
+  const hrs=tasks.reduce((s,t)=>s+(+t.est||0),0),dn=tasks.filter(t=>t.status==='done').length;
+  const d=el('details','card seoacc'); if((!isBacklog&&g.id===sprintSel())||(isBacklog&&!seoSprints().length))d.open=true;
+  const sub=isBacklog?'Unscheduled':fmtShort(g.start)+' – '+fmtShort(g.end);
+  const s=el('summary','seoacc-sum');
+  s.innerHTML=`<div class="chip" style="background:${isBacklog?'var(--bg)':'var(--blue-soft)'}">${isBacklog?'📋':'🏃'}</div><div class="seoacc-tt"><h3>${esc(g.name)}</h3><small>${sub} · ${tasks.length} task${tasks.length===1?'':'s'} · ${hrs}h · ${dn} done</small></div><span class="seoacc-ar">▾</span>`;
+  d.appendChild(s);
+  const body=el('div','seoacc-body');
+  if(!isBacklog){ const ed=el('button','tbtn','✎ Edit / dates / remove');ed.style.marginBottom='8px';ed.onclick=(e)=>{e.preventDefault();editSprint(g);};body.appendChild(ed); }
+  if(!tasks.length)body.appendChild(el('p','muted',isBacklog?'Empty — finished or unassigned tasks live here.':'No tasks yet — add some, or move from Backlog.'));
+  tasks.forEach(t=>body.appendChild(sprintRow(t,true)));
+  const a=el('button','tbtn','＋ Add task');a.style.marginTop='6px';a.onclick=(e)=>{e.preventDefault();addSprintTask(g.id);};body.appendChild(a);
+  d.appendChild(body);return d;
 }
 function sprintRow(t,showMove){
   const r=el('div','sprintrow');
