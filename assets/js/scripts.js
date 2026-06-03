@@ -5310,12 +5310,13 @@ function enterApp(){
   if(sel){
     if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown
     else if(isOwner()){
-      // MASTER KEY: owner can view the dashboard AS any teammate, and it sticks across pages
+      // MASTER KEY: owner views the dashboard AS any teammate (just the people — no "Everyone").
+      // Picking your own name = your normal dashboard. Sticks across pages.
       sel.style.display='';
-      if(S.role!=='all' && !userById(S.role)) S.role='all';   // only reset if the viewed account no longer exists
+      if(S.role==='all' || !userById(S.role)) S.role=S.uid;   // default to viewing as yourself
       const roleLabel=u=>u.perm==='owner'?'Owner':u.perm==='poster'?'Poster':u.perm==='contributor'?'SEO contributor':'Editor';
       const us=(S.users||[]).filter(u=>u.active!==false);
-      sel.innerHTML='<option value="all">★ Everyone (you)</option>'+us.map(u=>`<option value="${u.id}">👁 View as ${esc(u.name)} — ${roleLabel(u)}</option>`).join('');
+      sel.innerHTML=us.map(u=>`<option value="${u.id}">${u.id===S.uid?'★ '+esc(u.name)+' (you)':'👁 '+esc(u.name)+' — '+roleLabel(u)}</option>`).join('');
       sel.value=S.role;
     }
     else{ // editor previewing within their program
@@ -5327,8 +5328,10 @@ function enterApp(){
   }
   const a=document.getElementById('tbAv');
   if(a){
+    // show the VIEWED person (so the owner can see at a glance whose dashboard they're in)
+    const viewUid=(S.role&&S.role!=='all'&&userById(S.role))?S.role:(S.uid||S.role);
     if(!S.uid && S.role==='all'){a.style.background='#ffffff22';a.style.color='#fff';a.textContent='★'}
-    else{const p=personOf(S.uid||S.role);a.style.background=p.bg;a.style.color=p.c;a.textContent=p.av}
+    else{const p=personOf(viewUid);a.style.background=p.bg;a.style.color=p.c;a.textContent=p.av;a.title=(viewUid!==S.uid)?('Viewing as '+(p.name||'')):'';}
   }
   // keep a member inside the dashboard(s) they're assigned to
   if(S.uid && !isOwner()){
