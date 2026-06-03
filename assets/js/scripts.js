@@ -2292,28 +2292,46 @@ function seoItemProvided(it){
 }
 function seoItemProgress(it){ if(it.type==='media')return {have:seoMediaPool().length,need:it.target}; if(it.type==='blog')return {have:seoBlogs().length,need:it.target}; return null; }
 function seoItemOverdue(it){ return !seoItemProvided(it) && Date.now() > seoDueTs(it); }
-function seoPlaybookCard(){
-  const pbCard=el('div','card pad');pbCard.style.marginTop='12px';
-  pbCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>The Plan — do it in order</h3><small>Work top to bottom. Check off as you go; leave notes for the team.</small></div></div>`;
+/* per-SECTION deadlines for the playbook (Bogdan works section by section, not task by task) */
+const SEO_STEP_DUE={gbp:14,pages:28,towns:55,blogs:75,citations:80,reviews:85,links:90};
+function seoStepDueTs(id){ const o=(ST.pbDue&&ST.pbDue[id])||0; return o||(seoStart()+(SEO_STEP_DUE[id]||60)*86400000); }
+function seoStepDone(step){ const st=seoPbStep(step.id); return step.tasks.every((_,i)=>st.tasks[i]); }
+function seoStepOverdue(step){ return !seoStepDone(step) && Date.now()>seoStepDueTs(step.id); }
+function seoStepRolled(id){ return !!(ST.pbRolled&&ST.pbRolled[id]); }
+function rolloverStep(id){ openDateModal('New deadline for this section',seoStepDueTs(id),function(ms){ if(!ST.pbDue)ST.pbDue={}; ST.pbDue[id]=ms; if(!ST.pbRolled)ST.pbRolled={}; ST.pbRolled[id]=true; commit(); }); }
+/* collapsible section shell for the Build Queue (all start collapsed) */
+function seoAccordion(icon,title,sub,open,fill){
+  const d=el('details','card seoacc'); if(open)d.open=true;
+  const s=el('summary','seoacc-sum');s.innerHTML=`<div class="chip" style="background:var(--blue-soft)">${icon}</div><div class="seoacc-tt"><h3>${esc(title)}</h3><small>${esc(sub)}</small></div><span class="seoacc-ar">▾</span>`;
+  d.appendChild(s);const body=el('div','seoacc-body');try{fill(body);}catch(e){}d.appendChild(body);return d;
+}
+/* the 7 plan sections — each its own deadline + roll-over — rendered into a container */
+function seoPlaybookFill(box){
   SEO_PLAYBOOK.forEach(step=>{
     const st=seoPbStep(step.id);
     const doneN=()=>step.tasks.filter((_,i)=>st.tasks[i]).length;
-    const d=el('details','jobgroup'); if(step.id==='gbp')d.open=true;
-    const summ=el('summary','jobsum',`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length}`);d.appendChild(summ);
+    const allDone=()=>doneN()===step.tasks.length;
+    const dueChip=()=>{ if(allDone())return '<span class="pst posted">✅ done</span>'; return Date.now()>seoStepDueTs(step.id)?'<span class="pst" style="background:#fde7e7;color:#cf3b3b">⚠ overdue</span>':`<span class="pst draft">⏳ ${fmtShort(seoStepDueTs(step.id))}</span>`; };
+    const d=el('details','jobgroup');
+    const summ=el('summary','jobsum');
+    const refresh=()=>{summ.innerHTML=`${step.icon} ${esc(step.title)} · ${doneN()}/${step.tasks.length} ${dueChip()}${seoStepRolled(step.id)?' <span class="cb wait" style="margin-left:4px">↻ rolled</span>':''}`;};
+    refresh();d.appendChild(summ);
     const body=el('div');body.style.cssText='padding:2px 10px 12px';
     body.appendChild(el('div','muted',esc(step.sub))).style.cssText='font-size:12.5px;margin:0 0 8px';
-    step.tasks.forEach((t,i)=>{
-      const row=el('label','seochk'+(st.tasks[i]?' on':''));
-      const cb=el('input');cb.type='checkbox';cb.checked=!!st.tasks[i];
-      cb.onchange=()=>{ st.tasks[i]=cb.checked; row.classList.toggle('on',cb.checked); commit(); summ.textContent=`${step.icon} ${step.title} · ${doneN()}/${step.tasks.length}`; };
-      row.appendChild(cb);row.appendChild(el('span','',esc(t)));
-      body.appendChild(row);
-    });
-    const note=el('textarea','cmp-in');note.rows=2;note.placeholder='Notes / questions for the team…';note.value=st.note||'';note.style.marginTop='8px';
-    note.oninput=()=>{st.note=note.value;};note.onblur=()=>commit();
-    body.appendChild(note);d.appendChild(body);pbCard.appendChild(d);
+    step.tasks.forEach((t,i)=>{ const row=el('label','seochk'+(st.tasks[i]?' on':''));const cb=el('input');cb.type='checkbox';cb.checked=!!st.tasks[i];cb.onchange=()=>{st.tasks[i]=cb.checked;row.classList.toggle('on',cb.checked);commit();refresh();};row.appendChild(cb);row.appendChild(el('span','',esc(t)));body.appendChild(row); });
+    const dl=el('div');dl.style.cssText='display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap';
+    const dtxt=el('span','muted','Section deadline: '+fmtShort(seoStepDueTs(step.id)));dtxt.style.fontSize='12.5px';dl.appendChild(dtxt);
+    const roll=el('button','btn-set','↻ Roll over — pick new date');roll.onclick=()=>rolloverStep(step.id);dl.appendChild(roll);
+    body.appendChild(dl);
+    const note=el('textarea','cmp-in');note.rows=2;note.placeholder='Notes / questions for the team…';note.value=st.note||'';note.style.marginTop='8px';note.oninput=()=>{st.note=note.value;};note.onblur=()=>commit();
+    body.appendChild(note);d.appendChild(body);box.appendChild(d);
   });
-  return pbCard;
+}
+function seoBlogsFill(box,builder){
+  if(!builder){ const a=el('button','btn-set primary','＋ New blog brief');a.onclick=()=>openBlogEditor(null,true);box.appendChild(a); }
+  const blogs=seoBlogs().slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(!blogs.length){ box.appendChild(el('p','muted', builder?'No briefs yet — Sebastian hasn’t added one.':'No briefs yet — tap “＋ New blog brief”.')); }
+  else { const list=el('div','library');list.style.marginTop='12px';blogs.forEach(b=>list.appendChild(seoBlogCard(b,builder)));box.appendChild(list); }
 }
 function seoItemRow(it,builder){
   const provided=seoItemProvided(it), overdue=seoItemOverdue(it), prog=seoItemProgress(it);
@@ -2375,14 +2393,16 @@ function viewSeoProvider(v){
   v.appendChild(seoBlogsCard(false));
 }
 function viewSeoBuilder(v){
-  v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>What Sebastian has given you, what’s still coming, and the plan to work through. Open anything marked ✅ to use it.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Your Build Queue</h2><p>Everything in one place — tap a section to open it. Work the Plan top to bottom; pull the content Sebastian's provided as you go.</p>`));
   const items=seoAllItems();
   const waiting=items.filter(it=>!seoItemProvided(it));
-  if(waiting.length){ const wb=el('div','card pad');wb.innerHTML=`<div class="sec-title"><div class="chip" style="background:#fde7e7">⏳</div><div><h3>Waiting on Sebastian</h3><small>${waiting.length} item${waiting.length>1?'s':''} not provided yet — they appear here the moment they land.</small></div></div>`;waiting.forEach(it=>wb.appendChild(seoItemRow(it,true)));v.appendChild(wb); }
   const ready=items.filter(seoItemProvided);
-  const rb=el('div','card pad');rb.style.marginTop='12px';rb.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>Ready to build</h3><small>${ready.length?'Open each to read the details + download the photos.':'Nothing provided yet — check back soon.'}</small></div></div>`;ready.forEach(it=>rb.appendChild(seoItemRow(it,true)));v.appendChild(rb);
-  v.appendChild(seoBlogsCard(true));
-  v.appendChild(seoPlaybookCard());
+  const overSteps=SEO_PLAYBOOK.filter(seoStepOverdue).length;
+  // most urgent first, all collapsed
+  v.appendChild(seoAccordion('🗺️','The Plan — do it in order',(overSteps?('⚠ '+overSteps+' section'+(overSteps>1?'s':'')+' overdue · '):'')+'7 steps, each with a deadline',false,seoPlaybookFill));
+  v.appendChild(seoAccordion('✅','Ready to build',(ready.length||'No')+' item'+(ready.length===1?'':'s')+' provided — open to use + download',false,function(box){ if(!ready.length){box.appendChild(el('p','muted','Nothing provided yet.'));return;} ready.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
+  v.appendChild(seoAccordion('✍️','Blog briefs to build',seoBlogs().length+' brief'+(seoBlogs().length===1?'':'s'),false,function(box){ seoBlogsFill(box,true); }));
+  v.appendChild(seoAccordion('⏳','Waiting on Sebastian',(waiting.length||'No')+' item'+(waiting.length===1?'':'s')+' still coming',false,function(box){ if(!waiting.length){box.appendChild(el('p','muted','Nothing outstanding — you have everything.'));return;} waiting.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
 }
 function viewSeoProgress(v){
   v.appendChild(el('div','page-head',`<h2>Progress</h2><p>${esc(SEO_TARGET)}</p>`));
@@ -2394,6 +2414,13 @@ function viewSeoProgress(v){
   grid.appendChild(stat(blogs,12,'Blogs published'));grid.appendChild(stat(towns,7,'Town details provided'));grid.appendChild(stat(photos,'','Job photos provided'));
   v.appendChild(grid);
   const pbc=el('div','card pad');pbc.style.marginTop='16px';pbc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗺️</div><div><h3>Playbook ${pb}% complete</h3><small>Across all 7 build steps.</small></div></div><div class="bar green" style="margin-top:6px"><i style="width:${pb}%"></i></div>`;v.appendChild(pbc);
+  // plan-section deadlines (you + Bogdan both track these)
+  const dlc=el('div','card pad');dlc.style.marginTop='16px';
+  dlc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📆</div><div><h3>Plan deadlines</h3><small>Each build section + when it's due.</small></div></div>`;
+  SEO_PLAYBOOK.forEach(step=>{ const done=seoStepDone(step), od=seoStepOverdue(step); const r=el('div','seoitem');
+    r.innerHTML=`<div class="si-ic">${step.icon}</div><div class="si-main"><div class="si-t">${esc(step.title)}</div><div class="si-why">Deadline ${fmtShort(seoStepDueTs(step.id))}${seoStepRolled(step.id)?' · ↻ rolled':''}</div></div><div class="si-stat">${done?'<span class="pst posted">✅ done</span>':od?'<span class="pst" style="background:#fde7e7;color:#cf3b3b">⚠ overdue</span>':'<span class="pst draft">on track</span>'}</div>`;
+    dlc.appendChild(r); });
+  v.appendChild(dlc);
   const over=seoAllItems().filter(seoItemOverdue);
   const ob=el('div','card pad');ob.style.marginTop='16px';
   ob.innerHTML=`<div class="sec-title"><div class="chip" style="background:${over.length?'#fde7e7':'var(--green-soft)'}">${over.length?'⚠':'✅'}</div><div><h3>${over.length?over.length+' item(s) overdue':'Nothing overdue'}</h3><small>${over.length?'Provide these to Bogdan ASAP.':'You’re on schedule — nice.'}</small></div></div>`;
@@ -4437,8 +4464,10 @@ async function resetAll(){
 }
 
 /* init */
-renderGate();
 if(window.WG_FB_READY){
+  // No login flash on page loads: keep the gate hidden while Firebase resolves the
+  // persisted session; onAuthStateChanged below shows the right screen.
+  var _g0=$('#gate'); if(_g0)_g0.classList.add('hidden'); var _a0=$('#app'); if(_a0)_a0.style.display='none';
   // LOCKED MODE: the app requires an active Firebase login — no guest, no localStorage-only entry.
   try{ WG_AUTH.onAuthStateChanged(function(u){
     if(u){
@@ -4459,5 +4488,6 @@ if(window.WG_FB_READY){
   }); }catch(e){}
 } else {
   // local-only mode (Firebase not configured): keep the prototype behavior
+  renderGate();
   if(Store.load()&&S.uid){enterApp()}
 }

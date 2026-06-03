@@ -723,3 +723,14 @@ textarea.cmp-in{resize:vertical}
 .tagrow:first-of-type{border-top:0}
 .tagthumb{width:64px;height:64px;object-fit:cover;border-radius:9px;background:#eef1f6;flex:0 0 auto}
 .tagfields{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
+
+/* ---- Build Queue collapsible sections ---- */
+.seoacc{margin-top:12px;overflow:hidden}
+.seoacc>.seoacc-sum{list-style:none;display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer}
+.seoacc>.seoacc-sum::-webkit-details-marker{display:none}
+.seoacc-tt{flex:1;min-width:0}
+.seoacc-tt h3{margin:0;font-size:16px;color:var(--ink)}
+.seoacc-tt small{color:var(--muted);font-size:12.5px}
+.seoacc-ar{transition:.15s;color:var(--muted);font-size:13px;flex:0 0 auto}
+.seoacc[open]>.seoacc-sum .seoacc-ar{transform:rotate(180deg)}
+.seoacc-body{padding:0 18px 16px}
