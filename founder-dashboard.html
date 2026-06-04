@@ -6679,7 +6679,7 @@ function renderPersonal() {
     <div class="grid grid-2" style="margin-top: 16px;">
       <div class="card" style="margin: 0; border-left: 4px solid #0891b2;">
         <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📅 Calendar</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Month view. Color dots: tasks · recurring · birthdays · goal deadlines. Click a date with items to see them.</p>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Month view. Color dots: tasks · recurring items · goal deadlines. Click a date with items to see them.</p>
         ${safe(peRenderCalendar, 'Calendar')}
       </div>
       <div class="card" style="margin: 0; border-left: 4px solid var(--green);">
@@ -6689,39 +6689,18 @@ function renderPersonal() {
       </div>
     </div>
 
-    <!-- ROW: People (left) | Rituals (right) -->
+    <!-- ROW: Notes (left) | Journal (right) -->
     <div class="grid grid-2" style="margin-top: 16px;">
-      <div class="card" style="margin: 0; border-left: 4px solid #c026d3;">
-        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">👥 People ${pill(peopleStale, '#c026d3')}</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Family, friends, key folks. Track birthdays, last contact, gift ideas. Stale at 60+ days.</p>
-        ${safe(peRenderPeople, 'People')}
-      </div>
-      <div class="card" style="margin: 0; border-left: 4px solid #16a34a;">
-        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🌿 Rituals — gentle rhythms ${pill(ritualsTotal, '#16a34a')}</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Recurring rhythms without hard due dates — gym, family dinner, reading. Streak tracks frequency.</p>
-        ${safe(peRenderRituals, 'Rituals')}
-      </div>
-    </div>
-
-    <!-- ROW: Vault (left) | Notes (right) -->
-    <div class="grid grid-2" style="margin-top: 16px;">
-      <div class="card" style="margin: 0; border-left: 4px solid #475569;">
-        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🔒 Vault ${pill(vaultTotal, '#475569')}</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Important files — passport, insurance, wifi, warranties. Drag in or click to upload. Searchable.</p>
-        ${safe(peRenderVault, 'Vault')}
-      </div>
       <div class="card" style="margin: 0; border-left: 4px solid #78716c;">
         <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📝 Notes ${pill(notesTotal, '#78716c')}</h2>
         <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Free-form quick notes. Categorize and find later.</p>
         ${safe(peRenderNotes, 'Notes')}
       </div>
-    </div>
-
-    <!-- Journal — full width, mirrors live cards -->
-    <div class="card" style="margin-top: 16px; border-left: 4px solid #be123c;">
-      <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📔 Journal ${journalToday ? '<span class="pill" style="background: var(--green);">today done</span>' : '<span class="pill" style="background: var(--muted);">today empty</span>'}</h2>
-      <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Daily free-form. No prompts, no wizard — just a notebook.</p>
-      ${safe(peRenderJournal, 'Journal')}
+      <div class="card" style="margin: 0; border-left: 4px solid #be123c;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📔 Journal ${journalToday ? '<span class="pill" style="background: var(--green);">today done</span>' : '<span class="pill" style="background: var(--muted);">today empty</span>'}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Daily free-form. No prompts, no wizard — just a notebook.</p>
+        ${safe(peRenderJournal, 'Journal')}
+      </div>
     </div>
 
     <!-- Capture inbox — full width, only when has items, accented like GHL card on Today -->
@@ -6883,15 +6862,6 @@ function peRenderTodayWidget() {
     return d.getTime() <= today.getTime();
   });
 
-  const bdaysThisWeek = (state.personalPeople || []).map(p => {
-    if (!p.birthday) return null;
-    const b = new Date(p.birthday + 'T00:00');
-    let next = new Date(today.getFullYear(), b.getMonth(), b.getDate());
-    if (next < today) next.setFullYear(today.getFullYear() + 1);
-    const daysUntil = Math.ceil((next - today) / 86400000);
-    return daysUntil <= 7 ? { person: p, daysUntil } : null;
-  }).filter(Boolean).sort((a, b) => a.daysUntil - b.daysUntil);
-
   const recurringDueSoon = (state.personalRecurring || []).map(r => {
     if (!r.nextDate) return null;
     const next = new Date(r.nextDate + 'T00:00');
@@ -6915,20 +6885,6 @@ function peRenderTodayWidget() {
           </div>
         `).join("")}
         ${tasksDueToday.length > 5 ? `<div style="font-size: 11px; color: var(--muted); margin-top: 4px;">+ ${tasksDueToday.length - 5} more</div>` : ''}
-      </div>
-    `);
-  }
-
-  if (bdaysThisWeek.length > 0) {
-    blocks.push(`
-      <div>
-        <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 0.7px; color: #c026d3; margin-bottom: 8px;">🎂 BIRTHDAYS · ${bdaysThisWeek.length}</div>
-        ${bdaysThisWeek.map(b => `
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: 12.5px;">
-            <span style="font-weight: 600;">${escapeHtml(b.person.name)}</span>
-            <span style="color: ${b.daysUntil === 0 ? '#c026d3' : 'var(--muted)'}; font-weight: ${b.daysUntil === 0 ? '700' : '500'}; font-size: 11px;">${b.daysUntil === 0 ? 'TODAY' : b.daysUntil === 1 ? 'tomorrow' : `in ${b.daysUntil}d`}</span>
-          </div>
-        `).join("")}
       </div>
     `);
   }
@@ -6962,7 +6918,7 @@ function peRenderTodayWidget() {
     return `
       <div class="card" style="margin-bottom: 12px; padding: 18px 22px; background: linear-gradient(135deg, #f0fdf4, #ecfdf5); border: 1px solid #d1fae5;">
         <div style="font-family: 'Poppins'; font-weight: 800; font-size: 14px; color: #065f46;">✨ Today in Personal — all clear</div>
-        <div style="font-size: 12.5px; color: #047857; margin-top: 4px;">No tasks due, no birthdays this week, no recurring items due soon, capture inbox empty.</div>
+        <div style="font-size: 12.5px; color: #047857; margin-top: 4px;">No tasks due, no recurring items due soon, capture inbox empty.</div>
       </div>
     `;
   }
