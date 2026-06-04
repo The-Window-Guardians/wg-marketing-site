@@ -6968,13 +6968,6 @@ function peRenderCalendar() {
       pushEvent(d.getDate(), { label: r.name + (r.amount ? ` $${r.amount}` : ''), color: '#d97706' });
     }
   });
-  (state.personalPeople || []).forEach(p => {
-    if (!p.birthday) return;
-    const b = new Date(p.birthday + 'T00:00');
-    if (b.getMonth() === viewDate.getMonth()) {
-      pushEvent(b.getDate(), { label: '🎂 ' + p.name, color: '#c026d3' });
-    }
-  });
   (state.personalGoals || []).forEach(g => {
     if (!g.deadline) return;
     const d = new Date(g.deadline + 'T00:00');
@@ -7026,7 +7019,6 @@ function peRenderCalendar() {
       <div style="display: flex; gap: 14px; margin-top: 14px; flex-wrap: wrap; font-size: 11px; color: var(--muted);">
         <span><span style="display: inline-block; width: 10px; height: 10px; background: #fe5106; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Task</span>
         <span><span style="display: inline-block; width: 10px; height: 10px; background: #d97706; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Recurring</span>
-        <span><span style="display: inline-block; width: 10px; height: 10px; background: #c026d3; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Birthday</span>
         <span><span style="display: inline-block; width: 10px; height: 10px; background: #10b981; border-radius: 2px; vertical-align: middle; margin-right: 4px;"></span>Goal deadline</span>
       </div>
     </div>
@@ -7067,11 +7059,6 @@ function peShowCalendarDayDetail(year, month, day) {
     if (!r.nextDate) return;
     const d = new Date(r.nextDate + 'T00:00');
     if (d >= dayStart && d <= dayEnd) items.push(`🔁 Recurring: ${r.name}${r.amount ? ` $${r.amount}` : ''}`);
-  });
-  (state.personalPeople || []).forEach(p => {
-    if (!p.birthday) return;
-    const b = new Date(p.birthday + 'T00:00');
-    if (b.getMonth() === month && b.getDate() === day) items.push(`🎂 Birthday: ${p.name}`);
   });
   (state.personalGoals || []).forEach(g => {
     if (!g.deadline) return;
@@ -7323,8 +7310,16 @@ function peDragDrop(event, targetId) {
   renderPersonal();
 }
 
-function peSetTasksFilter(id) { _initPersonalState(); state.personalUI.tasksFilter = id; saveState(); renderPersonal(); }
+function peSetTasksFilter(id) { _initPersonalState(); state.personalUI.tasksFilter = id; _peNewTaskCatId = null; saveState(); renderPersonal(); }
 function peSetTasksSort(s) { _initPersonalState(); state.personalUI.tasksSort = s; saveState(); renderPersonal(); }
+
+// Inline category chip selection for the new-task input (replaces the old dropdown)
+let _peNewTaskCatId = null;
+function peSetNewTaskCategory(id) {
+  _peNewTaskCatId = id;
+  // Re-render only the Tasks card area would be ideal; full re-render is fast enough
+  renderPersonal();
+}
 
 // ============================================================
 // SECTION: TASKS
@@ -7374,15 +7369,29 @@ function peRenderTasks() {
     </div>
   `;
 
-  // Add input
+  // Resolve the pre-selected category for new tasks: explicit chip pick > active filter > nothing
+  const filterInheritedCat = (filter !== 'all' && filter !== 'none') ? filter : null;
+  const newTaskCatId = _peNewTaskCatId !== undefined && _peNewTaskCatId !== null ? _peNewTaskCatId : filterInheritedCat;
+
+  // Add input — chip row for category (no dropdown), text + date + button
+  const newCatChips = cats.length === 0 ? '' : `
+    <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; align-items: center;">
+      <span style="font-size: 10.5px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; margin-right: 2px;">TAG:</span>
+      <button onclick="peSetNewTaskCategory(null)" style="${newTaskCatId === null ? 'background: var(--slate-200); color: var(--text); border: 1px solid var(--slate-300);' : 'background: white; color: var(--muted); border: 1px solid var(--border);'} padding: 4px 9px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit;">none</button>
+      ${cats.map(c => {
+        const isPicked = newTaskCatId === c.id;
+        return `<button onclick="peSetNewTaskCategory('${c.id}')" style="background: ${isPicked ? c.color : c.color + '22'}; color: ${isPicked ? 'white' : c.color}; border: 1px solid ${isPicked ? c.color : c.color + '44'}; padding: 4px 9px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit;">${escapeHtml(c.name)}</button>`;
+      }).join("")}
+    </div>
+  `;
   const addInput = `
     <div style="margin-bottom: 14px; padding: 10px 12px; background: var(--card-soft); border-radius: 10px; border: 1px solid var(--border);">
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
         <input type="text" id="pe-new-task-text" placeholder="Add a personal task..." onkeydown="if(event.key==='Enter') peAddTask()" style="flex: 1; min-width: 200px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
-        ${peCategoryDropdown(filter !== 'all' && filter !== 'none' ? filter : '', 'pe-new-task-cat')}
         <input type="date" id="pe-new-task-deadline" style="padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; font-family: inherit;">
         <button class="btn btn-orange" onclick="peAddTask()">Add</button>
       </div>
+      ${newCatChips}
     </div>
   `;
 
