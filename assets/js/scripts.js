@@ -1149,7 +1149,7 @@ function postById(id){return socPosts().find(p=>p.id===id)}
 function newPost(week,slot){
   const p={id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
     week:week||1,slot:(slot==null?0:slot),pillar:suggestPillar(week||1),type:'photo',
-    town:SOC_TOWNS[0],jobNote:'',caption:'',hashtags:'',
+    town:'',jobNote:'',caption:'',hashtags:'',
     platforms:{ig:true,fb:true,gbp:true,nd:false},
     date:'',time:'11:00',status:'draft',ruthNote:'',media:[],by:S.role};
   return p;
@@ -1356,7 +1356,7 @@ async function backfillLocalPhotos(){
         const mime=dataUrl.slice(5,(dataUrl.indexOf(';')||13))||'image/webp';
         await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(m.id)
           .set({name:m.name||rec.name||'photo',type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
-        m.cloud=true; VTHUMB[m.id]=dataUrl; done++;
+        m.cloud=true; m._ut=Date.now(); VTHUMB[m.id]=dataUrl; done++;
         // a now-cloud photo is no longer 'missing' — clear the stranded ⚠ badge on any queued post that used it
         socPosts().forEach(function(p){ (Array.isArray(p.media)?p.media:[]).forEach(function(pm){ if(pm.id===m.id&&pm.failedToPublish&&pm.skipReason==='notsynced'){ delete pm.failedToPublish; delete pm.skipReason; } }); });
       }catch(e){ /* leave it device-only; we'll retry next online/sync */ }
@@ -1386,7 +1386,7 @@ async function purgePostedMedia(post){
   socBaJobs().forEach(j=>jobItems(j).forEach(x=>keep.add(x.id)));
   for(const id of ids){ if(keep.has(id))continue;
     try{await fileDel(id);}catch(e){}     // drop only the local cache; cloud copy stays for reuse
-    const pm=socPool().find(x=>x.id===id); if(pm){pm.status='posted';pm.purged=true;pm.postedAt=Date.now();} }
+    const pm=socPool().find(x=>x.id===id); if(pm){pm.status='posted';pm.purged=true;pm.postedAt=Date.now();pm._ut=Date.now();} }
   commit();
 }
 /* delete a shared media doc from Firestore (poolfiles/hfiles). Mirror of cloudFileGet's routing. */
@@ -1977,8 +1977,8 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia){
     }
     if(isMedia && typeof poolSynced==='function' && !poolSynced(l)){ out.push(l); idx[l.id]=out.length-1; return; } // device-only photo not yet on the backbone → never drop
     if(/^spt_([a-z]+_\d+|[rm]\d+)$/.test(l.id)){ out.push(l); idx[l.id]=out.length-1; return; } // deterministic SEO seed task → never drop (self-heals + keeps status)
-    var ts=recCt(l);
-    if(ts===0 || ts>=(sinceTs-120000)){ out.push(l); idx[l.id]=out.length-1; }   // truly new local (2-min skew grace) → keep; older + remote-absent = deleted remotely → drop
+    var ts=Math.max(recCt(l), (typeof l._ut==='number'?l._ut:0));   // newest of create OR edit time
+    if(ts===0 || ts>=(sinceTs-120000)){ out.push(l); idx[l.id]=out.length-1; }   // truly new/recently-edited local → keep; older + remote-absent = deleted remotely → drop
   });
   return out;
 }
@@ -2468,6 +2468,8 @@ function noEmailBanner(){
 }
 /* ---------- MARKETING PROGRESS (Founder HQ tab) — live snapshot across SEO + Social ---------- */
 function viewProgressBoard(v){
+  // seed the SEO punch list if it hasn't been opened yet, so this board is never empty
+  try{ if(typeof ensureBacklog==='function' && ST===((S.prog&&S.prog.seo)||null)) ensureBacklog(); }catch(e){}
   var seo=(S.prog&&S.prog.seo)||{}, soc=(S.prog&&S.prog.social)||{};
   var sMs=(seo.seoStartUser)||WG_LAUNCH;
   v.appendChild(el('div','page-head','<h2>📈 Marketing Progress</h2><p>Live snapshot across SEO + Social — updated as the team works. SEO Day 1: <b>'+fmtShort(sMs)+', '+new Date(sMs).getFullYear()+'</b>.</p>'));
@@ -2492,7 +2494,8 @@ function viewProgressBoard(v){
   var tcard=el('div','card pad');tcard.style.marginTop='12px';
   var live=0; var rows='';
   towns.forEach(function(tn){
-    var task=tasks.find(function(t){return t.section==='Town pages'&&(t.title||'').indexOf(tn)>=0;});
+    var _slug=(typeof seoSlug==='function')?seoSlug(tn):tn.toLowerCase();
+    var task=tasks.find(function(t){return t.section==='Town pages'&&((t.title||'').toLowerCase().indexOf(_slug)>=0||(t.title||'').indexOf(tn)>=0);});
     var fa=(seo.townFacts&&seo.townFacts[tn])||{};
     var provided=!!((((fa.neighborhoods||'').trim())&&((fa.story||'').trim()))||((fa.text||'').trim()));
     var st,cls;
@@ -2786,7 +2789,7 @@ function seoItemPartial(it){ if(seoItemProvided(it))return false; const p=seoIte
 function taskNeedsContent(t){
   if(!t)return null;
   var town=t.town||null;
-  if(!town){ var arr=(typeof SOC_TOWNS!=='undefined')?SOC_TOWNS:[]; for(var i=0;i<arr.length;i++){ if((t.title||'').indexOf(arr[i])>=0){town=arr[i];break;} } }
+  if(!town){ var arr=(typeof SOC_TOWNS!=='undefined')?SOC_TOWNS:[]; var lt=(t.title||'').toLowerCase(); for(var i=0;i<arr.length;i++){ var sl=(typeof seoSlug==='function')?seoSlug(arr[i]):arr[i].toLowerCase(); if(lt.indexOf(sl)>=0||(t.title||'').indexOf(arr[i])>=0){town=arr[i];break;} } }
   var depends=(t.section==='Town pages')||(t.needs==='content');
   if(!depends||!town)return null;
   return { town:town, ready:(typeof townProvided==='function')?townProvided(town):false };
@@ -3065,15 +3068,15 @@ function sprintAccordion(g,isBacklog){
 function sprintRow(t,showMove){
   const r=el('div','sprintrow');
   const st=el('button','sprintstat '+t.status,t.status==='done'?'✓':t.status==='doing'?'◐':'○');st.title='Change status';
-  st.onclick=(e)=>{e.stopPropagation();t.status=t.status==='todo'?'doing':t.status==='doing'?'done':'todo';commit();render();};
+  st.onclick=(e)=>{e.stopPropagation();t.status=t.status==='todo'?'doing':t.status==='doing'?'done':'todo';t._ut=Date.now();commit();render();};
   r.appendChild(st);
   const main=el('div','sprintmain');
   main.appendChild(el('div','sprinttitle'+(t.status==='done'?' done':''),esc(t.title||'(untitled)')));
   if(t.section&&t.section!=='Custom')main.appendChild(el('span','sprinttag',(t.sectionIcon?t.sectionIcon+' ':'')+esc(t.section)));
   {const nc=taskNeedsContent(t); if(nc)main.appendChild(el('span','needbadge'+(nc.ready?' ready':''),nc.ready?('✓ '+nc.town+' details in'):('⏳ needs '+nc.town+' details')));}
   main.onclick=()=>editSprintTask(t);r.appendChild(main);
-  const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;commit();render();};r.appendChild(h);
-  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{const oldId=t.sprint||'backlog';if(sel.value!==oldId){t.movedFrom=(oldId==='backlog')?'Backlog':((sprintById(oldId)||{}).name||'a sprint');t.movedAt=Date.now();}t.sprint=sel.value;commit();render();};r.appendChild(sel);}
+  const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;t._ut=Date.now();commit();render();};r.appendChild(h);
+  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{const oldId=t.sprint||'backlog';if(sel.value!==oldId){t.movedFrom=(oldId==='backlog')?'Backlog':((sprintById(oldId)||{}).name||'a sprint');t.movedAt=Date.now();}t.sprint=sel.value;t._ut=Date.now();commit();render();};r.appendChild(sel);}
   if(t.movedFrom&&t.movedAt)main.appendChild(el('span','movedtag','↪ from '+esc(t.movedFrom)+' · '+agoShort(t.movedAt)));
   const x=el('button','sprintx','✕');x.onclick=(e)=>{e.stopPropagation();ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();render();};r.appendChild(x);
   return r;
@@ -4185,7 +4188,7 @@ function viewSettings(v){
   const proj=el('div','card pad');proj.style.marginBottom='16px';
   proj.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📋</div><div><h3>This project</h3><small>Project 1 of your Marketing OS</small></div></div>
     <div class="setrow"><span>Project</span><b>Q3 2026 Local SEO Gameplan</b></div>
-    <div class="setrow"><span>Go-live</span><b>Tuesday, June 2 2026 · 12pm</b></div>
+    <div class="setrow"><span>Go-live</span><b>Thursday, June 4 2026</b></div>
     <div class="setrow"><span>Cadence</span><b>Weekly · Tuesdays · 12 weeks</b></div>
     <div class="setrow"><span>Overall progress</span><b>${overallPct('all')}% complete</b></div>
     <div class="setrow"><span>Sync status</span>${syncStatusBadge()}</div>`;
@@ -4946,7 +4949,7 @@ function socLibrary(v){
       cell.appendChild(img);cell.appendChild(ph);
       cell.appendChild(el('span','postedtag','POSTED'));
       const reuse=el('button','reusebtn','♻️ Reuse');
-      reuse.onclick=(e)=>{e.stopPropagation();m.status='available';delete m.purged;commit();toast('Back in Your content — tick it to make a new post');rerenderCal();};
+      reuse.onclick=(e)=>{e.stopPropagation();m.status='available';delete m.purged;m._ut=Date.now();commit();toast('Back in Your content — tick it to make a new post');rerenderCal();};
       cell.appendChild(reuse);
       cell.onclick=()=>openMediaPreview(m.id,m.name);
       rgrid.appendChild(cell);
@@ -5083,7 +5086,7 @@ function openComposer(idOrPost,isNew){
 
   // town (Ruth gets the "how to add the location" steps in her queue + guide)
   const tf=el('div','cmp-field');tf.innerHTML='<label>Town <span class="muted" style="font-weight:600">— Ruth tags this as the post location</span></label>';
-  const sel=el('select','cmp-in');SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===p.town)o.selected=true;sel.appendChild(o)});
+  const sel=el('select','cmp-in');{const ph=document.createElement('option');ph.value='';ph.textContent='— Pick a town —';if(!p.town)ph.selected=true;sel.appendChild(ph);}SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===p.town)o.selected=true;sel.appendChild(o)});
   sel.onchange=()=>p.town=sel.value;tf.appendChild(sel);b.appendChild(tf);
 
   // media
