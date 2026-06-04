@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
 <title>Founder HQ · Window Guardians Marketing OS</title>
-<link rel="stylesheet" href="assets/css/style.css?v=20260603w">
+<link rel="stylesheet" href="assets/css/style.css?v=20260603x">
 <style>
   /* Founder HQ is a full-bleed owner-only wrapper around the intact dashboard.
      It deliberately does NOT use the marketing sidebar layout — the embedded
@@ -68,34 +68,46 @@
   </div>
 
 <script src="assets/js/jquery.min.js"></script>
-<script src="assets/js/scripts.js?v=20260603w"></script>
+<script src="assets/js/firebase-app-compat.js"></script>
+<script src="assets/js/firebase-auth-compat.js"></script>
+<script src="assets/js/firebase-firestore-compat.js"></script>
+<script src="assets/js/firebase-init.js"></script>
+<script src="assets/js/scripts.js?v=20260603x"></script>
 <script>
-/* OWNER GATE (front-end deterrent only — NOT security; backend enforces real auth).
-   scripts.js has already loaded S from localStorage and guarded all its DOM lookups
-   (this page has no #gate/#app/#nav/#view, so renderGate/enterApp/render no-op safely). */
+/* OWNER GATE — keyed off the LIVE Firebase login (not just browser memory).
+   scripts.js runs its own onAuthStateChanged and maps the signed-in email → S.uid; we wait
+   for that, then confirm this account is the owner before revealing the embedded dashboards. */
 (function(){
   var frame=document.getElementById('founderframe');
   var deny=document.getElementById('founderdeny');
   var who=document.getElementById('founderWho');
-  var loaded = (typeof Store!=='undefined') && Store.load();
-  if(!loaded || !S || !S.uid){ location.replace('index.html'); return; }   // not logged in → gate
-  var me = (typeof userById==='function') ? userById(S.uid) : null;        // REAL identity, not the preview role
-  if(!me || me.perm!=='owner'){                                            // logged in, not the owner
-    if(frame) frame.remove();
-    if(deny) deny.style.display='block';
-    return;
+  function wireTabs(){
+    var tabs=document.querySelectorAll('.fhtab');
+    Array.prototype.forEach.call(tabs,function(b){
+      b.onclick=function(){ if(!frame)return;
+        Array.prototype.forEach.call(tabs,function(x){x.classList.remove('on');});
+        b.classList.add('on'); frame.src=b.getAttribute('data-src'); };
+    });
   }
-  if(who) who.textContent = '★ '+(me.name||'Owner');                       // owner confirmed
-  // tabs: switch the embedded page between the Operating Dashboard and Marketing Progress
-  var tabs=document.querySelectorAll('.fhtab');
-  Array.prototype.forEach.call(tabs,function(b){
-    b.onclick=function(){
-      if(!frame)return;
-      Array.prototype.forEach.call(tabs,function(x){x.classList.remove('on');});
-      b.classList.add('on');
-      frame.src=b.getAttribute('data-src');
-    };
-  });
+  function decide(){
+    var me=(typeof userById==='function')?userById(S&&S.uid):null;   // REAL identity
+    if(!S||!S.uid||!me){ location.replace('index.html'); return; }   // not signed in → login
+    if(me.perm!=='owner'){ if(frame)frame.remove(); if(deny)deny.style.display='block'; return; }
+    if(who) who.textContent='★ '+(me.name||'Owner');
+    wireTabs();
+  }
+  if(window.WG_FB_READY && window.WG_AUTH){
+    var done=false;
+    WG_AUTH.onAuthStateChanged(function(u){
+      if(done)return; done=true;
+      if(!u){ location.replace('index.html'); return; }              // Firebase: not logged in
+      setTimeout(decide,90);                                         // let scripts.js map email → S.uid
+    });
+    setTimeout(function(){ if(!done){done=true;decide();} },2500);   // fallback if auth never fires
+  } else {
+    try{ if(typeof Store!=='undefined')Store.load(); }catch(e){}
+    decide();                                                        // local-only fallback
+  }
 })();
 </script>
 </body>
