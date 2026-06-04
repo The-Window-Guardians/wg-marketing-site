@@ -7479,17 +7479,19 @@ function peRenderTasks() {
     return filterChips + addInput + catTip + `<div class="empty-state" style="padding: 20px;">${filter === 'all' ? 'No tasks yet. Add one above.' : 'No tasks in this filter.'}</div>`;
   }
 
-  // Table header (clickable to sort)
+  // Table header (clickable to sort) — column count matches peTaskRowHTML
   const sortIndicator = key => sort === key ? ' ↓' : '';
   const tableHeader = `
-    <div style="display: grid; grid-template-columns: 14px 24px 18px 1fr 110px 100px 56px 26px 26px; gap: 8px; align-items: center; padding: 8px 10px; background: var(--card-soft); border-radius: 8px 8px 0 0; font-size: 10.5px; font-weight: 800; color: var(--muted); letter-spacing: 0.4px;">
+    <div style="display: grid; grid-template-columns: 14px 24px 18px 14px 1fr 110px 100px 56px auto 26px 26px; gap: 7px; align-items: center; padding: 8px 10px; background: var(--card-soft); border-radius: 8px 8px 0 0; font-size: 10.5px; font-weight: 800; color: var(--muted); letter-spacing: 0.4px;">
       <div title="Drag handle"></div>
+      <div></div>
       <div></div>
       <div></div>
       <div style="cursor: pointer; user-select: none;" onclick="peSetTasksSort('${sort === 'alpha' ? 'created' : 'alpha'}')">TASK${sortIndicator('alpha')}${sortIndicator('created')}</div>
       <div style="cursor: pointer; user-select: none;" onclick="peSetTasksSort('category')">CATEGORY${sortIndicator('category')}</div>
       <div style="cursor: pointer; user-select: none;" onclick="peSetTasksSort('deadline')">DEADLINE${sortIndicator('deadline')}</div>
       <div style="cursor: pointer; user-select: none;" onclick="peSetTasksSort('priority')">PRI${sortIndicator('priority')}</div>
+      <div></div>
       <div></div>
       <div></div>
     </div>
