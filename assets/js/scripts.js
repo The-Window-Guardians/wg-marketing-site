@@ -1232,6 +1232,56 @@ function snippetBar(kind,getText,setText){
   redraw();
   return wrap;
 }
+/* ---- HASHTAG GROUPS: built-in themed sets + your own saved groups, pick one from a dropdown ---- */
+var DEFAULT_HASH_GROUPS=[
+  {id:'g_win',name:'Windows',tags:'#WindowGuardians #windowreplacement #newwindows #energyefficient #BucksCountyPA #homeupgrade #curbappeal'},
+  {id:'g_roof',name:'Roofing',tags:'#WindowGuardians #roofreplacement #roofing #BucksCountyPA #curbappeal #homeimprovement #localcontractor'},
+  {id:'g_side',name:'Siding',tags:'#WindowGuardians #jameshardiesiding #siding #exteriorremodel #BucksCountyPA #curbappeal'},
+  {id:'g_door',name:'Doors',tags:'#WindowGuardians #entrydoors #patiodoors #BucksCountyPA #homeupgrade #curbappeal'},
+  {id:'g_ba',name:'Before / After',tags:'#WindowGuardians #beforeandafter #transformation #homemakeover #BucksCountyPA #curbappeal'},
+  {id:'g_gen',name:'General',tags:'#WindowGuardians #BucksCountyPA #LanghornePA #localcontractor #homeimprovement #qualitywork #familyowned'}
+];
+function hashGroupsUser(){ if(!ST)return []; if(!Array.isArray(ST.hashGroups))ST.hashGroups=[]; return ST.hashGroups; }
+function hashGroupsAll(){ return DEFAULT_HASH_GROUPS.concat(hashGroupsUser()); }
+/* a select to insert a hashtag group + save/delete your own groups */
+function hashGroupPicker(getText,setText){
+  const wrap=el('div','hgwrap');
+  const sel=el('select','cmp-in hgsel');
+  const fill=()=>{
+    sel.innerHTML='<option value="">📁 Hashtag groups — pick to insert…</option>'
+      +'<optgroup label="Built-in">'+DEFAULT_HASH_GROUPS.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'
+      +(hashGroupsUser().length?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'')
+      +'<option value="__save">＋ Save current as a group…</option>';
+  };
+  fill();
+  const delBtn=el('button','hgdel','✕ delete group');delBtn.style.display='none';delBtn.title='Delete this saved group';
+  sel.onchange=()=>{
+    const v=sel.value;
+    if(v==='__save'){ const name=(prompt('Name this hashtag group (e.g. “Roofing — winter”):')||'').trim(); const txt=(getText()||'').trim();
+      if(name&&txt){ hashGroupsUser().push({id:'hg_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),name:name,tags:txt,_ct:Date.now()}); commit(); toast('Group saved'); }
+      else if(!txt)toast('Type some hashtags first, then save them as a group');
+      fill();sel.value='';delBtn.style.display='none';return;
+    }
+    const g=hashGroupsAll().find(x=>x.id===v);
+    if(g){ setText(g.tags); toast('Inserted “'+g.name+'”'); }
+    delBtn.style.display=(g&&/^hg_/.test(g.id))?'':'none';   // only user groups are deletable
+  };
+  delBtn.onclick=()=>{ const g=hashGroupsAll().find(x=>x.id===sel.value); if(g&&/^hg_/.test(g.id)){ ST.hashGroups=hashGroupsUser().filter(z=>z.id!==g.id); commit(); fill(); sel.value=''; delBtn.style.display='none'; toast('Group deleted'); } };
+  wrap.appendChild(sel);wrap.appendChild(delBtn);
+  return wrap;
+}
+/* light "expert" grammar polish on the user's OWN caption — capitalize sentences, fix lone "i",
+   tidy spaces/punctuation. Does NOT replace their voice, just cleans it up. */
+function polishText(t){
+  t=(t||'').replace(/\s+/g,' ').trim();
+  if(!t)return t;
+  t=t.replace(/\bi\b/g,'I').replace(/\bi'/g,"I'");                 // lone i → I
+  t=t.replace(/\s+([,.!?;:])/g,'$1').replace(/([,.!?;:])(?=[^\s])/g,'$1 '); // tidy punctuation spacing
+  t=t.replace(/([.!?]\s+)([a-z])/g,function(m,p,c){return p+c.toUpperCase();}); // capitalize after . ! ?
+  t=t.charAt(0).toUpperCase()+t.slice(1);                          // capitalize first letter
+  if(!/[.!?…]$/.test(t))t+='.';                                    // ensure it ends with punctuation
+  return t.replace(/\s+/g,' ').trim();
+}
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
 function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
 /* fetch a cloud-stored media file (WebP) by id — social pool photos (pf_) or handoff photos (hf_) */
@@ -1983,7 +2033,7 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia){
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets','hashGroups'];
 /* Stamp a permanent creation time on every mergeable record so deletes/merges are reliable
    for base36 ids too. Cheap; runs in commit() before each save, so a record always carries
    _ct before it can ever reach the shared doc. */
@@ -5176,7 +5226,9 @@ function openComposer(idOrPost,isNew){
     aiCaptionOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
   };
   cf.appendChild(ca);
-  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  const caPolish=el('button','btn-set','✨ Polish grammar');caPolish.title='Clean up capitalization, spacing & punctuation in what you wrote';
+  caPolish.onclick=()=>{ const t=(ca.value||'').trim(); if(!t){toast('Write something first, then Polish');return;} const fixed=polishText(t); ca.value=fixed;p.caption=fixed; toast(fixed===t?'Looks clean already ✓':'Polished ✓'); };
+  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(caPolish);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
   cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
@@ -5192,7 +5244,7 @@ function openComposer(idOrPost,isNew){
     aiHashtagOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
   };
   hf.appendChild(ha);
-  const haRow=el('div','sugrow');haRow.appendChild(haAI);haRow.appendChild(snippetBar('hashtags',()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
+  const haRow=el('div','sugrow');haRow.appendChild(haAI);haRow.appendChild(hashGroupPicker(()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
   hf.appendChild(haRow);hf.appendChild(haOpts);
   b.appendChild(hf);
 
