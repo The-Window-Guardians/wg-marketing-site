@@ -6563,87 +6563,159 @@ function peFormatSize(bytes) {
 }
 
 // ============================================================
-// MAIN RENDER
+// COLLAPSIBLE CARD
+// ============================================================
+function peToggleCollapse(section) {
+  _initPersonalState();
+  state.personalUI.collapsed[section] = !state.personalUI.collapsed[section];
+  saveState();
+  renderPersonal();
+}
+
+function peCollapsibleCard(id, title, icon, badge, summaryText, contentFn) {
+  const collapsed = state.personalUI.collapsed[id];
+  let inner = '';
+  if (!collapsed) {
+    try { inner = `<div style="padding: 16px 20px 18px 20px; border-top: 1px solid var(--border);">${contentFn()}</div>`; }
+    catch (e) { inner = `<div style="padding: 16px 20px; color: #dc2626; font-size: 12px;">Section error: ${escapeHtml(e.message)}</div>`; console.error(e); }
+  }
+  return `
+    <div class="card" style="margin-bottom: 12px; padding: 0; overflow: hidden;">
+      <div onclick="peToggleCollapse('${id}')" style="display: flex; align-items: center; gap: 12px; padding: 14px 18px; cursor: pointer; user-select: none; transition: background 0.12s;" onmouseover="this.style.background='var(--card-soft)';" onmouseout="this.style.background='white';">
+        <span style="font-size: 18px; flex-shrink: 0;">${icon}</span>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-family: 'Poppins'; font-weight: 800; font-size: 15px; letter-spacing: -0.2px;">${title}</div>
+          ${collapsed && summaryText ? `<div style="font-size: 11.5px; color: var(--muted); margin-top: 2px;">${summaryText}</div>` : ''}
+        </div>
+        ${badge ? `<span style="background: var(--orange); color: white; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 800;">${badge}</span>` : ''}
+        <span style="font-size: 10px; color: var(--muted); display: inline-block; transition: transform 0.18s; transform: rotate(${collapsed ? '0' : '90'}deg);">▶</span>
+      </div>
+      ${inner}
+    </div>
+  `;
+}
+
+// ============================================================
+// MAIN RENDER — V2 scrolling layout
 // ============================================================
 function renderPersonal() {
   _initPersonalState();
   const container = document.getElementById("personal-content");
   if (!container) return;
-  const active = state.personalUI.section || 'tasks';
-  const counts = {
-    tasks:   (state.personalTasks || []).filter(t => !t.done).length,
-    capture: (state.personalCapture || []).length,
-    notes:   (state.personalNotes || []).length,
-    people:  (state.personalPeople || []).length,
-    vault:   (state.personalVault || []).length,
-    rituals: (state.personalRituals || []).length,
-    bills:   (state.personalBills || []).length,
-    goals:   (state.personalGoals || []).filter(g => !g.done).length,
-    journal: (state.personalJournal || []).length,
-  };
-  const sections = [
-    { id: 'tasks',   label: 'Tasks',   icon: '✓' },
-    { id: 'capture', label: 'Capture', icon: '⚡' },
-    { id: 'notes',   label: 'Notes',   icon: '📝' },
-    { id: 'people',  label: 'People',  icon: '👥' },
-    { id: 'vault',   label: 'Vault',   icon: '🔒' },
-    { id: 'rituals', label: 'Rituals', icon: '🔁' },
-    { id: 'bills',   label: 'Bills',   icon: '💳' },
-    { id: 'goals',   label: 'Goals',   icon: '🎯' },
-    { id: 'journal', label: 'Journal', icon: '📔' },
-  ];
-  const tabsHTML = sections.map(s => {
-    const isActive = s.id === active;
-    const count = counts[s.id] || 0;
-    return `<button onclick="peSwitchSection('${s.id}')" style="
-      background: ${isActive ? 'linear-gradient(135deg, #05112e, #1e3a8a)' : 'transparent'};
-      color: ${isActive ? 'white' : 'var(--text-2)'};
-      border: 1px solid ${isActive ? 'transparent' : 'var(--border)'};
-      padding: 9px 14px; border-radius: 10px; font-size: 12.5px; font-weight: 700;
-      cursor: pointer; font-family: inherit; letter-spacing: 0.3px;
-      display: flex; align-items: center; gap: 6px; transition: all 0.15s;
-      box-shadow: ${isActive ? '0 4px 12px rgba(5,17,46,0.18)' : 'none'};
-    "><span style="font-size: 14px;">${s.icon}</span> ${s.label}${count > 0 ? `<span style="background: ${isActive ? 'rgba(255,255,255,0.22)' : 'var(--orange)'}; color: white; padding: 1px 7px; border-radius: 9px; font-size: 10.5px; font-weight: 800;">${count}</span>` : ''}</button>`;
-  }).join("");
-  let body = '';
-  try {
-    if      (active === 'tasks')   body = peRenderTasks();
-    else if (active === 'capture') body = peRenderCapture();
-    else if (active === 'notes')   body = peRenderNotes();
-    else if (active === 'people')  body = peRenderPeople();
-    else if (active === 'vault')   body = peRenderVault();
-    else if (active === 'rituals') body = peRenderRituals();
-    else if (active === 'bills')   body = peRenderBills();
-    else if (active === 'goals')   body = peRenderGoals();
-    else if (active === 'journal') body = peRenderJournal();
-  } catch (e) {
-    body = `<div class="empty-state" style="padding: 24px;">Render error: ${escapeHtml(e.message)}</div>`;
-    console.error(e);
-  }
+
+  // Compute summary text for each collapsed section
+  const today = new Date(); today.setHours(0,0,0,0);
+  const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
+  const tasksOpen = (state.personalTasks || []).filter(t => !t.done).length;
+  const tasksDueToday = (state.personalTasks || []).filter(t => {
+    if (t.done || !t.deadline) return false;
+    const d = new Date(t.deadline); d.setHours(0,0,0,0);
+    return d.getTime() <= today.getTime();
+  }).length;
+  const tasksSummary = tasksOpen > 0 ? `${tasksOpen} open${tasksDueToday > 0 ? `, ${tasksDueToday} due today/overdue` : ''}` : 'All clear';
+
+  const recurringDueSoon = (state.personalRecurring || []).filter(r => {
+    if (!r.nextDate) return false;
+    const d = new Date(r.nextDate + 'T00:00');
+    return d <= nextWeek;
+  }).length;
+  const recurringTotal = (state.personalRecurring || []).length;
+  const recurringSummary = recurringDueSoon > 0 ? `${recurringDueSoon} due this week` : (recurringTotal > 0 ? `${recurringTotal} tracked, none due soon` : 'Nothing tracked');
+
+  const captureCount = (state.personalCapture || []).length;
+  const captureSummary = captureCount > 0 ? `${captureCount} item${captureCount === 1 ? '' : 's'} to triage` : '';
+
+  const peopleStale = (state.personalPeople || []).filter(p => {
+    if (!p.lastContactTs) return false;
+    return Math.floor((Date.now() - p.lastContactTs) / 86400000) > 60;
+  }).length;
+  const peopleSummary = peopleStale > 0 ? `${peopleStale} haven't heard from you in 60+ days` : `${(state.personalPeople || []).length} tracked`;
+
+  const goalsActive = (state.personalGoals || []).filter(g => !g.done).length;
+  const goalsSummary = goalsActive > 0 ? `${goalsActive} active` : 'No active goals';
+
+  const ritualsTracked = (state.personalRituals || []).length;
+  const ritualsSummary = ritualsTracked > 0 ? `${ritualsTracked} rhythm${ritualsTracked === 1 ? '' : 's'}` : '';
+
+  const vaultCount = (state.personalVault || []).length;
+  const vaultSummary = vaultCount > 0 ? `${vaultCount} file${vaultCount === 1 ? '' : 's'}` : '';
+
+  const notesCount = (state.personalNotes || []).length;
+  const notesSummary = notesCount > 0 ? `${notesCount} saved` : '';
+
+  const todayJournalKey = new Date().toISOString().slice(0, 10);
+  const hasJournalToday = (state.personalJournal || []).some(e => e.dateKey === todayJournalKey);
+  const journalSummary = hasJournalToday ? 'Entry written today' : 'No entry today yet';
+
+  // Build sections
+  const calendarCard = peCollapsibleCard('calendar', 'Calendar', '📅', 0, '', peRenderCalendar);
+  const tasksCard = peCollapsibleCard('tasks', 'Tasks', '✓', tasksOpen > 0 ? tasksOpen : 0, tasksSummary, peRenderTasks);
+  const recurringCard = peCollapsibleCard('recurring', 'Recurring & Maintenance', '🔁', recurringDueSoon > 0 ? recurringDueSoon : 0, recurringSummary, peRenderRecurring);
+  const captureCard = captureCount > 0 ? peCollapsibleCard('capture', 'Capture inbox', '⚡', captureCount, captureSummary, peRenderCapture) : '';
+  const peopleCard = peCollapsibleCard('people', 'People', '👥', peopleStale > 0 ? peopleStale : 0, peopleSummary, peRenderPeople);
+  const goalsCard = peCollapsibleCard('goals', 'Goals', '🎯', goalsActive > 0 ? goalsActive : 0, goalsSummary, peRenderGoals);
+  const ritualsCard = peCollapsibleCard('rituals', 'Rituals · gentle rhythms', '🌿', 0, ritualsSummary, peRenderRituals);
+  const vaultCard = peCollapsibleCard('vault', 'Vault', '🔒', 0, vaultSummary, peRenderVault);
+  const notesCard = peCollapsibleCard('notes', 'Notes', '📝', 0, notesSummary, peRenderNotes);
+  const journalCard = peCollapsibleCard('journal', 'Journal', '📔', 0, journalSummary, peRenderJournal);
+
   container.innerHTML = `
     <div class="daily-quote-host" style="margin-bottom: 16px;"></div>
-    <div class="card" style="margin-bottom: 14px; padding: 18px 20px; background: linear-gradient(135deg, #05112e, #1e3a8a); color: white; border: none;">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+
+    <!-- Header -->
+    <div class="card" style="margin-bottom: 12px; padding: 18px 20px; background: linear-gradient(135deg, #05112e, #1e3a8a); color: white; border: none;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
           <div style="font-family: 'Poppins'; font-size: 22px; font-weight: 800; letter-spacing: -0.3px;">Personal</div>
           <div style="font-size: 12px; opacity: 0.85; margin-top: 2px;">Your life, organized.</div>
         </div>
-        <button onclick="peOpenCategoryManager()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">⚙ Categories</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onclick="peOpenCategoryManager()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">⚙ Categories</button>
+          <button onclick="peExportData()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">💾 Export</button>
+        </div>
       </div>
     </div>
-    <div class="card" style="margin-bottom: 14px; padding: 14px 16px;">
+
+    <!-- Quick capture -->
+    <div class="card" style="margin-bottom: 12px; padding: 12px 16px;">
       <div style="display: flex; gap: 8px; align-items: center;">
         <span style="font-size: 16px;">⚡</span>
-        <input type="text" id="pe-capture-input" placeholder="Quick capture — type anything (ideas, reminders, links) and Enter to save" onkeydown="if(event.key==='Enter') peQuickCapture()" style="flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
+        <input type="text" id="pe-capture-input" placeholder="Quick capture — type anything and Enter" onkeydown="if(event.key==='Enter') peQuickCapture()" style="flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
         <button class="btn btn-orange" onclick="peQuickCapture()" style="padding: 10px 16px; font-weight: 700;">Save</button>
       </div>
     </div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">${tabsHTML}</div>
-    <div>${body}</div>
+
+    <!-- HERO: Today in Personal -->
+    ${peRenderTodayWidget()}
+
+    <!-- Collapsible sections -->
+    ${calendarCard}
+    ${tasksCard}
+    ${recurringCard}
+    ${captureCard}
+    ${peopleCard}
+    ${goalsCard}
+    ${ritualsCard}
+    ${vaultCard}
+    ${notesCard}
+    ${journalCard}
   `;
 }
 
-function peSwitchSection(s) { _initPersonalState(); state.personalUI.section = s; saveState(); renderPersonal(); }
+// Legacy alias for any old call sites — expands the section and scrolls to it
+function peSwitchSection(s) {
+  _initPersonalState();
+  // Map old section ids to new collapsed-section ids
+  const map = { tasks: 'tasks', capture: 'capture', notes: 'notes', people: 'people', vault: 'vault', rituals: 'rituals', bills: 'recurring', goals: 'goals', journal: 'journal' };
+  const target = map[s] || s;
+  if (state.personalUI.collapsed) state.personalUI.collapsed[target] = false;
+  saveState();
+  renderPersonal();
+  setTimeout(() => {
+    const el = document.querySelector(`[onclick*="peToggleCollapse('${target}')"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
 
 function peQuickCapture() {
   _initPersonalState();
