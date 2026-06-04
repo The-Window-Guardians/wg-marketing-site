@@ -7386,11 +7386,14 @@ function peRenderTasks() {
   const addInput = `
     <div style="margin-bottom: 14px; padding: 10px 12px; background: var(--card-soft); border-radius: 10px; border: 1px solid var(--border);">
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-        <input type="text" id="pe-new-task-text" placeholder="Add a personal task..." onkeydown="if(event.key==='Enter') peAddTask()" style="flex: 1; min-width: 200px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
+        <button class="btn btn-ghost" id="pe-new-task-mic" onclick="peStartVoiceInput()" title="Voice input — tap, speak, transcript fills the box" style="padding: 8px 12px; font-size: 18px;">🎤</button>
+        <input type="text" id="pe-new-task-text" placeholder="Add a personal task..." onkeydown="if(event.key==='Enter') peAddTask()" style="flex: 1; min-width: 180px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
         <input type="date" id="pe-new-task-deadline" style="padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12.5px; font-family: inherit;">
+        <button class="btn btn-orange" onclick="peAddTask(true)" title="Add with today's deadline" style="padding: 9px 12px; font-size: 12.5px; font-weight: 700;">+ for Today</button>
         <button class="btn btn-orange" onclick="peAddTask()">Add</button>
       </div>
       ${newCatChips}
+      ${getAIKey && getAIKey() ? '<div style="font-size: 10.5px; color: var(--muted); margin-top: 6px; padding-left: 2px;">✨ AI polishes grammar/concision automatically after add.</div>' : ''}
     </div>
   `;
 
@@ -7458,7 +7461,7 @@ function peSetCategoryFilter(id) { peSetTasksFilter(id); }
 
 function peSetCategoryFilter(id) { _initPersonalState(); state.personalUI.categoryFilter = id; saveState(); renderPersonal(); }
 
-function peAddTask() {
+function peAddTask(forToday) {
   _initPersonalState();
   const textEl = document.getElementById("pe-new-task-text");
   const deadlineEl = document.getElementById("pe-new-task-deadline");
@@ -7468,18 +7471,45 @@ function peAddTask() {
   const filter = state.personalUI.tasksFilter;
   const filterInherited = (filter && filter !== 'all' && filter !== 'none') ? filter : null;
   const categoryId = _peNewTaskCatId !== undefined && _peNewTaskCatId !== null ? _peNewTaskCatId : filterInherited;
-  state.personalTasks.unshift({
+  let deadlineISO = null;
+  if (forToday === true) {
+    const t = new Date(); t.setHours(23, 59, 59, 0);
+    deadlineISO = t.toISOString();
+  } else if (deadlineEl && deadlineEl.value) {
+    deadlineISO = new Date(deadlineEl.value).toISOString();
+  }
+  const task = {
     id: "ptask-" + Date.now(), text,
     categoryId,
-    deadline: deadlineEl && deadlineEl.value ? new Date(deadlineEl.value).toISOString() : null,
+    deadline: deadlineISO,
     priority: null, starred: false, notes: "", files: [], done: false, ts: Date.now()
-  });
+  };
+  state.personalTasks.unshift(task);
   if (textEl) textEl.value = "";
   if (deadlineEl) deadlineEl.value = "";
   _peNewTaskCatId = null; // reset after add
   saveState();
   renderPersonal();
   showToast("Task added");
+
+  // AUTO-POLISH — fire-and-forget AI grammar/concision pass (same as Today's task add)
+  if (typeof getAIKey === "function" && getAIKey() && typeof aiPolishText === "function") {
+    (async () => {
+      try {
+        const polished = await aiPolishText(task.text, "task");
+        if (polished && polished !== task.text) {
+          const live = (state.personalTasks || []).find(x => x.id === task.id);
+          if (live) {
+            live.originalText = live.text;
+            live.text = polished;
+            saveState();
+            renderPersonal();
+            showToast("✨ Polished");
+          }
+        }
+      } catch (e) { console.warn("[pe auto-polish] skipped:", e.message); }
+    })();
+  }
 }
 
 function peToggleTask(id, done) {
