@@ -1656,7 +1656,7 @@
 
 <nav class="tabs" id="tabs">
   <button data-view="today" class="active">Today</button>
-  <button data-view="founder">Founder</button>
+  <button data-view="personal">Personal</button>
   <button data-view="team">Team <span class="count zero" id="approvals-count">0</span></button>
   <button data-view="customers">Customers</button>
   <button data-view="work">Work</button>
@@ -1848,9 +1848,9 @@
 </section>
 
 <!-- ============ APPROVALS ============ -->
-<!-- ============ FOUNDER ============ -->
-<section class="view" id="view-founder">
-  <div id="founder-content"></div>
+<!-- ============ PERSONAL ============ -->
+<section class="view" id="view-personal">
+  <div id="personal-content"></div>
 </section>
 
 <!-- ============ CUSTOMERS (Pipeline + Journey) ============ -->
@@ -7894,8 +7894,8 @@ function saveFocusFromModal() {
   closeModal("modal-focus");
   showToast(scope === "personal" ? "Personal focus saved" : "Business focus saved");
   // Refresh the Founder tab if it's currently visible so its textareas reflect the change
-  if (typeof renderFounder === "function" && document.getElementById("view-founder").classList.contains("active")) {
-    renderFounder();
+  if (typeof renderPersonal === "function" && document.getElementById("view-personal") && document.getElementById("view-personal").classList.contains("active")) {
+    renderPersonal();
   }
 }
 
@@ -10107,7 +10107,7 @@ function renderFounderWidget() {
         <div style="font-size: 14px; color: var(--text); font-weight: 600;">${big3Done} of 3 done</div>
         <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">${isEveningCheckInOpen() ? "Evening check-in is open — log when ready." : `Evening check-in unlocks at 7 PM (in ${timeUntilCheckIn()}).`}</div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="switchTo('founder')">Founder tab →</button>
+      <button class="btn btn-ghost btn-sm" onclick="switchTo('personal')">Personal tab →</button>
     </div>
   `;
 }
@@ -10150,7 +10150,7 @@ function switchTo(view) {
   document.querySelectorAll("nav.tabs button").forEach(x => x.classList.toggle("active", x.dataset.view === view));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
   if (view === "review") { renderWeek(); renderMoney(); renderHistory(); }
-  if (view === "founder") renderFounder();
+  if (view === "personal") renderPersonal();
   if (view === "customers") { renderPipeline(); renderJourney(); }
   if (view === "team") renderTeam();
   if (view === "work") { renderProjects(); renderCaptures(); }
@@ -11498,8 +11498,8 @@ function handleRedFlagClick(action) {
     if (el) { el.scrollIntoView({behavior:"smooth", block:"center"}); setTimeout(() => el.focus(), 400); }
   } else if (action === "commitments") {
     switchTo("commitments");
-  } else if (action === "founder") {
-    switchTo("founder");
+  } else if (action === "founder" || action === "personal") {
+    switchTo("personal");
   } else if (action === "team") {
     switchTo("team");
   } else if (action === "money") {
