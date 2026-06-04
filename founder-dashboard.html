@@ -7320,6 +7320,82 @@ function peSetNewTaskCategory(id) {
   renderPersonal();
 }
 
+// Voice input for the Personal task input — Web Speech API
+function peStartVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) { alert("Voice input isn't supported in this browser. Use Safari on iPhone or Chrome on desktop."); return; }
+  const input = document.getElementById("pe-new-task-text");
+  const micBtn = document.getElementById("pe-new-task-mic");
+  if (!input || !micBtn) return;
+  if (micBtn.dataset.listening === "1") {
+    if (window._voiceRecognition) { try { window._voiceRecognition.stop(); } catch(e){} }
+    return;
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+  recognition.continuous = false;
+  window._voiceRecognition = recognition;
+  micBtn.dataset.listening = "1";
+  micBtn.textContent = "🔴";
+  micBtn.title = "Listening… tap to stop";
+  const prevValue = input.value;
+  recognition.onresult = (event) => {
+    let transcript = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
+    input.value = (prevValue ? prevValue + " " : "") + transcript;
+  };
+  recognition.onerror = (e) => {
+    console.warn("voice recognition error:", e);
+    micBtn.dataset.listening = "0";
+    micBtn.textContent = "🎤";
+    micBtn.title = "Voice input — tap, speak, transcript fills the box";
+    if (e.error === "not-allowed") alert("Microphone permission denied. Allow mic access for this site in your browser settings.");
+  };
+  recognition.onend = () => {
+    micBtn.dataset.listening = "0";
+    micBtn.textContent = "🎤";
+    micBtn.title = "Voice input — tap, speak, transcript fills the box";
+    input.focus();
+  };
+  try { recognition.start(); } catch (e) { console.warn(e); micBtn.dataset.listening = "0"; micBtn.textContent = "🎤"; }
+}
+
+// Quick "→ Today" — sets a task's deadline to end-of-today
+function peMoveTaskToToday(id) {
+  const t = (state.personalTasks || []).find(x => x.id === id);
+  if (!t) return;
+  const today = new Date(); today.setHours(23, 59, 59, 0);
+  t.deadline = today.toISOString();
+  saveState();
+  renderPersonal();
+  showToast("Moved to today");
+}
+
+// AI polish for an existing task (sparkle button on the row)
+async function pePolishTask(id) {
+  const t = (state.personalTasks || []).find(x => x.id === id);
+  if (!t) return;
+  if (typeof getAIKey !== "function" || !getAIKey() || typeof aiPolishText !== "function") {
+    alert("AI key not configured — add it in Settings.");
+    return;
+  }
+  showToast("✨ Polishing...");
+  try {
+    const polished = await aiPolishText(t.text, "task");
+    if (polished && polished !== t.text) {
+      t.originalText = t.text;
+      t.text = polished;
+      saveState();
+      renderPersonal();
+      showToast("✨ Polished");
+    } else {
+      showToast("Already clean");
+    }
+  } catch (e) { showToast("Polish failed"); }
+}
+
 // ============================================================
 // SECTION: TASKS
 // ============================================================
@@ -7430,28 +7506,60 @@ function peTaskRowHTML(t) {
   const priorityColor = t.priority === 'high' ? '#dc2626' : t.priority === 'med' ? '#f59e0b' : t.priority === 'low' ? '#94a3b8' : 'transparent';
   const priorityLabel = t.priority ? t.priority.toUpperCase().slice(0, 3) : '—';
   const deadline = t.deadline ? peFmtDeadline(t.deadline) : '';
-  const overdue = t.deadline && new Date(t.deadline) < new Date() && !t.done;
-  const deadlinePill = deadline ? `<span style="background: ${overdue ? '#dc2626' : 'var(--sky-soft)'}; color: ${overdue ? 'white' : 'var(--navy)'}; padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; display: inline-block;">${deadline}</span>` : '<span style="color: var(--muted); font-size: 11px;">—</span>';
+  const isOverdue = t.deadline && new Date(t.deadline) < new Date() && !t.done;
+  const today0 = new Date(); today0.setHours(0,0,0,0);
+  const dueDate0 = t.deadline ? (() => { const d = new Date(t.deadline); d.setHours(0,0,0,0); return d; })() : null;
+  const isDueToday = dueDate0 && dueDate0.getTime() === today0.getTime();
+  // Carried days — if task was created N days ago with no deadline, or deadline passed N days ago
+  const ageDays = t.ts ? Math.floor((today0.getTime() - (() => { const d = new Date(t.ts); d.setHours(0,0,0,0); return d; })().getTime()) / 86400000) : 0;
+  const isLateCarry = isOverdue && t.deadline && ((today0.getTime() - dueDate0.getTime()) / 86400000) >= 3;
+  const lateBorder = (isLateCarry || t.priority === 'high') ? 'border-left: 3px solid #dc2626;' : '';
+  const overdueMarker = (isOverdue || isLateCarry)
+    ? `<span title="Overdue" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; background: linear-gradient(135deg, #ef4444, #dc2626); color: white; font-weight: 800; border-radius: 50%; font-size: 10px; line-height: 1; flex-shrink: 0;">!</span>`
+    : '';
+  const deadlinePill = deadline
+    ? `<span style="background: ${isOverdue ? '#dc2626' : isDueToday ? 'var(--orange)' : 'var(--sky-soft)'}; color: ${isOverdue || isDueToday ? 'white' : 'var(--navy)'}; padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; display: inline-block;">${deadline}</span>`
+    : '<span style="color: var(--muted); font-size: 11px;">—</span>';
   const fileCount = (t.files || []).length;
+  const showTodayBtn = !isDueToday && !t.done;
+  const todayBtn = showTodayBtn
+    ? `<button class="btn-icon" onclick="event.stopPropagation(); peMoveTaskToToday('${t.id}')" title="Set deadline to today" style="background: var(--orange-soft); color: #c2410c; border-color: #fed7aa; font-weight: 700; font-size: 11px; padding: 4px 8px;">→ Today</button>`
+    : '';
+  const sparkleBtn = (typeof getAIKey === 'function' && getAIKey() && !t.done)
+    ? `<button class="btn-icon" onclick="event.stopPropagation(); pePolishTask('${t.id}')" title="AI polish — fix grammar and tighten" style="font-size: 12px; padding: 4px 7px; line-height: 1; color: #c026d3;">✨</button>`
+    : '';
+  const notesHTML = t.notes
+    ? `<details style="margin-top: 6px; grid-column: 1 / -1;"><summary style="cursor: pointer; font-size: 10.5px; color: var(--muted); user-select: none; padding: 2px 0; padding-left: 24px;">📝 Notes</summary><div style="font-size: 12px; color: var(--text-2); margin-top: 4px; padding: 8px 10px 8px 24px; background: var(--card-soft); border-radius: 6px; white-space: pre-wrap; line-height: 1.5;">${escapeHtml(t.notes)}</div></details>`
+    : '';
+  const ageHint = (!t.deadline && ageDays > 0 && !t.done)
+    ? `<span style="font-size: 10px; color: var(--muted);">added ${ageDays}d ago</span>`
+    : '';
   return `
     <div draggable="true"
          ondragstart="peDragStart(event, '${t.id}')"
          ondragend="peDragEnd(event)"
          ondragover="peDragOver(event)"
          ondrop="peDragDrop(event, '${t.id}')"
-         style="display: grid; grid-template-columns: 14px 24px 18px 1fr 110px 100px 56px 26px 26px; gap: 8px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--border); background: white; ${t.done ? 'opacity: 0.45;' : ''}">
+         onmouseover="this.style.background='rgba(74, 187, 255, 0.04)';"
+         onmouseout="this.style.background='white';"
+         style="display: grid; grid-template-columns: 14px 24px 18px 14px 1fr 110px 100px 56px auto 26px 26px; gap: 7px; align-items: center; padding: 9px 10px; border-bottom: 1px solid var(--border); background: white; ${t.done ? 'opacity: 0.45;' : ''} ${lateBorder} transition: background 0.12s;">
       <div style="cursor: grab; color: #cbd5e1; font-size: 14px; text-align: center; user-select: none;" title="Drag to reorder">⋮⋮</div>
       <input type="checkbox" ${t.done ? "checked" : ""} onchange="peToggleTask('${t.id}', this.checked)" style="width: 16px; height: 16px; cursor: pointer;">
       <button onclick="peToggleStar('${t.id}')" style="background: none; border: none; cursor: pointer; font-size: 14px; padding: 0; color: ${t.starred ? '#f59e0b' : '#cbd5e1'};">${t.starred ? '★' : '☆'}</button>
-      <div style="font-size: 12.5px; ${t.done ? 'text-decoration: line-through;' : ''} cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;" onclick="peOpenTaskEdit('${t.id}')" title="${escapeHtml(t.text)}">
+      <div style="text-align: center;">${overdueMarker}</div>
+      <div style="font-size: 12.5px; ${t.done ? 'text-decoration: line-through;' : ''} cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;" onclick="peOpenTaskEdit('${t.id}')" title="${escapeHtml(t.text)}${t.originalText ? '\n\nOriginal (before ✨ polish): ' + escapeHtml(t.originalText) : ''}">
         ${escapeHtml(t.text)}
         ${fileCount > 0 ? `<span style="font-size: 10.5px; color: var(--muted); margin-left: 4px;">📎${fileCount}</span>` : ''}
+        ${t.notes ? `<span style="font-size: 10.5px; color: var(--muted); margin-left: 4px;">📝</span>` : ''}
+        ${ageHint ? ` <span style="margin-left: 4px;">${ageHint}</span>` : ''}
       </div>
       <div style="overflow: hidden;">${peCategoryBadge(t.categoryId) || '<span style="color: var(--muted); font-size: 11px;">—</span>'}</div>
       <div>${deadlinePill}</div>
       <div style="font-size: 10.5px; font-weight: 800; color: ${priorityColor || 'var(--muted)'};">${priorityLabel}</div>
-      <button class="btn-icon" onclick="peOpenTaskEdit('${t.id}')" title="Edit">⋯</button>
+      <div style="display: flex; gap: 4px;">${todayBtn}${sparkleBtn}</div>
+      <button class="btn-icon" onclick="peOpenTaskEdit('${t.id}')" title="Edit deadline, priority, notes, files">⋯</button>
       <button class="btn-icon" onclick="peDeleteTask('${t.id}')" title="Delete">×</button>
+      ${notesHTML}
     </div>
   `;
 }
