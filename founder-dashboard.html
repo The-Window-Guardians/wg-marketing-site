@@ -6496,10 +6496,36 @@ function _initPersonalState() {
   if (!state.personalVault) state.personalVault = [];
   if (!state.personalRituals) state.personalRituals = [];
   if (!state.personalBills) state.personalBills = [];
+  if (!state.personalRecurring) state.personalRecurring = [];
   if (!state.personalGoals) state.personalGoals = [];
   if (!state.personalJournal) state.personalJournal = [];
   if (!state.personalCapture) state.personalCapture = [];
-  if (!state.personalUI) state.personalUI = { section: 'tasks', categoryFilter: 'all' };
+  if (!state.personalUI) state.personalUI = {};
+  if (!state.personalUI.collapsed) state.personalUI.collapsed = {
+    calendar: true, tasks: false, recurring: false, capture: false,
+    people: true, goals: false, rituals: true, vault: true, notes: true, journal: false
+  };
+  if (state.personalUI.calendarMonth === undefined) state.personalUI.calendarMonth = null;
+  if (!state.personalUI.tasksSort) state.personalUI.tasksSort = 'deadline';
+  if (!state.personalUI.tasksFilter) state.personalUI.tasksFilter = 'all';
+  // One-time migration: state.personalBills → state.personalRecurring
+  if (state.personalBills && state.personalBills.length > 0) {
+    state.personalBills.forEach((b, i) => {
+      state.personalRecurring.push({
+        id: 'precur-mig-' + Date.now() + '-' + i,
+        name: b.name,
+        categoryId: null,
+        frequency: b.frequency || 'monthly',
+        nextDate: b.nextDate || null,
+        amount: b.amount || null,
+        url: b.cancelUrl || null,
+        type: 'bill',
+        lastDoneTs: null,
+        ts: b.ts || Date.now()
+      });
+    });
+    state.personalBills = [];
+  }
 }
 
 function peGetCategory(id) { return (state.personalCategories || []).find(c => c.id === id); }
