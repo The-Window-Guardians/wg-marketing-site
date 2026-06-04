@@ -1098,7 +1098,7 @@ const SOCIAL_AUDIT={
    slice in freshSlice/migrate). Media uses the IndexedDB file store.
    BACKEND HOOK: posts → a `social_posts` table; media → app_files.
    ============================================================ */
-const SOC_TOWNS=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','Holland','Feasterville'];
+const SOC_TOWNS=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','Holland','Feasterville','Somerton'];
 const SOC_PILLARS=[
   {id:'portfolio',icon:'🛠️',t:'Portfolio',d:'The work itself — before/after, clean installs, craftsmanship, the towns you serve.'},
   {id:'edu',icon:'🎓',t:'Education',d:'Quick tips + what homeowners should know before replacing windows or doors.'},
@@ -2559,7 +2559,7 @@ const SEO_KEYWORD_HINTS=['window replacement {town}','{town} roofing company','s
 /* === MERGED RESEARCH BACKLOG — from Sebastian's SEO Targets doc + the live-site audit agents.
    Windows-first, anchored to the 7 priority towns. Gutters, off-site (citations/backlinks),
    and geographic expansion are intentionally held for the "After 90 days" overview (Guide). === */
-const SEO_TOWNS7=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','Holland','Feasterville'];
+const SEO_TOWNS7=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','Holland','Feasterville']; // auto-generated town tasks use index-based ids — keep this list stable; extra towns appended explicitly below
 const SECTION_ICON={'Google Business Profile':'📍','Core website pages':'🌐','Town pages':'🏘️','Blogs':'✍️','Citations':'📒','Reviews engine':'⭐','Local links':'🔗','Technical':'🔧','Custom':'•'};
 function seoSlug(t){return t.toLowerCase().replace(/ /g,'-');}
 const RESEARCH_TASKS=[
@@ -2611,6 +2611,11 @@ const RESEARCH_TASKS=[
   {title:'Run 15+ Google reviews/month + reply to 80%+ within 48h',section:'Reviews engine',est:1,why:'Recency beats raw count in 2026'},
   {title:'Claim + optimize the BBB profile',section:'Reviews engine',est:1,why:'Homeowners vet $20–50K jobs on BBB'},
   {title:'Set up a Houzz profile with project photos',section:'Reviews engine',est:1,why:'Design-forward platform + citation'}
+])
+// --- extra target towns added after launch (appended at the END so existing task ids never shift) ---
+.concat([
+  {title:'Build a deep /window-replacement-somerton-philadelphia-pa/ page (Somerton, NE Philadelphia — real local project + photos + reviews + schema)',section:'Town pages',est:4,why:'Rank top-3 for "window replacement Somerton Philadelphia" — your NE Philly edge'},
+  {title:'Write the Somerton (Philadelphia) window cost guide /cost/window-replacement-cost-somerton-pa/',section:'Blogs',est:2.5,why:'Own "window cost/prices Somerton Philadelphia" — uncontested'}
 ]);
 /* The deterministic SEO punch-list = playbook steps + research tasks (minus the trimmed
    per-town cost guides) + the measurement foundation. STABLE ids so it self-heals. */
@@ -2688,6 +2693,7 @@ const SEO_PLAN=[
   items:[
    {id:'town_Holland',type:'town',town:'Holland',label:'Holland local details',why:'Builds the Holland page',day:70},
    {id:'town_Feasterville',type:'town',town:'Feasterville',label:'Feasterville local details',why:'Builds the Feasterville page',day:80},
+   {id:'town_Somerton',type:'town',town:'Somerton',label:'Somerton (Philadelphia) local details',why:'Builds the Somerton, Philadelphia page — your NE Philly service edge',day:84},
    {id:'blogs3',type:'blog',label:'5 more blog briefs (12 total)',why:'Hit the 12-blog target',target:12,day:86}
   ]}
 ];
@@ -2730,7 +2736,7 @@ function seoItemPartial(it){ if(seoItemProvided(it))return false; const p=seoIte
 function taskNeedsContent(t){
   if(!t)return null;
   var town=t.town||null;
-  if(!town){ var arr=(typeof SEO_TOWNS7!=='undefined')?SEO_TOWNS7:[]; for(var i=0;i<arr.length;i++){ if((t.title||'').indexOf(arr[i])>=0){town=arr[i];break;} } }
+  if(!town){ var arr=(typeof SOC_TOWNS!=='undefined')?SOC_TOWNS:[]; for(var i=0;i<arr.length;i++){ if((t.title||'').indexOf(arr[i])>=0){town=arr[i];break;} } }
   var depends=(t.section==='Town pages')||(t.needs==='content');
   if(!depends||!town)return null;
   return { town:town, ready:(typeof townProvided==='function')?townProvided(town):false };
