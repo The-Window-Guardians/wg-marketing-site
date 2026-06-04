@@ -4812,7 +4812,7 @@ function actionCenterCard(){
   var unreadNotes=blogs.filter(function(b){ return b&&b.builderNote&&(b.builderNote||'').trim()&&!b.noteSeen; }).length;
   var rows=[];
   if(toApprove.length) rows.push({icon:'✅',txt:toApprove.length+' post'+(toApprove.length>1?'s':'')+' ready to approve',go:function(){ openComposer(toApprove[0].id); }});
-  if(unreadNotes) rows.push({icon:'💬',txt:unreadNotes+' note'+(unreadNotes>1?'s':'')+' from Bogdan to read',go:function(){ location.href='seo.html'; }});
+  if(unreadNotes) rows.push({icon:'💬',txt:unreadNotes+' note'+(unreadNotes>1?'s':'')+' from Bogdan to read',go:function(){ location.href=((PROGRAMS.seo&&PROGRAMS.seo.home)||'index.html'); }});
   if(inQueue) rows.push({icon:'📤',txt:inQueue+' post'+(inQueue>1?'s':'')+' waiting for Ruth to post',go:null});
   var c=el('div','card pad actionctr');
   c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⚡</div><div><h3>What needs you now</h3><small>'+(rows.length?'Tap an item to jump to it':'You’re all caught up')+'</small></div></div>';
