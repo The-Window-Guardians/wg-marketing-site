@@ -2914,18 +2914,69 @@ function seoItemRow(it,builder){
   return row;
 }
 /* small themed date editor — used for the plan start date + per-item due dates */
+/* ============================================================
+   BRANDED DATE PICKER — replaces the gray native calendar with an on-brand WG popup
+   (navy header, orange selected day). Values stay 'YYYY-MM-DD' like the native input.
+   ============================================================ */
+function _fmtDateLong(v){ if(!v)return 'Pick a date'; try{return new Date(v+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});}catch(e){return v;} }
+function openCal(val,anchor,pick){
+  var ex=document.getElementById('wgcal'); if(ex)ex.remove();
+  var base = val?new Date(val+'T12:00:00'):new Date();
+  var view={y:base.getFullYear(),m:base.getMonth()};
+  var pop=el('div','wgcal');pop.id='wgcal';
+  var pad=function(n){return (n<10?'0':'')+n;};
+  function draw(){
+    pop.innerHTML='';
+    var head=el('div','wgcal-head');
+    var prev=el('button','wgcal-nav','‹');var next=el('button','wgcal-nav','›');
+    var title=el('div','wgcal-title',new Date(view.y,view.m,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}));
+    prev.onclick=function(e){e.preventDefault();e.stopPropagation();view.m--;if(view.m<0){view.m=11;view.y--;}draw();};
+    next.onclick=function(e){e.preventDefault();e.stopPropagation();view.m++;if(view.m>11){view.m=0;view.y++;}draw();};
+    head.appendChild(prev);head.appendChild(title);head.appendChild(next);pop.appendChild(head);
+    var grid=el('div','wgcal-grid');
+    ['S','M','T','W','T','F','S'].forEach(function(d){grid.appendChild(el('div','wgcal-dow',d));});
+    var first=new Date(view.y,view.m,1).getDay(), days=new Date(view.y,view.m+1,0).getDate();
+    var today=new Date(); var todayStr=today.getFullYear()+'-'+pad(today.getMonth()+1)+'-'+pad(today.getDate());
+    for(var i=0;i<first;i++)grid.appendChild(el('div','wgcal-empty',''));
+    for(var d=1;d<=days;d++){
+      var ds=view.y+'-'+pad(view.m+1)+'-'+pad(d);
+      var cell=el('button','wgcal-day'+(ds===val?' sel':'')+(ds===todayStr?' today':''),String(d));
+      (function(ds){cell.onclick=function(e){e.preventDefault();e.stopPropagation();pick(ds);pop.remove();};})(ds);
+      grid.appendChild(cell);
+    }
+    pop.appendChild(grid);
+    var foot=el('div','wgcal-foot');var t=el('button','wgcal-today','Today');
+    t.onclick=function(e){e.preventDefault();e.stopPropagation();pick(todayStr);pop.remove();};foot.appendChild(t);pop.appendChild(foot);
+  }
+  draw();
+  document.body.appendChild(pop);
+  var r=anchor.getBoundingClientRect();
+  pop.style.left=Math.max(8,Math.min(window.innerWidth-288, r.left))+'px';
+  var top=r.bottom+6; if(top+320>window.innerHeight)top=Math.max(8,r.top-326);
+  pop.style.top=top+'px';
+  setTimeout(function(){ document.addEventListener('mousedown',function h(ev){ if(!pop.contains(ev.target)&&ev.target!==anchor){pop.remove();document.removeEventListener('mousedown',h);} }); },10);
+}
+function dateField(value,onChange){
+  var wrap=el('div','datefield'); var cur=value||'';
+  var btn=el('button','datebtn');
+  var paint=function(){ btn.innerHTML='<span class="datebtn-txt">'+esc(_fmtDateLong(cur))+'</span><span class="datebtn-ic">📅</span>'; };
+  paint();
+  btn.onclick=function(e){ e.preventDefault(); openCal(cur,btn,function(v){ cur=v; paint(); if(onChange)onChange(v); }); };
+  wrap.appendChild(btn); wrap.getValue=function(){return cur;}; wrap.setValue=function(v){cur=v||'';paint();};
+  return wrap;
+}
 function openDateModal(title,currentMs,onSave,resetLabel,onReset){
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';const box=el('div','cmp-box');box.style.maxWidth='360px';
   box.innerHTML=`<div class="cmp-head"><h3>${esc(title)}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
-  const bd=$('#cmpBody');const f=el('div','cmp-field');f.innerHTML='<label>Date</label>';const di=el('input','cmp-in');di.type='date';
-  try{di.value=new Date(currentMs).toISOString().slice(0,10);}catch(e){}
-  f.appendChild(di);bd.appendChild(f);
+  const bd=$('#cmpBody');const f=el('div','cmp-field');f.innerHTML='<label>Date</label>';
+  let dVal=''; try{dVal=new Date(currentMs).toISOString().slice(0,10);}catch(e){}
+  const dfield=dateField(dVal,(v)=>{dVal=v;}); f.appendChild(dfield);bd.appendChild(f);
   const foot=el('div','cmp-foot');
   if(onReset){const r=el('button','btn-set',resetLabel||'Reset');r.onclick=()=>{onReset();closeComposer();render();toast('Reset to default');};foot.appendChild(r);}
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
-  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!di.value){toast('Pick a date');return;} const ms=new Date(di.value+'T12:00:00').getTime(); onSave(ms); closeComposer(); render(); toast('Date updated'); };
+  const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!dVal){toast('Pick a date');return;} const ms=new Date(dVal+'T12:00:00').getTime(); onSave(ms); closeComposer(); render(); toast('Date updated'); };
   foot.appendChild(save);bd.appendChild(foot);
 }
 function openStartEditor(){ openDateModal('When does the 90-day plan start?',seoStart(),function(ms){ST.seoStartUser=ms;commit();}); }
@@ -2961,8 +3012,8 @@ function editSprint(s){
   ov.appendChild(box);document.body.appendChild(ov);ov.onclick=e=>{if(e.target===ov)closeComposer()};$('#cmpX').onclick=closeComposer;
   const bd=$('#cmpBody');const fld=(l)=>{const f=el('div','cmp-field');f.innerHTML='<label>'+l+'</label>';return f;};
   const nf=fld('Name');const ni=el('input','cmp-in');ni.value=s.name||'';ni.oninput=()=>s.name=ni.value;nf.appendChild(ni);bd.appendChild(nf);
-  const sf=fld('Start');const si=el('input','cmp-in');si.type='date';try{si.value=new Date(s.start).toISOString().slice(0,10);}catch(e){}si.onchange=()=>{s.start=new Date(si.value+'T12:00:00').getTime();};sf.appendChild(si);bd.appendChild(sf);
-  const ef=fld('End');const ei=el('input','cmp-in');ei.type='date';try{ei.value=new Date(s.end).toISOString().slice(0,10);}catch(e){}ei.onchange=()=>{s.end=new Date(ei.value+'T12:00:00').getTime();};ef.appendChild(ei);bd.appendChild(ef);
+  const sf=fld('Start');let _sv='';try{_sv=new Date(s.start).toISOString().slice(0,10);}catch(e){}sf.appendChild(dateField(_sv,(v)=>{s.start=new Date(v+'T12:00:00').getTime();}));bd.appendChild(sf);
+  const ef=fld('End');let _ev='';try{_ev=new Date(s.end).toISOString().slice(0,10);}catch(e){}ef.appendChild(dateField(_ev,(v)=>{s.end=new Date(v+'T12:00:00').getTime();}));bd.appendChild(ef);
   const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+(s.name||'this sprint')+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){removeSprint(s.id);closeComposer();render();toast('Sprint deleted — tasks returned to the SEO Punch List');} };foot.appendChild(del);
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
@@ -5248,7 +5299,7 @@ function openComposer(idOrPost,isNew){
 
   // date + time
   const dr=el('div','cmp-row');
-  const df=el('div','cmp-field');df.innerHTML='<label>Date</label>';const di=el('input','cmp-in');di.type='date';di.value=p.date||'';di.onchange=()=>p.date=di.value;df.appendChild(di);dr.appendChild(df);
+  const df=el('div','cmp-field');df.innerHTML='<label>Date</label>';df.appendChild(dateField(p.date||'',(v)=>{p.date=v;}));dr.appendChild(df);
   const tff=el('div','cmp-field');tff.innerHTML='<label>Time</label>';const ti=el('input','cmp-in');ti.type='time';ti.value=p.time||'11:00';ti.onchange=()=>p.time=ti.value;tff.appendChild(ti);dr.appendChild(tff);
   b.appendChild(dr);
 
