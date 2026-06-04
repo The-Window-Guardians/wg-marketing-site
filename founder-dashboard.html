@@ -6476,65 +6476,9 @@ async function refreshPursuitResearch(pursuitId) {
   }
 }
 
+// Legacy alias — old Founder tab is gone. All callers now route to the new Personal tab.
 function renderFounder() {
-  const container = document.getElementById("founder-content");
-  if (!container) return;
-  // If a pursuit is "open", render the full-page pursuit view INSTEAD of the founder list
-  if (_activePursuitId) {
-    const p = (state.pursuits || []).find(x => x.id === _activePursuitId);
-    if (p) {
-      const meta = PURSUIT_CATEGORIES[p.category] || PURSUIT_CATEGORIES.craft;
-      container.innerHTML = `
-        <div style="margin-bottom: 14px;">
-          <button class="btn btn-ghost" onclick="closePursuitView()" style="padding: 8px 14px; font-weight: 700; color: var(--orange); background: var(--orange-soft); border: 1px solid #fed7aa;">← Back to Founder</button>
-        </div>
-        <div class="card" style="margin-bottom: 0;">
-          <div id="pursuit-fullpage-content"></div>
-        </div>`;
-      // Render the appropriate inner view (onboarding or detail)
-      if (!p.onboarded) {
-        _renderPursuitOnboarding(p);
-      } else {
-        _renderPursuitDetail(p);
-      }
-      return;
-    } else {
-      _activePursuitId = null;
-    }
-  }
-  if (!state.dailyCheckIns) state.dailyCheckIns = {};
-
-  const c = getTodayCheckIn();
-  const step = currentWizardStep();
-  const todayDate = new Date();
-  const dateLabel = todayDate.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
-  const isDone = step > totalWizardSteps();
-  const habitsAnsweredCount = CHECKIN_HABITS.filter(h => c[h.id] !== undefined).length;
-
-  const modeToggle = `<div style="display: flex; justify-content: center; gap: 4px; margin: 0 0 14px 0; background: var(--card-soft); padding: 4px; border-radius: 12px; border: 1px solid var(--border); max-width: 360px; margin-left: auto; margin-right: auto;">
-    <button onclick="setFounderViewMode('wizard')" style="flex: 1; background: ${_founderViewMode === 'wizard' ? 'var(--navy)' : 'transparent'}; color: ${_founderViewMode === 'wizard' ? 'white' : 'var(--text-2)'}; border: none; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; letter-spacing: 0.3px; transition: all 0.15s;">⊙ Wizard (one-at-a-time)</button>
-    <button onclick="setFounderViewMode('all')" style="flex: 1; background: ${_founderViewMode === 'all' ? 'var(--navy)' : 'transparent'}; color: ${_founderViewMode === 'all' ? 'white' : 'var(--text-2)'}; border: none; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; letter-spacing: 0.3px; transition: all 0.15s;">⊞ See all questions</button>
-  </div>`;
-
-  const checkInArea = _founderViewMode === "all"
-    ? renderCheckInAllQuestions(c, isDone)
-    : renderCheckInWizard(step, c, isDone);
-
-  container.innerHTML = `
-    <div class="daily-quote-host" style="margin-bottom: 16px;"></div>
-    ${renderPersonalTasksSection()}
-    ${renderPursuitsSection()}
-    ${renderYesterdayBanner()}
-    ${renderFounderHeader(dateLabel, step, isDone, habitsAnsweredCount)}
-    ${modeToggle}
-    ${checkInArea}
-    ${renderMentorChatCard()}
-    ${renderMonthlySummary()}
-    ${renderHabitGraph()}
-    ${renderIdentityAnchorsCollapsed()}
-    ${renderPersonalTasksSection()}
-  `;
-  if (typeof renderPersonalLifeTasks === "function") renderPersonalLifeTasks();
+  if (typeof renderPersonal === "function") renderPersonal();
 }
 
 // "See all questions" mode — grid of every habit + energy + win + tomorrow on one screen, answerable in any order
