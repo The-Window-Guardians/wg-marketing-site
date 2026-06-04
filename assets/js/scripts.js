@@ -2854,7 +2854,7 @@ function editSprint(s){
   const nf=fld('Name');const ni=el('input','cmp-in');ni.value=s.name||'';ni.oninput=()=>s.name=ni.value;nf.appendChild(ni);bd.appendChild(nf);
   const sf=fld('Start');const si=el('input','cmp-in');si.type='date';try{si.value=new Date(s.start).toISOString().slice(0,10);}catch(e){}si.onchange=()=>{s.start=new Date(si.value+'T12:00:00').getTime();};sf.appendChild(si);bd.appendChild(sf);
   const ef=fld('End');const ei=el('input','cmp-in');ei.type='date';try{ei.value=new Date(s.end).toISOString().slice(0,10);}catch(e){}ei.onchange=()=>{s.end=new Date(ei.value+'T12:00:00').getTime();};ef.appendChild(ei);bd.appendChild(ef);
-  const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=()=>{removeSprint(s.id);closeComposer();render();toast('Sprint removed — its tasks went to Backlog');};foot.appendChild(del);
+  const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+(s.name||'this sprint')+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){removeSprint(s.id);closeComposer();render();toast('Sprint deleted — tasks returned to the backlog');} };foot.appendChild(del);
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
 }
@@ -2895,21 +2895,27 @@ function openAddBacklogTask(){
   };
   foot.appendChild(save);bd.appendChild(foot);
 }
+var BACKLOG_PLAN='';
 function seoBacklogCard(){
+  var sprints=seoSprints();
+  if(BACKLOG_PLAN && !sprintById(BACKLOG_PLAN))BACKLOG_PLAN='';
+  if(!BACKLOG_PLAN && sprints.length)BACKLOG_PLAN=(sprintSel()&&sprintById(sprintSel()))?sprintSel():sprints[0].id;
+  var planName=(sprintById(BACKLOG_PLAN)||{}).name||'';
   var card=el('div','card pad');card.style.marginTop='12px';
-  card.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📋</div><div><h3>SEO Punch List</h3><small>Everything to do, by category. Tick tasks to add them to a sprint, or add your own.</small></div></div>';
+  card.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📋</div><div><h3>SEO Punch List</h3><small>Everything to do, by category. Pick the sprint you’re filling, then tap ＋ on a task.</small></div></div>';
   var addBtn=el('button','btn-set primary','＋ Add a task');addBtn.onclick=openAddBacklogTask;addBtn.style.marginBottom='4px';card.appendChild(addBtn);
-  var bulk=el('div','blkbar');
-  if(BACKLOG_SEL.size){
-    var sel=el('select','cmp-in');sel.style.maxWidth='200px';
-    sel.innerHTML='<option value="backlog">Backlog (unschedule)</option>'+seoSprints().map(function(s){return '<option value="'+s.id+'">'+esc(s.name)+'</option>';}).join('');
-    var go=el('button','btn-set primary','Add '+BACKLOG_SEL.size+' to sprint');
-    go.onclick=function(){ var dst=sel.value; sprintTasks().forEach(function(t){ if(BACKLOG_SEL.has(t.id)){ if(dst!=='backlog'&&(t.sprint||'backlog')!==dst){t.movedFrom=((t.sprint||'backlog')==='backlog')?'Backlog':((sprintById(t.sprint)||{}).name||'a sprint');t.movedAt=Date.now();} t.sprint=dst;t._ut=Date.now(); } }); BACKLOG_SEL.clear();commit();render();toast(dst==='backlog'?'Moved to Backlog':'Added to '+((sprintById(dst)||{}).name||'sprint')); };
-    var clr=el('button','btn-set','Clear');clr.onclick=function(){BACKLOG_SEL.clear();render();};
-    bulk.appendChild(el('span','blklbl',BACKLOG_SEL.size+' selected →'));bulk.appendChild(sel);bulk.appendChild(go);bulk.appendChild(clr);
-    if(!seoSprints().length){bulk.appendChild(el('span','muted','— make a sprint first (top of page)'));}
+  // "Planning for:" sprint selector — sets the target for the one-tap ＋ buttons
+  if(sprints.length){
+    var pl=el('div','planbar');
+    pl.appendChild(el('span','planlbl','🏃 Planning for:'));
+    var psel=el('select','cmp-in');psel.style.maxWidth='210px';
+    psel.innerHTML=sprints.map(function(s){return '<option value="'+s.id+'"'+(s.id===BACKLOG_PLAN?' selected':'')+'>'+esc(s.name)+'</option>';}).join('');
+    psel.onchange=function(){BACKLOG_PLAN=psel.value;render();};
+    pl.appendChild(psel);
+    card.appendChild(pl);
+  } else {
+    var hint=el('div','muted','Make a sprint at the top of the page, then tap ＋ on tasks here to schedule them.');hint.style.margin='8px 0 2px';card.appendChild(hint);
   }
-  card.appendChild(bulk);
   var byCat={}; sprintTasks().forEach(function(t){ var c=t.section||'Custom'; (byCat[c]=byCat[c]||[]).push(t); });
   var order=SEO_CATS.concat(['Custom']);
   var cats=Object.keys(byCat).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?98:ia)-(ib<0?98:ib);});
@@ -2922,15 +2928,25 @@ function seoBacklogCard(){
     var body=el('div','seoacc-body');
     list.forEach(function(t){
       var row=el('div','blkrow');
-      var cb=el('input');cb.type='checkbox';cb.className='blkck';cb.checked=BACKLOG_SEL.has(t.id);
-      cb.onchange=function(){ if(cb.checked)BACKLOG_SEL.add(t.id);else BACKLOG_SEL.delete(t.id); render(); };
-      row.appendChild(cb);
       var main=el('div','blkmain');
       var html='<span class="blktitle'+(t.status==='done'?' done':'')+'">'+esc(t.title||'(untitled)')+'</span>';
-      if(t.sprint&&t.sprint!=='backlog'){var spn=sprintById(t.sprint);html+=' <span class="blksprint">▸ '+esc((spn&&spn.name)||'sprint')+'</span>';}
+      var inPlan=(BACKLOG_PLAN && t.sprint===BACKLOG_PLAN);
+      if(t.sprint&&t.sprint!=='backlog'&&!inPlan){var spn=sprintById(t.sprint);html+=' <span class="blksprint">▸ '+esc((spn&&spn.name)||'sprint')+'</span>';}
       if(t.est)html+=' <span class="blkest">'+t.est+'h</span>';
       main.innerHTML=html; main.onclick=function(){ editSprintTask(t); };
-      row.appendChild(main);body.appendChild(row);
+      row.appendChild(main);
+      // one-tap add/remove to the "Planning for" sprint
+      var btn=el('button','blkadd'+(inPlan?' in':''), inPlan?('✓ in '+(planName.replace(/^Sprint\s*/i,'S')||'sprint')):'＋ Add');
+      if(!sprints.length){ btn.disabled=true; btn.title='Make a sprint first'; }
+      else { btn.title=inPlan?'Remove from this sprint (back to backlog)':('Add to '+planName);
+        btn.onclick=function(e){ e.stopPropagation();
+          if(inPlan){ t.sprint='backlog'; }
+          else { if((t.sprint||'backlog')!==BACKLOG_PLAN){ t.movedFrom=((t.sprint||'backlog')==='backlog')?'Backlog':((sprintById(t.sprint)||{}).name||'a sprint'); t.movedAt=Date.now(); } t.sprint=BACKLOG_PLAN; }
+          t._ut=Date.now(); commit(); render();
+        };
+      }
+      row.appendChild(btn);
+      body.appendChild(row);
     });
     d.appendChild(body);card.appendChild(d);
   });
@@ -2954,7 +2970,13 @@ function renderSprintBoardView(box){
   box.appendChild(tabs);
   const so=sprintById(scope); const inScope=sprintTasks().filter(t=>t.sprint===scope);
   const hrs=inScope.reduce((s,t)=>s+(+t.est||0),0),dn=inScope.filter(t=>t.status==='done').length;
-  box.appendChild(el('div','sprintscope',(so?so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
+  const scopeRow=el('div','sprintscope');scopeRow.style.cssText='display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+  scopeRow.appendChild(el('span','',(so?so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
+  if(so){ const sp2=el('span');sp2.style.flex='1';scopeRow.appendChild(sp2);
+    const ed=el('button','tbtn','✏️ Edit dates');ed.onclick=()=>editSprint(so);scopeRow.appendChild(ed);
+    const del=el('button','tbtn danger','🗑 Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+so.name+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓. This can’t be undone.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){ removeSprint(so.id); render(); toast('Sprint deleted — tasks returned to the backlog'); } };scopeRow.appendChild(del);
+  }
+  box.appendChild(scopeRow);
   renderSprintCols(box,inScope,scope);
 }
 function renderSprintListView(box){

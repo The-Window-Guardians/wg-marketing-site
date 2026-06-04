@@ -119,6 +119,14 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .blktitle.done{text-decoration:line-through;color:var(--faint);font-weight:500}
 .blksprint{display:inline-block;font-size:10.5px;font-weight:800;color:#27406b;background:var(--blue-soft);border-radius:999px;padding:1px 7px;margin-left:4px}
 .blkest{font-size:11px;color:var(--faint);font-weight:700;margin-left:4px}
+.planbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 4px;padding:8px 10px;background:var(--blue-soft);border-radius:10px}
+.planlbl{font-size:13px;font-weight:800;color:#27406b}
+.blkadd{flex:none;align-self:center;border:1px solid var(--orange);background:#fff;color:var(--orange);border-radius:8px;font-size:12px;font-weight:800;padding:5px 11px;cursor:pointer;white-space:nowrap}
+.blkadd:hover:not(:disabled){background:var(--orange);color:#fff}
+.blkadd.in{border-color:var(--green,#1f9d57);color:#fff;background:var(--green,#1f9d57)}
+.blkadd:disabled{opacity:.45;cursor:default;border-color:var(--line2);color:var(--faint)}
+.tbtn.danger{color:#cf3b3b}
+.tbtn.danger:hover{background:#fde7e7}
 .role-chip{display:flex;align-items:center;gap:8px;background:#ffffff12;border:1px solid #ffffff20;border-radius:999px;padding:4px 5px 4px 10px}
 .role-chip .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px}
 .role-chip select{background:transparent;border:0;color:#fff;font-weight:700;font-size:13px;outline:none}
