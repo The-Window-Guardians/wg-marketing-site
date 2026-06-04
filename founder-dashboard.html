@@ -6616,11 +6616,7 @@ function renderPersonal() {
     return d <= nextWeek;
   }).length;
   const captureCount = (state.personalCapture || []).length;
-  const peopleTotal = (state.personalPeople || []).length;
-  const peopleStale = (state.personalPeople || []).filter(p => p.lastContactTs && Math.floor((Date.now() - p.lastContactTs) / 86400000) > 60).length;
   const goalsActive = (state.personalGoals || []).filter(g => !g.done).length;
-  const ritualsTotal = (state.personalRituals || []).length;
-  const vaultTotal = (state.personalVault || []).length;
   const notesTotal = (state.personalNotes || []).length;
   const journalToday = (state.personalJournal || []).some(e => e.dateKey === new Date().toISOString().slice(0, 10));
 
@@ -7462,18 +7458,22 @@ function peSetCategoryFilter(id) { _initPersonalState(); state.personalUI.catego
 function peAddTask() {
   _initPersonalState();
   const textEl = document.getElementById("pe-new-task-text");
-  const catEl = document.getElementById("pe-new-task-cat");
   const deadlineEl = document.getElementById("pe-new-task-deadline");
   const text = textEl ? textEl.value.trim() : "";
   if (!text) return;
+  // Category: explicit chip pick > active tasks filter > nothing
+  const filter = state.personalUI.tasksFilter;
+  const filterInherited = (filter && filter !== 'all' && filter !== 'none') ? filter : null;
+  const categoryId = _peNewTaskCatId !== undefined && _peNewTaskCatId !== null ? _peNewTaskCatId : filterInherited;
   state.personalTasks.unshift({
     id: "ptask-" + Date.now(), text,
-    categoryId: catEl ? (catEl.value || null) : null,
+    categoryId,
     deadline: deadlineEl && deadlineEl.value ? new Date(deadlineEl.value).toISOString() : null,
     priority: null, starred: false, notes: "", files: [], done: false, ts: Date.now()
   });
   if (textEl) textEl.value = "";
   if (deadlineEl) deadlineEl.value = "";
+  _peNewTaskCatId = null; // reset after add
   saveState();
   renderPersonal();
   showToast("Task added");
