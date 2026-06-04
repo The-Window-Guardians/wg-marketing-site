@@ -5122,8 +5122,9 @@ function openComposer(idOrPost,isNew){
     caOpts.dataset.open='1';
     aiCaptionOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
   };
-  cf.appendChild(ca);cf.appendChild(caAI);cf.appendChild(caOpts);
-  cf.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  cf.appendChild(ca);
+  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // hashtags — same pattern
@@ -5137,8 +5138,9 @@ function openComposer(idOrPost,isNew){
     haOpts.dataset.open='1';
     aiHashtagOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
   };
-  hf.appendChild(ha);hf.appendChild(haAI);hf.appendChild(haOpts);
-  hf.appendChild(snippetBar('hashtags',()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
+  hf.appendChild(ha);
+  const haRow=el('div','sugrow');haRow.appendChild(haAI);haRow.appendChild(snippetBar('hashtags',()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
+  hf.appendChild(haRow);hf.appendChild(haOpts);
   b.appendChild(hf);
 
   // date + time

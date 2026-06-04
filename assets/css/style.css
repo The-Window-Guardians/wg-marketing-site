@@ -100,6 +100,9 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .tour-foot{display:flex;align-items:center;gap:8px;padding:12px 16px 16px}
 /* saved caption / hashtag snippets */
 .snipbar{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+/* keep the AI Suggest button + the snippet "Save current"/chips on one row (wraps on mobile) */
+.sugrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
+.sugrow .snipbar{margin-top:0;flex:1;min-width:140px}
 .snipchip{display:inline-flex;align-items:center;background:var(--blue-soft);border-radius:999px;overflow:hidden;max-width:100%}
 .snipuse{border:none;background:transparent;color:#27406b;font-size:12px;font-weight:600;padding:5px 4px 5px 11px;cursor:pointer;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .snipuse:hover{color:var(--orange)}
