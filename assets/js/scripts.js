@@ -2455,7 +2455,7 @@ function render(){
   if(typeof enforceAccess==='function'&&enforceAccess())return;   // deactivated/removed → kicked to the gate
   const v=$('#view');if(!v)return;v.innerHTML='';
   const nb=noEmailBanner();if(nb)v.appendChild(nb);
-  ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader}[currentView()]||viewDashboard)(v);
+  ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader,progress:viewProgressBoard}[currentView()]||viewDashboard)(v);
 }
 /* Cloud sync logs in with the user's email — an account with no email never authenticates,
    so it silently can't see or share content. Warn clearly instead of failing quietly (sim #13). */
@@ -2465,6 +2465,55 @@ function noEmailBanner(){
   const b=el('div','nobanner');
   b.innerHTML=`⚠ <b>No email on your account.</b> You won’t see shared photos or send posts to the team until Sebastian adds your email in Settings. (Your local work is safe.)`;
   return b;
+}
+/* ---------- MARKETING PROGRESS (Founder HQ tab) — live snapshot across SEO + Social ---------- */
+function viewProgressBoard(v){
+  var seo=(S.prog&&S.prog.seo)||{}, soc=(S.prog&&S.prog.social)||{};
+  var sMs=(seo.seoStartUser)||WG_LAUNCH;
+  v.appendChild(el('div','page-head','<h2>📈 Marketing Progress</h2><p>Live snapshot across SEO + Social — updated as the team works. SEO Day 1: <b>'+fmtShort(sMs)+', '+new Date(sMs).getFullYear()+'</b>.</p>'));
+  var tasks=Array.isArray(seo.sprintTasks)?seo.sprintTasks:[];
+  var done=tasks.filter(function(t){return t.status==='done';}).length, doing=tasks.filter(function(t){return t.status==='doing';}).length, tot=tasks.length;
+  var pct=tot?Math.round(done/tot*100):0; var sprints=Array.isArray(seo.sprints)?seo.sprints.length:0;
+  var grid=el('div','grid cols-2');grid.style.marginTop='4px';
+  var c1=el('div','card pad');
+  c1.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🔧</div><div><h3>SEO Plan</h3><small>'+done+' of '+tot+' tasks done · '+sprints+' sprint'+(sprints===1?'':'s')+'</small></div></div>'
+    +'<div class="prgbig">'+pct+'%</div><div class="prgbar"><i style="width:'+pct+'%"></i></div>'
+    +'<div class="prgrow"><span>✅ '+done+' done</span><span>🔨 '+doing+' going</span><span>⬜ '+(tot-done-doing)+' to do</span></div>';
+  grid.appendChild(c1);
+  var posts=Array.isArray(soc.posts)?soc.posts:[];
+  var postedAll=posts.filter(function(p){return p.status==='posted';}).length, approved=posts.filter(function(p){return p.status==='approved';}).length, drafts=posts.filter(function(p){return p.status==='draft';}).length;
+  var c2=el('div','card pad');
+  c2.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📣</div><div><h3>Social Posting</h3><small>Goal: 5 posts/week, any day</small></div></div>'
+    +'<div class="prgrow3"><div><b>'+approved+'</b><span>ready to post</span></div><div><b>'+drafts+'</b><span>drafts</span></div><div><b>'+postedAll+'</b><span>posted</span></div></div>';
+  grid.appendChild(c2);
+  v.appendChild(grid);
+  // town pages
+  var towns=(typeof SOC_TOWNS!=='undefined')?SOC_TOWNS:[];
+  var tcard=el('div','card pad');tcard.style.marginTop='12px';
+  var live=0; var rows='';
+  towns.forEach(function(tn){
+    var task=tasks.find(function(t){return t.section==='Town pages'&&(t.title||'').indexOf(tn)>=0;});
+    var fa=(seo.townFacts&&seo.townFacts[tn])||{};
+    var provided=!!((((fa.neighborhoods||'').trim())&&((fa.story||'').trim()))||((fa.text||'').trim()));
+    var st,cls;
+    if(task&&task.status==='done'){st='✅ Live';cls='good';live++;}
+    else if(task&&task.status==='doing'){st='🔨 Building';cls='warn';}
+    else if(provided){st='📝 Details in — not built';cls='warn';}
+    else {st='⬜ Not started';cls='dim';}
+    rows+='<div class="prgtown"><span>'+esc(tn)+'</span><span class="prgst '+cls+'">'+st+'</span></div>';
+  });
+  tcard.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🏘️</div><div><h3>Town Pages</h3><small>'+live+' of '+towns.length+' live</small></div></div>'+rows;
+  v.appendChild(tcard);
+  // blogs + trust
+  var blogs=Array.isArray(seo.blogs)?seo.blogs:[]; var blogsDone=blogs.filter(function(b){return b.status==='done';}).length;
+  function secPct(sec){var ss=tasks.filter(function(t){return t.section===sec;});var dd=ss.filter(function(t){return t.status==='done';}).length;return {d:dd,t:ss.length,p:ss.length?Math.round(dd/ss.length*100):0};}
+  var gbp=secPct('Google Business Profile'), rev=secPct('Reviews engine');
+  var bcard=el('div','card pad');bcard.style.marginTop='12px';
+  bcard.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--amber-soft)">✍️</div><div><h3>Content &amp; Trust</h3><small>Blogs, Google Business Profile, reviews</small></div></div>'
+    +'<div class="prgmini">Blogs delivered <b>'+blogsDone+' / 12</b></div><div class="prgbar"><i style="width:'+Math.min(100,Math.round(blogsDone/12*100))+'%"></i></div>'
+    +'<div class="prgmini" style="margin-top:10px">Google Business Profile <b>'+gbp.d+' / '+gbp.t+'</b></div><div class="prgbar"><i style="width:'+gbp.p+'%"></i></div>'
+    +'<div class="prgmini" style="margin-top:10px">Reviews engine <b>'+rev.d+' / '+rev.t+'</b></div><div class="prgbar"><i style="width:'+rev.p+'%"></i></div>';
+  v.appendChild(bcard);
 }
 /* ---------- MARKETING HUB (birds-eye over every program) ---------- */
 function viewMarketingHub(v){
@@ -2697,7 +2746,8 @@ const SEO_PLAN=[
    {id:'blogs3',type:'blog',label:'5 more blog briefs (12 total)',why:'Hit the 12-blog target',target:12,day:86}
   ]}
 ];
-function seoStart(){ if(!ST.seoStart){ST.seoStart=Date.now();commit();} return ST.seoStart; }
+var WG_LAUNCH=new Date(2026,5,4,12,0,0).getTime(); // official SEO Day 1 — Thursday, June 4, 2026
+function seoStart(){ return (ST&&ST.seoStartUser)||WG_LAUNCH; } // defaults to launch; only an explicit owner change overrides
 function seoDueTs(it){ const o=(ST.dueOverride&&ST.dueOverride[it.id])||0; return o||(seoStart()+(it.day||30)*86400000); }
 function fmtShort(ts){ try{return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric'});}catch(e){return '';} }
 function seoTownFacts(){ if(!ST.townFacts||typeof ST.townFacts!=='object')ST.townFacts={}; return ST.townFacts; }
@@ -2825,7 +2875,7 @@ function openDateModal(title,currentMs,onSave,resetLabel,onReset){
   const save=el('button','btn-set primary','Save');save.onclick=()=>{ if(!di.value){toast('Pick a date');return;} const ms=new Date(di.value+'T12:00:00').getTime(); onSave(ms); closeComposer(); render(); toast('Date updated'); };
   foot.appendChild(save);bd.appendChild(foot);
 }
-function openStartEditor(){ openDateModal('When does the 90-day plan start?',seoStart(),function(ms){ST.seoStart=ms;commit();}); }
+function openStartEditor(){ openDateModal('When does the 90-day plan start?',seoStart(),function(ms){ST.seoStartUser=ms;commit();}); }
 function openDueEditor(it){ openDateModal('Due date — '+it.label,seoDueTs(it),function(ms){var from=seoDueTs(it);if(!ST.dueOverride)ST.dueOverride={};ST.dueOverride[it.id]=ms;logRoll(it.id,it.label,from,ms);commit();},'Use default',function(){if(ST.dueOverride)delete ST.dueOverride[it.id];if(Array.isArray(ST.rollLog))ST.rollLog=ST.rollLog.filter(function(e){return e.id!==it.id;});commit();}); }
 function seoOpenItem(it,builder){ if(it.type==='town')return openTownFacts(it.town,builder); if(it.type==='media')return openSeoMedia(builder); if(it.type==='blog')return openSeoBlogs(builder); }
 function seoMonthCard(mo,builder){

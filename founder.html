@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="assets/icon-180.png">
 <title>Founder HQ · Window Guardians Marketing OS</title>
-<link rel="stylesheet" href="assets/css/style.css?v=20260603u">
+<link rel="stylesheet" href="assets/css/style.css?v=20260603v">
 <style>
   /* Founder HQ is a full-bleed owner-only wrapper around the intact dashboard.
      It deliberately does NOT use the marketing sidebar layout — the embedded
@@ -26,6 +26,12 @@
     padding:2px 8px;border-radius:999px}
   #founderbar .spacer{flex:1}
   #founderbar .who{font-size:13px;color:#cdd8ec}
+  .fhtabs{display:flex;gap:6px;margin-left:8px}
+  .fhtab{background:#ffffff14;border:1px solid #ffffff26;color:#cdd8ec;border-radius:8px;
+    padding:5px 11px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .fhtab:hover{background:#ffffff24;color:#fff}
+  .fhtab.on{background:#f15a24;border-color:#f15a24;color:#fff}
+  @media (max-width:620px){ #founderbar .lock{display:none} .fhtab{padding:5px 8px;font-size:11.5px} }
   #founderframe{display:block;width:100%;height:calc(100vh - 46px);border:0}
   #founderdeny{display:none;max-width:560px;margin:12vh auto;padding:32px;
     background:#fff;border-radius:16px;font-family:var(--sans,Inter,sans-serif);
@@ -42,6 +48,10 @@
     <a class="back" href="index.html">← Marketing OS</a>
     <span class="ttl">Founder HQ</span>
     <span class="lock">🔐 Owner only</span>
+    <span class="fhtabs">
+      <button class="fhtab on" data-src="founder-dashboard.html">🖥 Operating Dashboard</button>
+      <button class="fhtab" data-src="marketing-progress.html">📈 Marketing Progress</button>
+    </span>
     <span class="spacer"></span>
     <span class="who" id="founderWho"></span>
   </div>
@@ -58,7 +68,7 @@
   </div>
 
 <script src="assets/js/jquery.min.js"></script>
-<script src="assets/js/scripts.js?v=20260603u"></script>
+<script src="assets/js/scripts.js?v=20260603v"></script>
 <script>
 /* OWNER GATE (front-end deterrent only — NOT security; backend enforces real auth).
    scripts.js has already loaded S from localStorage and guarded all its DOM lookups
@@ -76,6 +86,16 @@
     return;
   }
   if(who) who.textContent = '★ '+(me.name||'Owner');                       // owner confirmed
+  // tabs: switch the embedded page between the Operating Dashboard and Marketing Progress
+  var tabs=document.querySelectorAll('.fhtab');
+  Array.prototype.forEach.call(tabs,function(b){
+    b.onclick=function(){
+      if(!frame)return;
+      Array.prototype.forEach.call(tabs,function(x){x.classList.remove('on');});
+      b.classList.add('on');
+      frame.src=b.getAttribute('data-src');
+    };
+  });
 })();
 </script>
 </body>

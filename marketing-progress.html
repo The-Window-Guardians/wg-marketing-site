@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0c1c3d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<title>Marketing Progress · Window Guardians</title>
+<link rel="stylesheet" href="assets/css/style.css?v=20260603v">
+<style>
+  body[data-view="progress"]{background:var(--bg)}
+  .prgwrap{max-width:760px;margin:0 auto;padding:18px 16px 40px}
+</style>
+</head>
+<body data-program="seo" data-view="progress">
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="eyebrow">Window Guardians · Marketing</div>
+    <h1>Marketing<br><span>Progress</span></h1>
+    <p>Sign in to view the live progress board.</p>
+    <div class="who" id="whoBtns"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="layout">
+    <main class="main prgwrap" id="view"></main>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/jquery.min.js"></script>
+<script src="assets/js/firebase-app-compat.js"></script>
+<script src="assets/js/firebase-auth-compat.js"></script>
+<script src="assets/js/firebase-firestore-compat.js"></script>
+<script src="assets/js/firebase-init.js"></script>
+<script src="assets/js/scripts.js?v=20260603v"></script>
+</body>
+</html>

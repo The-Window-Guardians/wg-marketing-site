@@ -130,6 +130,22 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .blkadd:disabled{opacity:.45;cursor:default;border-color:var(--line2);color:var(--faint)}
 .tbtn.danger{color:#cf3b3b}
 .tbtn.danger:hover{background:#fde7e7}
+/* marketing progress board */
+.prgbig{font-size:34px;font-weight:900;color:var(--ink);margin:6px 0 2px}
+.prgbar{height:10px;border-radius:999px;background:var(--line2);overflow:hidden}
+.prgbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--orange),var(--orange-2,#f7a072));transition:width .4s}
+.prgrow{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;font-weight:700;color:var(--ink2)}
+.prgrow3{display:flex;gap:10px;margin-top:6px}
+.prgrow3 div{flex:1;text-align:center;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px 4px}
+.prgrow3 b{display:block;font-size:24px;font-weight:900;color:var(--ink)}
+.prgrow3 span{font-size:11px;color:var(--faint);font-weight:600}
+.prgtown{display:flex;align-items:center;justify-content:space-between;padding:8px 2px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:600}
+.prgtown:last-child{border-bottom:none}
+.prgst{font-size:12px;font-weight:800;padding:2px 9px;border-radius:999px}
+.prgst.good{color:#1f8a4c;background:#e3f6ea}
+.prgst.warn{color:#8a6d1f;background:#fff3d6}
+.prgst.dim{color:var(--faint);background:var(--bg)}
+.prgmini{font-size:13px;color:var(--ink2);display:flex;justify-content:space-between;margin-bottom:4px}
 .role-chip{display:flex;align-items:center;gap:8px;background:#ffffff12;border:1px solid #ffffff20;border-radius:999px;padding:4px 5px 4px 10px}
 .role-chip .av{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-weight:800;font-size:12px}
 .role-chip select{background:transparent;border:0;color:#fff;font-weight:700;font-size:13px;outline:none}
