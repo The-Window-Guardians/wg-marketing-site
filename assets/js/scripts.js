@@ -2963,7 +2963,7 @@ function editSprint(s){
   const nf=fld('Name');const ni=el('input','cmp-in');ni.value=s.name||'';ni.oninput=()=>s.name=ni.value;nf.appendChild(ni);bd.appendChild(nf);
   const sf=fld('Start');const si=el('input','cmp-in');si.type='date';try{si.value=new Date(s.start).toISOString().slice(0,10);}catch(e){}si.onchange=()=>{s.start=new Date(si.value+'T12:00:00').getTime();};sf.appendChild(si);bd.appendChild(sf);
   const ef=fld('End');const ei=el('input','cmp-in');ei.type='date';try{ei.value=new Date(s.end).toISOString().slice(0,10);}catch(e){}ei.onchange=()=>{s.end=new Date(ei.value+'T12:00:00').getTime();};ef.appendChild(ei);bd.appendChild(ef);
-  const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+(s.name||'this sprint')+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){removeSprint(s.id);closeComposer();render();toast('Sprint deleted — tasks returned to the backlog');} };foot.appendChild(del);
+  const foot=el('div','cmp-foot');const del=el('button','btn-set danger','Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+(s.name||'this sprint')+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){removeSprint(s.id);closeComposer();render();toast('Sprint deleted — tasks returned to the SEO Punch List');} };foot.appendChild(del);
   const sp=el('div');sp.style.flex='1';foot.appendChild(sp);
   const sv=el('button','btn-set primary','Save');sv.onclick=()=>{commit();closeComposer();render();toast('Saved');};foot.appendChild(sv);bd.appendChild(foot);
 }
@@ -3083,14 +3083,14 @@ function renderSprintBoardView(box){
   scopeRow.appendChild(el('span','',(so?so.name+' · '+fmtShort(so.start)+'–'+fmtShort(so.end):'')+' · '+inScope.length+' tasks · '+hrs+'h · '+dn+' done'));
   if(so){ const sp2=el('span');sp2.style.flex='1';scopeRow.appendChild(sp2);
     const ed=el('button','tbtn','✏️ Edit dates');ed.onclick=()=>editSprint(so);scopeRow.appendChild(ed);
-    const del=el('button','tbtn danger','🗑 Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+so.name+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓. This can’t be undone.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){ removeSprint(so.id); render(); toast('Sprint deleted — tasks returned to the backlog'); } };scopeRow.appendChild(del);
+    const del=el('button','tbtn danger','🗑 Delete sprint');del.onclick=async()=>{ if(await uiConfirm('Delete “'+so.name+'”? Its tasks go back to the SEO Punch List — finished ones keep their ✓. This can’t be undone.',{title:'Delete sprint?',confirmText:'Delete sprint',danger:true})){ removeSprint(so.id); render(); toast('Sprint deleted — tasks returned to the SEO Punch List'); } };scopeRow.appendChild(del);
   }
   box.appendChild(scopeRow);
   renderSprintCols(box,inScope,scope);
 }
 function renderSprintListView(box){
   seoSprints().forEach(s=>box.appendChild(sprintAccordion(s,false)));
-  box.appendChild(sprintAccordion({id:'backlog',name:'Backlog'},true));
+  box.appendChild(sprintAccordion({id:'backlog',name:'SEO Punch List'},true));
 }
 function sprintAccordion(g,isBacklog){
   const tasks=sprintTasks().filter(t=>(t.sprint||'backlog')===g.id);
@@ -3126,7 +3126,7 @@ function sprintRow(t,showMove){
   {const nc=taskNeedsContent(t); if(nc)main.appendChild(el('span','needbadge'+(nc.ready?' ready':''),nc.ready?('✓ '+nc.town+' details in'):('⏳ needs '+nc.town+' details')));}
   main.onclick=()=>editSprintTask(t);r.appendChild(main);
   const h=el('input','sprinthr');h.type='number';h.min='0';h.step='0.5';h.value=(t.est||'');h.placeholder='h';h.onchange=()=>{t.est=+h.value||0;t._ut=Date.now();commit();render();};r.appendChild(h);
-  if(showMove){const sel=el('select','sprintsel');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{const oldId=t.sprint||'backlog';if(sel.value!==oldId){t.movedFrom=(oldId==='backlog')?'Backlog':((sprintById(oldId)||{}).name||'a sprint');t.movedAt=Date.now();}t.sprint=sel.value;t._ut=Date.now();commit();render();};r.appendChild(sel);}
+  if(showMove){const sel=el('select','sprintsel');[['backlog','SEO Punch List']].concat(seoSprints().map(s=>[s.id,s.name])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{const oldId=t.sprint||'backlog';if(sel.value!==oldId){t.movedFrom=(oldId==='backlog')?'the Punch List':((sprintById(oldId)||{}).name||'a sprint');t.movedAt=Date.now();}t.sprint=sel.value;t._ut=Date.now();commit();render();};r.appendChild(sel);}
   if(t.movedFrom&&t.movedAt)main.appendChild(el('span','movedtag','↪ from '+esc(t.movedFrom)+' · '+agoShort(t.movedAt)));
   const x=el('button','sprintx','✕');x.onclick=(e)=>{e.stopPropagation();ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();render();};r.appendChild(x);
   return r;
@@ -3167,7 +3167,7 @@ function editSprintTask(t,isNew){
   const sf=fld('Section');const ss=el('select','cmp-in');['Custom'].concat(SEO_PLAYBOOK.map(s=>s.title)).forEach(name=>{const o=document.createElement('option');o.value=name;o.textContent=name;if((t.section||'Custom')===name)o.selected=true;ss.appendChild(o)});ss.onchange=()=>{t.section=ss.value;const m=SEO_PLAYBOOK.find(s=>s.title===ss.value);t.sectionIcon=m?m.icon:'•';};sf.appendChild(ss);bd.appendChild(sf);
   const hf=fld('Estimate (hours) — set this live in planning');const hi=el('input','cmp-in');hi.type='number';hi.min='0';hi.step='0.5';hi.value=(t.est||'');hi.oninput=()=>t.est=+hi.value||0;hf.appendChild(hi);bd.appendChild(hf);
   const stf=fld('Status');const sts=el('select','cmp-in');[['todo','To do'],['doing','In progress'],['done','Done']].forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.status||'todo')===v)o.selected=true;sts.appendChild(o)});sts.onchange=()=>t.status=sts.value;stf.appendChild(sts);bd.appendChild(stf);
-  const spf=fld('Sprint');const sps=el('select','cmp-in');[['backlog','Backlog']].concat(seoSprints().map(s=>[s.id,s.name+' ('+fmtShort(s.start)+'–'+fmtShort(s.end)+')'])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sps.appendChild(o)});sps.onchange=()=>t.sprint=sps.value;spf.appendChild(sps);bd.appendChild(spf);
+  const spf=fld('Sprint');const sps=el('select','cmp-in');[['backlog','SEO Punch List']].concat(seoSprints().map(s=>[s.id,s.name+' ('+fmtShort(s.start)+'–'+fmtShort(s.end)+')'])).forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;if((t.sprint||'backlog')===v)o.selected=true;sps.appendChild(o)});sps.onchange=()=>t.sprint=sps.value;spf.appendChild(sps);bd.appendChild(spf);
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=()=>{ST.sprintTasks=sprintTasks().filter(z=>z.id!==t.id);commit();closeComposer();render();toast('Task deleted');};foot.appendChild(del);}
   const sp2=el('div');sp2.style.flex='1';foot.appendChild(sp2);
@@ -3194,7 +3194,6 @@ function viewSeoProvider(v){
   SEO_PLAN.forEach(mo=>v.appendChild(seoMonthCard(mo,false)));
   v.appendChild(seoBlogsCard(false));
   v.appendChild(seoAccordion('🏃','Sprint plan','Plan the 2-week sprints + set hour estimates with Bogdan — live in your call',false,renderSprintBoard));
-  v.appendChild(seoBacklogCard());
   v.appendChild(activityCard());
 }
 function viewSeoBuilder(v){
@@ -3211,7 +3210,6 @@ function viewSeoBuilder(v){
   v.appendChild(seoAccordion('✅','Ready to build',(ready.length||'No')+' item'+(ready.length===1?'':'s')+' provided — open to use + download',false,function(box){ if(!ready.length){box.appendChild(el('p','muted','Nothing provided yet.'));return;} ready.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
   v.appendChild(seoAccordion('✍️','Blog briefs to build',seoBlogs().length+' brief'+(seoBlogs().length===1?'':'s'),false,function(box){ seoBlogsFill(box,true); }));
   v.appendChild(seoAccordion('⏳','Waiting on Sebastian',(waiting.length||'No')+' item'+(waiting.length===1?'':'s')+' still coming',false,function(box){ if(!waiting.length){box.appendChild(el('p','muted','Nothing outstanding — you have everything.'));return;} waiting.forEach(it=>box.appendChild(seoItemRow(it,true))); }));
-  v.appendChild(seoBacklogCard());
   v.appendChild(activityCard());
 }
 function viewSeoProgress(v){
@@ -3228,7 +3226,7 @@ function viewSeoProgress(v){
   const dlc=el('div','card pad');dlc.style.marginTop='16px';
   dlc.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🏃</div><div><h3>Sprints</h3><small>Each 2-week sprint, its hours + how far along.</small></div></div>`;
   const allT=sprintTasks();
-  seoSprints().concat([{id:'backlog',name:'Backlog'}]).forEach(s=>{ const ts=allT.filter(t=>(t.sprint||'backlog')===s.id); if(!ts.length&&s.id==='backlog')return; const hrs=ts.reduce((a,t)=>a+(+t.est||0),0),dn=ts.filter(t=>t.status==='done').length,pct=ts.length?Math.round(dn/ts.length*100):0; const r=el('div','seoitem');
+  seoSprints().concat([{id:'backlog',name:'SEO Punch List'}]).forEach(s=>{ const ts=allT.filter(t=>(t.sprint||'backlog')===s.id); if(!ts.length&&s.id==='backlog')return; const hrs=ts.reduce((a,t)=>a+(+t.est||0),0),dn=ts.filter(t=>t.status==='done').length,pct=ts.length?Math.round(dn/ts.length*100):0; const r=el('div','seoitem');
     r.innerHTML=`<div class="si-ic">🏃</div><div class="si-main"><div class="si-t">${esc(s.name)}${s.id!=='backlog'?` <span class="muted" style="font-weight:500;font-size:12px">${fmtShort(s.start)}–${fmtShort(s.end)}</span>`:''}</div><div class="si-why">${ts.length} task${ts.length===1?'':'s'} · ${hrs}h · ${dn}/${ts.length} done</div></div><div class="si-stat"><span class="pst ${(pct===100&&ts.length)?'posted':'draft'}">${pct}%</span></div>`;
     dlc.appendChild(r); });
   v.appendChild(dlc);
