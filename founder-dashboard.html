@@ -6596,109 +6596,142 @@ function peCollapsibleCard(id, title, icon, badge, summaryText, contentFn) {
 }
 
 // ============================================================
-// MAIN RENDER — V2 scrolling layout
+// MAIN RENDER — V3 mirrors Today tab structure
+// Sequence of .card containers, alternating full-width and 2-col grids
+// h2 + pill + italic subtitle + content (same pattern as Today)
 // ============================================================
 function renderPersonal() {
   _initPersonalState();
   const container = document.getElementById("personal-content");
   if (!container) return;
 
-  // Compute summary text for each collapsed section
+  // Counts for pills
+  const tasksOpen = (state.personalTasks || []).filter(t => !t.done).length;
+  const recurringTotal = (state.personalRecurring || []).length;
   const today = new Date(); today.setHours(0,0,0,0);
   const nextWeek = new Date(today); nextWeek.setDate(today.getDate() + 7);
-  const tasksOpen = (state.personalTasks || []).filter(t => !t.done).length;
-  const tasksDueToday = (state.personalTasks || []).filter(t => {
-    if (t.done || !t.deadline) return false;
-    const d = new Date(t.deadline); d.setHours(0,0,0,0);
-    return d.getTime() <= today.getTime();
-  }).length;
-  const tasksSummary = tasksOpen > 0 ? `${tasksOpen} open${tasksDueToday > 0 ? `, ${tasksDueToday} due today/overdue` : ''}` : 'All clear';
-
   const recurringDueSoon = (state.personalRecurring || []).filter(r => {
     if (!r.nextDate) return false;
     const d = new Date(r.nextDate + 'T00:00');
     return d <= nextWeek;
   }).length;
-  const recurringTotal = (state.personalRecurring || []).length;
-  const recurringSummary = recurringDueSoon > 0 ? `${recurringDueSoon} due this week` : (recurringTotal > 0 ? `${recurringTotal} tracked, none due soon` : 'Nothing tracked');
-
   const captureCount = (state.personalCapture || []).length;
-  const captureSummary = captureCount > 0 ? `${captureCount} item${captureCount === 1 ? '' : 's'} to triage` : '';
-
-  const peopleStale = (state.personalPeople || []).filter(p => {
-    if (!p.lastContactTs) return false;
-    return Math.floor((Date.now() - p.lastContactTs) / 86400000) > 60;
-  }).length;
-  const peopleSummary = peopleStale > 0 ? `${peopleStale} haven't heard from you in 60+ days` : `${(state.personalPeople || []).length} tracked`;
-
+  const peopleTotal = (state.personalPeople || []).length;
+  const peopleStale = (state.personalPeople || []).filter(p => p.lastContactTs && Math.floor((Date.now() - p.lastContactTs) / 86400000) > 60).length;
   const goalsActive = (state.personalGoals || []).filter(g => !g.done).length;
-  const goalsSummary = goalsActive > 0 ? `${goalsActive} active` : 'No active goals';
+  const ritualsTotal = (state.personalRituals || []).length;
+  const vaultTotal = (state.personalVault || []).length;
+  const notesTotal = (state.personalNotes || []).length;
+  const journalToday = (state.personalJournal || []).some(e => e.dateKey === new Date().toISOString().slice(0, 10));
 
-  const ritualsTracked = (state.personalRituals || []).length;
-  const ritualsSummary = ritualsTracked > 0 ? `${ritualsTracked} rhythm${ritualsTracked === 1 ? '' : 's'}` : '';
+  const pill = (count, color) => count > 0 ? `<span class="pill" style="background: ${color};">${count}</span>` : '';
 
-  const vaultCount = (state.personalVault || []).length;
-  const vaultSummary = vaultCount > 0 ? `${vaultCount} file${vaultCount === 1 ? '' : 's'}` : '';
-
-  const notesCount = (state.personalNotes || []).length;
-  const notesSummary = notesCount > 0 ? `${notesCount} saved` : '';
-
-  const todayJournalKey = new Date().toISOString().slice(0, 10);
-  const hasJournalToday = (state.personalJournal || []).some(e => e.dateKey === todayJournalKey);
-  const journalSummary = hasJournalToday ? 'Entry written today' : 'No entry today yet';
-
-  // Build sections
-  const calendarCard = peCollapsibleCard('calendar', 'Calendar', '📅', 0, '', peRenderCalendar);
-  const tasksCard = peCollapsibleCard('tasks', 'Tasks', '✓', tasksOpen > 0 ? tasksOpen : 0, tasksSummary, peRenderTasks);
-  const recurringCard = peCollapsibleCard('recurring', 'Recurring & Maintenance', '🔁', recurringDueSoon > 0 ? recurringDueSoon : 0, recurringSummary, peRenderRecurring);
-  const captureCard = captureCount > 0 ? peCollapsibleCard('capture', 'Capture inbox', '⚡', captureCount, captureSummary, peRenderCapture) : '';
-  const peopleCard = peCollapsibleCard('people', 'People', '👥', peopleStale > 0 ? peopleStale : 0, peopleSummary, peRenderPeople);
-  const goalsCard = peCollapsibleCard('goals', 'Goals', '🎯', goalsActive > 0 ? goalsActive : 0, goalsSummary, peRenderGoals);
-  const ritualsCard = peCollapsibleCard('rituals', 'Rituals · gentle rhythms', '🌿', 0, ritualsSummary, peRenderRituals);
-  const vaultCard = peCollapsibleCard('vault', 'Vault', '🔒', 0, vaultSummary, peRenderVault);
-  const notesCard = peCollapsibleCard('notes', 'Notes', '📝', 0, notesSummary, peRenderNotes);
-  const journalCard = peCollapsibleCard('journal', 'Journal', '📔', 0, journalSummary, peRenderJournal);
+  // Render section content (wrapped in try/catch so one bad section doesn't kill the page)
+  const safe = (fn, label) => {
+    try { return fn(); }
+    catch (e) { console.error('Render error in ' + label, e); return `<div class="empty-state" style="padding: 18px;">${label} render error: ${escapeHtml(e.message)}</div>`; }
+  };
 
   container.innerHTML = `
     <div class="daily-quote-host" style="margin-bottom: 16px;"></div>
 
-    <!-- Header -->
-    <div class="card" style="margin-bottom: 12px; padding: 18px 20px; background: linear-gradient(135deg, #05112e, #1e3a8a); color: white; border: none;">
+    <!-- Header — navy gradient, mirrors brand -->
+    <div class="card" style="margin-bottom: 16px; padding: 16px 20px; background: linear-gradient(135deg, #05112e, #1e3a8a); color: white; border: none;">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
         <div>
           <div style="font-family: 'Poppins'; font-size: 22px; font-weight: 800; letter-spacing: -0.3px;">Personal</div>
           <div style="font-size: 12px; opacity: 0.85; margin-top: 2px;">Your life, organized.</div>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="peOpenCategoryManager()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">⚙ Categories</button>
-          <button onclick="peExportData()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">💾 Export</button>
+          <button onclick="peOpenCategoryManager()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.22); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">⚙ Categories</button>
+          <button onclick="peExportData()" style="background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.22); color: white; padding: 8px 14px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; backdrop-filter: blur(6px);">💾 Export</button>
         </div>
       </div>
     </div>
 
-    <!-- Quick capture -->
-    <div class="card" style="margin-bottom: 12px; padding: 12px 16px;">
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <span style="font-size: 16px;">⚡</span>
-        <input type="text" id="pe-capture-input" placeholder="Quick capture — type anything and Enter" onkeydown="if(event.key==='Enter') peQuickCapture()" style="flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;">
-        <button class="btn btn-orange" onclick="peQuickCapture()" style="padding: 10px 16px; font-weight: 700;">Save</button>
+    <!-- Today in Personal — full-width hero card, mirrors Focus Ladder pattern -->
+    ${peRenderTodayWidget()}
+
+    <!-- Quick Capture — navy bar mirroring AI Companion bar on Today -->
+    <div class="card" style="margin-top: 16px; background: var(--navy); border-color: var(--navy); color: white; padding: 14px 18px;">
+      <div style="display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center;">
+        <span style="background: var(--orange); width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 16px;">⚡</span>
+        <input type="text" id="pe-capture-input" placeholder="Quick capture — type anything and hit Enter" onkeydown="if(event.key==='Enter') peQuickCapture()" style="background: white; color: var(--navy); border: none; padding: 9px 14px; border-radius: 18px; font-family: inherit; font-size: 13px;">
+        <button class="btn btn-orange" onclick="peQuickCapture()" style="border-radius: 18px;">Save</button>
       </div>
     </div>
 
-    <!-- HERO: Today in Personal -->
-    ${peRenderTodayWidget()}
+    <!-- ROW: Tasks (left) | Recurring & Maintenance (right) -->
+    <div class="grid grid-2" style="margin-top: 16px;">
+      <div class="card" style="margin: 0; border-left: 4px solid var(--orange);">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">✓ Tasks ${pill(tasksOpen, 'var(--orange)')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">One-off personal tasks. Click a column header to sort. Drag the ⋮⋮ handle to reorder manually.</p>
+        ${safe(peRenderTasks, 'Tasks')}
+      </div>
+      <div class="card" style="margin: 0; border-left: 4px solid #d97706;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🔁 Recurring & Maintenance ${pill(recurringDueSoon, '#d97706')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Bills, subscriptions, water filter, oil change — anything that repeats with a real date. Mark done to advance the next date.</p>
+        ${safe(peRenderRecurring, 'Recurring')}
+      </div>
+    </div>
 
-    <!-- Collapsible sections -->
-    ${calendarCard}
-    ${tasksCard}
-    ${recurringCard}
-    ${captureCard}
-    ${peopleCard}
-    ${goalsCard}
-    ${ritualsCard}
-    ${vaultCard}
-    ${notesCard}
-    ${journalCard}
+    <!-- ROW: Calendar (left) | Goals (right) -->
+    <div class="grid grid-2" style="margin-top: 16px;">
+      <div class="card" style="margin: 0; border-left: 4px solid #0891b2;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📅 Calendar</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Month view. Color dots: tasks · recurring · birthdays · goal deadlines. Click a date with items to see them.</p>
+        ${safe(peRenderCalendar, 'Calendar')}
+      </div>
+      <div class="card" style="margin: 0; border-left: 4px solid var(--green);">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🎯 Goals ${pill(goalsActive, 'var(--green)')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">What you're working toward this year / quarter. Slide to update progress.</p>
+        ${safe(peRenderGoals, 'Goals')}
+      </div>
+    </div>
+
+    <!-- ROW: People (left) | Rituals (right) -->
+    <div class="grid grid-2" style="margin-top: 16px;">
+      <div class="card" style="margin: 0; border-left: 4px solid #c026d3;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">👥 People ${pill(peopleStale, '#c026d3')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Family, friends, key folks. Track birthdays, last contact, gift ideas. Stale at 60+ days.</p>
+        ${safe(peRenderPeople, 'People')}
+      </div>
+      <div class="card" style="margin: 0; border-left: 4px solid #16a34a;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🌿 Rituals — gentle rhythms ${pill(ritualsTotal, '#16a34a')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Recurring rhythms without hard due dates — gym, family dinner, reading. Streak tracks frequency.</p>
+        ${safe(peRenderRituals, 'Rituals')}
+      </div>
+    </div>
+
+    <!-- ROW: Vault (left) | Notes (right) -->
+    <div class="grid grid-2" style="margin-top: 16px;">
+      <div class="card" style="margin: 0; border-left: 4px solid #475569;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🔒 Vault ${pill(vaultTotal, '#475569')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Important files — passport, insurance, wifi, warranties. Drag in or click to upload. Searchable.</p>
+        ${safe(peRenderVault, 'Vault')}
+      </div>
+      <div class="card" style="margin: 0; border-left: 4px solid #78716c;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📝 Notes ${pill(notesTotal, '#78716c')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Free-form quick notes. Categorize and find later.</p>
+        ${safe(peRenderNotes, 'Notes')}
+      </div>
+    </div>
+
+    <!-- Journal — full width, mirrors live cards -->
+    <div class="card" style="margin-top: 16px; border-left: 4px solid #be123c;">
+      <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📔 Journal ${journalToday ? '<span class="pill" style="background: var(--green);">today done</span>' : '<span class="pill" style="background: var(--muted);">today empty</span>'}</h2>
+      <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Daily free-form. No prompts, no wizard — just a notebook.</p>
+      ${safe(peRenderJournal, 'Journal')}
+    </div>
+
+    <!-- Capture inbox — full width, only when has items, accented like GHL card on Today -->
+    ${captureCount > 0 ? `
+      <div class="card" style="margin-top: 16px; border-left: 4px solid #f97316;">
+        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">⚡ Capture inbox ${pill(captureCount, '#f97316')}</h2>
+        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Anything you saved via Quick Capture. Convert each to a Task, a Note, or delete.</p>
+        ${safe(peRenderCapture, 'Capture')}
+      </div>
+    ` : ''}
   `;
 }
 
