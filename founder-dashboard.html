@@ -6817,9 +6817,12 @@ function peDeleteCategory(id) {
   if (!cat) return;
   if (!confirm(`Delete "${cat.name}"? Items in this category will become uncategorized.`)) return;
   state.personalCategories = state.personalCategories.filter(c => c.id !== id);
-  ['personalTasks','personalNotes','personalVault','personalRituals','personalBills','personalGoals'].forEach(k => {
+  ['personalTasks','personalNotes','personalRecurring','personalGoals','personalVault','personalRituals','personalBills'].forEach(k => {
     (state[k] || []).forEach(item => { if (item.categoryId === id) item.categoryId = null; });
   });
+  // Clear the pending new-task category pick if it was this one
+  if (typeof _peNewTaskCatId !== 'undefined' && _peNewTaskCatId === id) _peNewTaskCatId = null;
+  if (state.personalUI && state.personalUI.tasksFilter === id) state.personalUI.tasksFilter = 'all';
   saveState();
   peRenderCategoryManagerBody();
   renderPersonal();
