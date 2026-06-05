@@ -1359,12 +1359,30 @@ function uploadProgress(done,total){
   ov.querySelector('.uplprog-txt').textContent='Uploading photos — '+done+' of '+total;
   ov.querySelector('.uplprog-bar>i').style.width=pct+'%';
 }
+/* content signature of an upload (SHA-256 of the raw bytes) used to skip EXACT duplicates.
+   Fails open: any problem returns null → the photo is kept, never wrongly dropped. */
+async function fileSig(file){
+  try{
+    if(file&&file.size!=null&&file.size<=25*1024*1024&&window.crypto&&crypto.subtle&&file.arrayBuffer){
+      const buf=await file.arrayBuffer();
+      const h=await crypto.subtle.digest('SHA-256',buf);
+      return Array.from(new Uint8Array(h)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+    }
+  }catch(e){}
+  try{ if(file&&file.name)return 'ns:'+file.name+'|'+(file.size||0); }catch(e){}
+  return null;
+}
 async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   const total=files.length; uploadProgress(0,total);
-  const pool=socPool(); let localVid=false, imgFailed=0, doneN=0;
+  const pool=socPool(); let localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
+  const startLen=pool.length;
+  const seen=new Set(); pool.forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
   for(const raw of files){
+    let _sig=null; try{ _sig=await fileSig(raw); }catch(e){}
+    if(_sig && seen.has(_sig)){ dupSkipped++; doneN++; uploadProgress(doneN,total); continue; } // exact duplicate → skip, keep the original
+    if(_sig) seen.add(_sig);
     const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
     try{
       if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
@@ -1381,13 +1399,15 @@ async function poolAddFiles(fileList,folder){
           const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
           if(geo){item.lat=geo.lat;item.lng=geo.lng;}
           if(folder)item.folder=folder;
+          if(_sig)item.sig=_sig;
           pool.push(item); VTHUMB[id]=dataUrl;
-        }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }catch(e2){} }
+        }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; pool.push(it); }catch(e2){} }
       } else { // video (or offline image) -> local
         const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
         const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
         const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
         it.folder = isVideo ? 'Videos' : (folder||'');
+        if(_sig)it.sig=_sig;
         pool.push(it);
       }
     }catch(e){ imgFailed++; }
@@ -1395,13 +1415,15 @@ async function poolAddFiles(fileList,folder){
     doneN++; uploadProgress(doneN,total);
     await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
   }
-  if(total)logActivity('added '+total+' item'+(total>1?'s':'')+' to content');
+  const addedN=pool.length-startLen;
+  if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
   uploadProgress(-1);
+  if(dupSkipped)setTimeout(function(){toast(addedN?('Skipped '+dupSkipped+' duplicate'+(dupSkipped>1?'s':'')+' already in your library'):('All '+dupSkipped+' already in your library — nothing new added'))},650);
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
-  return total;
+  return addedN;
 }
 /* Is this content safely on the shared backbone (so every device + the team can see it)?
    - pf_ id or cloud flag  → already a Firestore cloud copy
