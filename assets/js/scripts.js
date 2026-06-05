@@ -2127,8 +2127,8 @@ var TRADE_KB=[
   // ----- carpentry / structure -----
   {keys:['rot','rotted','rotten','dry rot','rebuild','re-build','framing','reframe','header','jamb'], fact:'We rebuilt the rotted framing before installing — the carpentry under the surface is what makes a window or door actually last.'},
   {keys:['carpentry','finish carpentry','custom built','custom-built'], fact:'Real carpentry, not a quick swap — built and fit to the opening so the finished work looks like it was always meant to be there.'},
-  {keys:['trim','casing','molding','moulding','returns','miters','mitered'], fact:'Finished with clean, tight trim and casing for a crisp, built-in look inside and out.'},
-  {keys:['sill','stool','apron','window trim','interior trim'], fact:'Finished the interior with clean trim — the stool (sill), apron, and casing — for a crisp, custom built-in look.'},
+  {keys:['trim','casing','molding','moulding','returns','miters','mitered'], topic:'trim', fact:'Finished with clean, tight trim and casing for a crisp, built-in look inside and out.'},
+  {keys:['sill','stool','apron','window trim','interior trim'], topic:'trim', fact:'Finished the interior with clean trim — the stool (sill), apron, and casing — for a crisp, custom built-in look.'},
   {keys:['j-channel','j channel','jchannel'], fact:'Trimmed the openings with J-channel so the siding tucks in clean and stays weather-tight around the windows and doors.'},
   {keys:['new construction','new-construction','nailing fin','nail fin','tear off','tear-off'], fact:'New-construction install (a nailing-fin unit set into open framing) is for new builds or full tear-offs — versus a replacement install, where we fit the new unit into your existing opening without tearing off siding or trim.'},
   // ----- doors -----
@@ -2173,13 +2173,63 @@ var TRADE_KB=[
   {keys:['noise','noisy','quiet','soundproof','stc'], fact:'Laminated or triple-pane glass knocks down street and neighbor noise for noticeably quieter rooms.'},
   {keys:['dp rating','design pressure','wind load','dp50'], fact:'A higher Design Pressure (DP) rating means it stands up to stronger wind and weather — important for exposed elevations.'},
   // ----- warranty -----
-  {keys:['warranty','lifetime warranty','transferable','guarantee'], fact:'Backed by a strong manufacturer warranty (often lifetime and transferable) plus our workmanship guarantee — covered for the long haul.'}
+  {keys:['warranty','lifetime warranty','transferable','guarantee'], fact:'Backed by a strong manufacturer warranty (often lifetime and transferable) plus our workmanship guarantee — covered for the long haul.'},
+  // ----- door materials -----
+  {keys:['fiberglass door','fiberglass entry'], topic:'doormaterial', fact:'A fiberglass entry door — it won’t rot, dent, or rust, it mimics real wood grain, and it insulates far better than steel or wood.'},
+  {keys:['steel door','steel entry'], topic:'doormaterial', fact:'A steel entry door — strong, secure, and budget-friendly, with an insulated core for year-round efficiency.'},
+  {keys:['solid wood door','mahogany door','wood entry door'], topic:'doormaterial', fact:'A solid wood entry door — timeless craftsmanship and curb appeal, hand-finished to suit the home.'},
+  // ----- door styles & features -----
+  {keys:['sidelight','sidelite'], topic:'doorglass', fact:'Added sidelights to flood the entry with natural light while keeping it secure.'},
+  {keys:['dutch door'], fact:'A Dutch door — open the top half for air and light while the bottom stays shut; charming and practical.'},
+  {keys:['double door','double entry'], fact:'A grand double-door entry that makes a real first impression and opens up the whole doorway.'},
+  {keys:['bi-fold','bifold','folding glass','multi-slide','multi slide','accordion door'], fact:'A folding/multi-slide glass wall that opens the entire room to the outdoors — patio living at its best.'},
+  {keys:['pocket door','barn door'], fact:'A space-saving sliding door — clean lines, no swing clearance needed.'},
+  {keys:['multi-point','multi point lock','multipoint'], topic:'doorlock', fact:'A multi-point lock secures the door at several points at once for top-tier security and a weather-tight seal.'},
+  {keys:['smart lock','keyless','keypad lock'], topic:'doorlock', fact:'A keyless smart lock for keypad or phone entry — convenient, and no more hide-a-key.'},
+  {keys:['decorative glass','leaded glass','wrought iron glass','glass insert'], topic:'doorglass', fact:'Decorative glass adds elegance and privacy to the door while still letting light through.'},
+  {keys:['internal blind','blinds between','built-in blind'], fact:'Built-in blinds sealed between the glass — nothing to dust, no cords, just a clean look.'},
+  {keys:['brickmould','brick mould','brickmold'], fact:'Fresh brickmould frames the opening cleanly and seals the unit tight to the wall.'},
+  // ----- more window styles -----
+  {keys:['tilt and turn','tilt-and-turn','tilt turn'], fact:'A tilt-and-turn window — tilt it in from the top to vent, or swing it fully open like a door; European engineering with an airtight seal.'},
+  {keys:['arch window','arched','round top','radius window','specialty shape','half round'], fact:'A custom arch/specialty-shape window built to the exact radius for a true architectural fit.'},
+  {keys:['transom window'], topic:'doorglass', fact:'A transom window above the opening adds light and a finished, upscale look.'},
+  {keys:['storm window'], fact:'Exterior storm windows add an insulating air buffer and shield the primary windows from the weather.'},
+  // ----- more glass & ratings -----
+  {keys:['visible transmittance',' vt ','daylight'], topic:'glassperf', fact:'High visible transmittance brings in bright, natural daylight without the unwanted heat.'},
+  {keys:['self-clean','self clean','easy-clean glass'], fact:'A self-cleaning glass coating uses sun and rain to break down and rinse away grime.'},
+  {keys:['condensation resistance','condensation-resistance'], fact:'A high condensation-resistance rating means less fog and frost on the glass when it’s cold out.'},
+  // ----- anatomy / parts -----
+  {keys:[' sash '], fact:'Smooth, tight-operating sashes — the moving panels — are what make a window feel and seal like new.'},
+  {keys:['mullion','mulled'], fact:'Windows mulled together into one clean unit for a bigger view with fewer sightlines.'},
+  {keys:['jamb extension'], fact:'Jamb extensions finish the wall depth cleanly so the trim sits flush and tight.'},
+  {keys:['weep hole'], fact:'Weep holes at the sill let any water drain right out instead of pooling — a small detail that prevents big problems.'},
+  {keys:['balance','tilt latch'], fact:'New balances and latches mean the sashes glide up, stay put, and tilt in easily for years.'},
+  // ----- materials / finishes -----
+  {keys:['black window','black frame','black exterior','matte black'], topic:'finish', fact:'Bold black-framed windows for a modern, high-contrast look that’s seriously on trend.'},
+  {keys:['two tone','two-tone','interior color','exterior color','custom color'], topic:'finish', fact:'Custom interior and exterior colors so the windows match the home inside and out.'},
+  {keys:['woodgrain','wood grain'], topic:'finish', fact:'A woodgrain finish gives the warm look of stained wood with zero upkeep.'},
+  // ----- process / business -----
+  {keys:['custom made','made to order','custom size','custom-made','built to order','made to measure'], fact:'Every unit is custom-built to your exact opening — a precise factory fit, not a force-it-in compromise.'},
+  {keys:['certified install','factory trained','certified installer','professional install','in-house crew'], fact:'Installed by our own trained crews — never subbed out — so the workmanship and the warranty both hold up.'},
+  {keys:['financing','monthly payment','0% '], fact:'Flexible financing makes the upgrade affordable now, while you start saving on energy right away.'},
+  {keys:['permit','code compliant','code-compliant','up to code','inspection'], fact:'Permitted and installed to code — done right and inspection-ready.'},
+  // ----- problems / why replace / value -----
+  {keys:['painted shut','painted-shut','stuck window','hard to open','won’t open','wont open','wont budge'], fact:'No more painted-shut, stuck windows — these open with one finger and lock up tight.'},
+  {keys:['single pane','single-pane','single glazed'], fact:'Old single-pane windows bleed heat all winter — modern insulated units pay you back in comfort and lower bills.'},
+  {keys:['lead paint','lead-safe','rrp'], fact:'On older homes we follow lead-safe (RRP) practices to keep your family safe while we work.'},
+  {keys:['curb appeal','home value','resale','roi','return on investment','property value'], fact:'New windows and doors are one of the highest-ROI upgrades there is — instant curb appeal and a boost at resale.'}
 ];
 function tradeFacts(text){
   var n=' '+(text||'').toLowerCase()+' ';
-  var out=[];
-  TRADE_KB.forEach(function(t){ if(out.length<2 && t.keys.some(function(k){return n.indexOf(k)>=0;}))out.push(t.fact); });
-  return out; // at most 2, so the caption stays tight
+  var out=[], seen={};
+  for(var i=0;i<TRADE_KB.length && out.length<2;i++){
+    var t=TRADE_KB[i];
+    if(!t.keys.some(function(k){return n.indexOf(k)>=0;}))continue;
+    var top=t.topic||t.fact;       // never let two facts on the SAME topic both land in one caption
+    if(seen[top])continue;
+    seen[top]=1; out.push(t.fact);
+  }
+  return out; // at most 2, so the caption stays tight and reads cleanly
 }
 /* keep the user's 1–3 sentences, polish them, and weave in real product + trade facts + town + a CTA.
    This is the "type a little, get a polished specific caption" flow. Only adds facts for things mentioned. */
