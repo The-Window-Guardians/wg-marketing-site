@@ -1584,6 +1584,9 @@ function renderSavedJobs(container){
     const its=jobItems(j);
     const before=its.filter(x=>x.role==='before').length, after=its.filter(x=>x.role==='after').length, other=its.length-before-after;
     const counts=[];if(before)counts.push(before+' before');if(after)counts.push(after+' after');if(other)counts.push(other+' photo'+(other>1?'s':''));
+    const jobSel=new Set();
+    const post=el('button','btn-set primary');
+    const updatePostBtn=()=>{post.textContent=jobSel.size?('Make this post from '+jobSel.size+' selected'):('Make this post'+(its.length>1?(' (all '+its.length+')'):''));};
     const d=el('details','jobgroup savedjob');
     d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${its.length} photo${its.length>1?'s':''}`));
     const body=el('div','savedbody');
@@ -1602,6 +1605,9 @@ function renderSavedJobs(container){
       pill.title='Tap to set Before / After';
       pill.onclick=(e)=>{e.stopPropagation();m.role=(!m.role)?'before':m.role==='before'?'after':'';pill.className='rolepill '+(m.role||'none');pill.textContent=m.role==='before'?'BEFORE':m.role==='after'?'AFTER':'＋ tag';saveBaJob(j);};
       cell.appendChild(pill);
+      const ck=el('span','poolck','✓'); // tick to pick just some of the job's photos for a post
+      ck.onclick=(e)=>{e.stopPropagation();if(jobSel.has(m.id))jobSel.delete(m.id);else jobSel.add(m.id);cell.classList.toggle('sel');updatePostBtn();};
+      cell.appendChild(ck);
       if(typeof isOwner==='function'&&isOwner()){
         const dx=el('button','celldel','🗑');dx.title='Delete this photo';
         dx.onclick=async(e)=>{e.stopPropagation();if(await uiConfirm('Delete this photo? You’ll have a few seconds to undo.',{title:'Delete photo?',confirmText:'Delete',danger:true}))deleteJobPhoto(j.id,m.id);};
@@ -1611,10 +1617,11 @@ function renderSavedJobs(container){
       grid.appendChild(cell);
     });
     body.appendChild(grid);
-    const hint=el('div','muted','Tap a photo to preview · tap its pill to set Before / After');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
+    const hint=el('div','muted','Tick ✓ to pick just some photos (none ticked = all) · tap a photo to preview · tap its pill to set Before / After');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
     body.appendChild(hint);
     const foot=el('div','rcactions');
-    const post=el('button','btn-set primary','Make this post');post.onclick=()=>{post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=its.map(x=>({id:x.id,name:x.name,role:x.role||''}));p.type=(before||after)?'beforeafter':(its.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
+    updatePostBtn();
+    post.onclick=()=>{const chosen=jobSel.size?its.filter(x=>jobSel.has(x.id)):its;if(!chosen.length)return;post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=chosen.map(x=>({id:x.id,name:x.name,role:x.role||''}));const cb=chosen.filter(x=>x.role==='before').length,ca=chosen.filter(x=>x.role==='after').length;p.type=(cb||ca)?'beforeafter':(chosen.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
     const del=el('button','btn-set danger','Delete');del.onclick=async()=>{if(await uiConfirm('This removes the saved Before/After job. The photos stay in your content.',{title:'Delete this job?',confirmText:'Delete',danger:true})){delBaJob(j.id);render();toast('Job deleted');}};
     foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
     d.appendChild(body);
