@@ -1393,7 +1393,7 @@ async function poolAddFiles(fileList,folder){
             const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
             const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
-            await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+            await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 45000, 'upload'); // stalled cloud write → fall to local save below
             const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
             if(geo){item.lat=geo.lat;item.lng=geo.lng;}
             if(folder)item.folder=folder;
@@ -2244,17 +2244,22 @@ function canEncodeWebp(){
 /* encode a photo to a web-ready dataURL. Tries the browser's NATIVE decoder first (iOS Safari
    reads HEIC directly = one fast pass); only if that fails (e.g. desktop Chrome can't open HEIC)
    do we fall back to the slow JavaScript HEIC converter. */
+/* race any promise against a timeout so a stalled step can never hang the batch forever */
+function pTimeout(p,ms,label){ return Promise.race([ p, new Promise(function(_,rej){ setTimeout(function(){ rej(new Error((label||'step')+' timeout')); }, ms); }) ]); }
 async function encodePhoto(raw){
-  try{ return await imgToWebp(raw); }
-  catch(e){ const norm=await normalizeImage(raw); return await imgToWebp(norm); }
+  try{ return await imgToWebp(raw); }                                  // native decode (fast on iOS)
+  catch(e){ const norm=await normalizeImage(raw); return await imgToWebp(norm); } // fallback: JS HEIC converter
 }
 function imgToWebp(file){
   return new Promise(function(resolve,reject){
-    var url=URL.createObjectURL(file), img=new Image();
+    var url=URL.createObjectURL(file), img=new Image(), settled=false;
+    function fail(err){ if(settled)return; settled=true; clearTimeout(tmr); try{URL.revokeObjectURL(url)}catch(e){} reject(err); }
+    function ok(data){ if(settled)return; settled=true; clearTimeout(tmr); try{URL.revokeObjectURL(url)}catch(e){} resolve(data); }
+    var tmr=setTimeout(function(){ fail(new Error('decode timeout')); }, 9000); // a photo that never loads can't freeze the batch
     img.onload=function(){
       try{
         var w=img.naturalWidth,h=img.naturalHeight,M=1600;
-        if(!w||!h){URL.revokeObjectURL(url);return reject(new Error('empty image'));}
+        if(!w||!h){return fail(new Error('empty image'));}
         if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
         var mime=canEncodeWebp()?'image/webp':'image/jpeg';
         var enc=function(cw,ch,q){var c=document.createElement('canvas');c.width=cw;c.height=ch;var ctx=c.getContext('2d');
@@ -2264,12 +2269,11 @@ function imgToWebp(file){
         while(data.length>950000 && q>0.4){ q-=0.12; data=enc(w,h,q); }          // 1) drop quality
         var s=1;
         while(data.length>950000 && s>0.35){ s-=0.2; data=enc(Math.round(w*s),Math.round(h*s),0.7); } // 2) shrink dimensions
-        URL.revokeObjectURL(url);
-        if(data.length>1010000) return reject(new Error('still too large for cloud'));
-        resolve(data);
-      }catch(e){URL.revokeObjectURL(url);reject(e);}
+        if(data.length>1010000) return fail(new Error('still too large for cloud'));
+        ok(data);
+      }catch(e){ fail(e); }
     };
-    img.onerror=function(){URL.revokeObjectURL(url);reject(new Error('decode failed'));};
+    img.onerror=function(){ fail(new Error('decode failed')); };
     img.src=url;
   });
 }
