@@ -1359,17 +1359,10 @@ function uploadProgress(done,total){
   ov.querySelector('.uplprog-txt').textContent='Uploading photos — '+done+' of '+total;
   ov.querySelector('.uplprog-bar>i').style.width=pct+'%';
 }
-/* content signature of an upload (SHA-256 of the raw bytes) used to skip EXACT duplicates.
-   Fails open: any problem returns null → the photo is kept, never wrongly dropped. */
-async function fileSig(file){
-  try{
-    if(file&&file.size!=null&&file.size<=25*1024*1024&&window.crypto&&crypto.subtle&&file.arrayBuffer){
-      const buf=await file.arrayBuffer();
-      const h=await crypto.subtle.digest('SHA-256',buf);
-      return Array.from(new Uint8Array(h)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-    }
-  }catch(e){}
-  try{ if(file&&file.name)return 'ns:'+file.name+'|'+(file.size||0); }catch(e){}
+/* instant signature of an upload (name + byte size + modified time) used to skip EXACT duplicates.
+   No file read — runs in microseconds. Fails open: null → the photo is kept, never wrongly dropped. */
+function fileSig(file){
+  try{ if(file&&file.name!=null) return 'ns:'+file.name+'|'+(file.size||0)+'|'+(file.lastModified||0); }catch(e){}
   return null;
 }
 async function poolAddFiles(fileList,folder){
@@ -1379,42 +1372,50 @@ async function poolAddFiles(fileList,folder){
   const pool=socPool(); let localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
   const startLen=pool.length;
   const seen=new Set(); pool.forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
-  for(const raw of files){
-    let _sig=null; try{ _sig=await fileSig(raw); }catch(e){}
-    if(_sig && seen.has(_sig)){ dupSkipped++; doneN++; uploadProgress(doneN,total); continue; } // exact duplicate → skip, keep the original
-    if(_sig) seen.add(_sig);
-    const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
-    try{
-      if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
-      if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
-        try{
-          const geo=await readGps(raw);
-          const norm=await normalizeImage(raw);
-          const dataUrl=await imgToWebp(norm);
-          const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
-          const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
-          const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-          const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
-          await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
-          const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
-          if(geo){item.lat=geo.lat;item.lng=geo.lng;}
-          if(folder)item.folder=folder;
-          if(_sig)item.sig=_sig;
-          pool.push(item); VTHUMB[id]=dataUrl;
-        }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; pool.push(it); }catch(e2){} }
-      } else { // video (or offline image) -> local
-        const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
-        const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
-        const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
-        it.folder = isVideo ? 'Videos' : (folder||'');
-        if(_sig)it.sig=_sig;
-        pool.push(it);
-      }
-    }catch(e){ imgFailed++; }
-    ST.pool=pool; try{Store.save(S);}catch(e){}    // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done
-    doneN++; uploadProgress(doneN,total);
-    await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
+  let next=0;
+  // each worker pulls the next photo and runs the full pipeline; up to 3 run at once so
+  // a photo can upload while the next one encodes. Each photo still saves the instant it lands.
+  async function uploadWorker(){
+    while(true){
+      const idx=next++; if(idx>=files.length)break;
+      const raw=files[idx];
+      const _sig=fileSig(raw); // sync — claimed before any await, so concurrent workers can't double-add a dup
+      if(_sig && seen.has(_sig)){ dupSkipped++; doneN++; uploadProgress(doneN,total); continue; }
+      if(_sig) seen.add(_sig);
+      const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
+      try{
+        if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
+        if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
+          try{
+            const geo=await readGps(raw);
+            const dataUrl=await encodePhoto(raw); // native decode first (iOS does HEIC), JS lib only as fallback
+            const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
+            const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
+            const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+            const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
+            await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+            const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
+            if(geo){item.lat=geo.lat;item.lng=geo.lng;}
+            if(folder)item.folder=folder;
+            if(_sig)item.sig=_sig;
+            pool.push(item); VTHUMB[id]=dataUrl;
+          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; pool.push(it); }catch(e2){} }
+        } else { // video (or offline image) -> local
+          const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
+          const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
+          const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
+          it.folder = isVideo ? 'Videos' : (folder||'');
+          if(_sig)it.sig=_sig;
+          pool.push(it);
+        }
+      }catch(e){ imgFailed++; }
+      ST.pool=pool; try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done
+      doneN++; uploadProgress(doneN,total);
+      await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
+    }
   }
+  const CONC=Math.min(3, files.length); // 3 at a time — overlaps upload+encode without exhausting phone memory
+  await Promise.all(Array.from({length:CONC}, function(){ return uploadWorker(); }));
   const addedN=pool.length-startLen;
   if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
@@ -2240,19 +2241,26 @@ function canEncodeWebp(){
 /* Shrink + compress an image to a small dataURL that fits Firestore (under ~1MB).
    Returns a webp dataURL where supported, otherwise jpeg. Despite the name it is the
    single "make a shareable image" path used by both the pool and the SEO handoff. */
+/* encode a photo to a web-ready dataURL. Tries the browser's NATIVE decoder first (iOS Safari
+   reads HEIC directly = one fast pass); only if that fails (e.g. desktop Chrome can't open HEIC)
+   do we fall back to the slow JavaScript HEIC converter. */
+async function encodePhoto(raw){
+  try{ return await imgToWebp(raw); }
+  catch(e){ const norm=await normalizeImage(raw); return await imgToWebp(norm); }
+}
 function imgToWebp(file){
   return new Promise(function(resolve,reject){
     var url=URL.createObjectURL(file), img=new Image();
     img.onload=function(){
       try{
-        var w=img.naturalWidth,h=img.naturalHeight,M=1920;
+        var w=img.naturalWidth,h=img.naturalHeight,M=1600;
         if(!w||!h){URL.revokeObjectURL(url);return reject(new Error('empty image'));}
         if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
         var mime=canEncodeWebp()?'image/webp':'image/jpeg';
         var enc=function(cw,ch,q){var c=document.createElement('canvas');c.width=cw;c.height=ch;var ctx=c.getContext('2d');
           if(mime==='image/jpeg'){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,cw,ch);} // jpeg has no alpha — white, not black
           ctx.drawImage(img,0,0,cw,ch);return c.toDataURL(mime,q);};
-        var q=0.82, data=enc(w,h,q);
+        var q=0.8, data=enc(w,h,q);
         while(data.length>950000 && q>0.4){ q-=0.12; data=enc(w,h,q); }          // 1) drop quality
         var s=1;
         while(data.length>950000 && s>0.35){ s-=0.2; data=enc(Math.round(w*s),Math.round(h*s),0.7); } // 2) shrink dimensions
