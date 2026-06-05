@@ -508,6 +508,10 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .jobgroup>summary::before{content:'▸';margin-right:8px;color:var(--orange);font-weight:800}
 .jobgroup[open]>summary::before{content:'▾'}
 .jobgroup .poolgrid{padding:0 13px 13px}
+.jobgroup .baclust{display:block;width:calc(100% - 26px);margin:0 13px 13px;font-size:12.5px;padding:8px 10px}
+.jobgroup.needsort{border:1px dashed #d8a23a;background:#fff8ec}
+.jobgroup.needsort>summary{color:#8a5a00}
+.jobgroup.needsort>summary::before{color:#d8a23a}
 .savedbody{padding:0 13px 13px}
 /* before/after builder modal */
 .bagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:4px}

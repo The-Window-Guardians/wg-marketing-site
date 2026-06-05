@@ -1502,10 +1502,42 @@ function deleteJobPhoto(jobId,mediaId){
     function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap)socPool().push(poolSnap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
     function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} });
 }
+/* auto-guess before/after by upload order: earliest half = before, later half = after.
+   A single photo stays untagged. Always editable via the pills. */
+function autoGuessRoles(items){
+  const sorted=items.slice().sort((a,b)=>(a.addedAt||0)-(b.addedAt||0));
+  const roles={}; const n=sorted.length;
+  if(n<2){ sorted.forEach(m=>roles[m.id]=''); return roles; }
+  const half=Math.ceil(n/2);
+  sorted.forEach((m,i)=>roles[m.id]=i<half?'before':'after');
+  return roles;
+}
+/* name a job by the photos' town if we know it, else the next "Job N" */
+function jobAutoName(items){ const t=(items.find(m=>m&&m.town)||{}).town; return t||('Job '+nextBaNum()); }
+/* create ONE before/after job from a set of photos (auto-named, auto-guessed roles) */
+function createBaJobAuto(items){
+  if(!items||!items.length)return;
+  const roles=autoGuessRoles(items);
+  const out=items.slice().sort((a,b)=>(a.addedAt||0)-(b.addedAt||0)).map(m=>({id:m.id,name:m.name,role:roles[m.id]||''}));
+  poolSetStatus(out.map(x=>x.id),'used');
+  saveBaJob({id:'ba_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),name:jobAutoName(items),items:out,createdAt:Date.now()});
+}
+/* turn a selection into before/after job(s) — SPLIT BY GPS LOCATION so a batch across
+   2 addresses becomes 2 jobs. One location (or all no-GPS) → open the builder to review. */
+function startBaFromSelection(sel){
+  if(!sel||sel.length<2){toast('Tick at least 2 — a before and an after.');return;}
+  const withLoc=sel.filter(hasLoc), noLoc=sel.filter(m=>!hasLoc(m));
+  const clusters=clusterByLocation(withLoc,60);
+  const groups=clusters.map(c=>c.items); if(noLoc.length)groups.push(noLoc);
+  if(groups.length<=1){ openBaBuilder(sel); return; }           // single job → review/name in the builder
+  let made=0; groups.forEach(g=>{ if(g.length){ createBaJobAuto(g); made++; } }); // multi-location → auto-split
+  POOL_SEL.clear(); rerenderCal();
+  toast('Split into '+made+' jobs by location — open any to rename or fix labels');
+}
 /* builder: group photos into a job; tagging before/after is OPTIONAL */
 function openBaBuilder(items){
   if(!items||!items.length)return;
-  const role={}; items.forEach(m=>role[m.id]=''); // default: untagged
+  const role=autoGuessRoles(items); // pre-fill a best-guess; fully editable below
   const lbl=r=>r==='before'?'BEFORE':r==='after'?'AFTER':'＋ tag';
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';
@@ -1516,9 +1548,10 @@ function openBaBuilder(items){
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
   const num=nextBaNum();
-  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-numbered; edit it if you want (e.g. an address)</span></label>';
-  const ni=el('input','cmp-in');ni.value='Job '+num;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
-  const hint=el('div','cmp-field');hint.innerHTML='<label>Photos in this job <span class="muted" style="font-weight:600">— optional: tap a photo to flag it Before or After (Ruth will see the labels when she posts)</span></label>';
+  const autoName=jobAutoName(items);
+  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-named; edit it if you want (e.g. an address)</span></label>';
+  const ni=el('input','cmp-in');ni.value=autoName;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
+  const hint=el('div','cmp-field');hint.innerHTML='<label>Photos in this job <span class="muted" style="font-weight:600">— we guessed Before/After by order; tap any photo to fix (Ruth sees the labels when she posts)</span></label>';
   const grid=el('div','bagrid');
   items.forEach(m=>{
     const cell=el('div','bacell');
@@ -4966,10 +4999,10 @@ function socLibrary(v){
     const w=el('span');w.style.cssText='display:inline-flex';w.appendChild(b);w.appendChild(i);return w;
   };
   const btnrow=el('div');btnrow.style.cssText='display:flex;flex-wrap:wrap;align-items:center';
-  btnrow.appendChild(mkUp('📷 Upload photos','image/*,.heic,.heif','',null));
-  btnrow.appendChild(mkUp('🔀 Upload before/after','image/*,.heic,.heif','Before & After',()=>{POOL_SEL.clear();POOL_SRC='Before & After';}));
+  btnrow.appendChild(mkUp('📷 Add photos','image/*,.heic,.heif','',null));
   btnrow.appendChild(mkUp('🎬 Upload video','video/*,.mov','',null));
   add.appendChild(btnrow);
+  add.appendChild(el('div','muted','Everything lands in Your content and groups by job location. Mark before/after right inside a job — no need to choose up front.')).style.cssText='font-size:11.5px;margin-top:8px';
   // optional: Google Drive bulk import (tucked small)
   if(ST.driveConnected){
     add.appendChild(el('div','muted',ST.driveNeedsReconnect?'⚠️ Google sign-in expired — tap Sync to reconnect.':'Optional — bulk-import from your Google Drive folder:')).style.cssText='font-size:11.5px;margin-top:16px';
@@ -5072,13 +5105,15 @@ function socLibrary(v){
     const clusters=clusterByLocation(located,60);
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup');if(i<2)d.open=true;
-      d.appendChild(el('summary','jobsum',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      const nm=(c.items.find(m=>m&&m.town)||{}).town;
+      d.appendChild(el('summary','jobsum',`📍 ${nm?esc(nm):'Job '+(i+1)} · ${c.items.length} photo${c.items.length>1?'s':''}`));
       const g=el('div','poolgrid');c.items.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
+      if(c.items.length>=2){ const mk=el('button','btn-set baclust','🔀 Mark this location before/after'); mk.onclick=()=>openBaBuilder(c.items.slice()); d.appendChild(mk); }
       poolCard.appendChild(d);
     });
     if(noloc.length){
-      const d=el('details','jobgroup');
-      d.appendChild(el('summary','jobsum',`📍 No location · ${noloc.length} — tap “Add to a job” to file them`));
+      const d=el('details','jobgroup needsort');d.open=true;
+      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tap “Add to a job” to file each.`));
       const g=el('div','poolgrid');
       noloc.forEach(m=>{const cell=buildCell(m);const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);g.appendChild(cell);});
       d.appendChild(g);
@@ -5102,7 +5137,7 @@ function socLibrary(v){
   };
   poolCard.appendChild(makeBtn);
   const baBtn=el('button','btn-set','🔀 Make Before/After job');baBtn.style.cssText='margin:12px 0 0 8px';
-  baBtn.onclick=()=>{const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(sel.length<2){toast('Tick at least 2 — a before and an after.');return;}openBaBuilder(sel);};
+  baBtn.onclick=()=>{const sel=allAvail.filter(m=>POOL_SEL.has(m.id));startBaFromSelection(sel);};
   poolCard.appendChild(baBtn);
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
@@ -5469,11 +5504,9 @@ function viewUploader(v){
   v.appendChild(el('div','page-head',`<h2>Quick Upload</h2><p>Snap → upload → done. Goes straight to the team.</p>`));
 
   const card=el('div','card pad');
-  const photo=el('button','upbtn big','<span class="upic">📷</span><span class="uptx"><b>Add Photos</b><small>Everyday job photos</small></span>');
+  const photo=el('button','upbtn big','<span class="upic">📷</span><span class="uptx"><b>Add Photos</b><small>Before, after, or finished — all of it. Groups by job automatically.</small></span>');
   photo.onclick=()=>uploaderPick('image/*,.heic,.heif','',false);
-  const ba=el('button','upbtn','<span class="upic">🔀</span><span class="uptx"><b>Before / After</b><small>Pick the pair, then tap to label</small></span>');
-  ba.onclick=()=>uploaderPick('image/*,.heic,.heif','Before & After',true);
-  card.appendChild(photo);card.appendChild(ba);
+  card.appendChild(photo);
   if(UPLOAD_VIDEO_READY){
     const vid=el('button','upbtn','<span class="upic">🎬</span><span class="uptx"><b>Video</b><small>Job videos</small></span>');
     vid.onclick=()=>uploaderPick('video/*,.mov','Videos',false);
