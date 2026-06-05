@@ -793,6 +793,9 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 
 /* ---- Simple phone uploader (upload.html) ---- */
 .upbtn{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:#fff;border:2px solid var(--line);border-radius:16px;padding:18px;margin-top:10px;cursor:pointer;transition:.15s}
+.upbtn.big{border-color:var(--orange);background:var(--orange-soft,#fde7da);padding:24px 18px}
+.upbtn.big .upic{font-size:34px}
+.upbtn.big .uptx b{font-size:18px}
 .upbtn:first-of-type{margin-top:0}
 .upbtn:active{transform:scale(.99)}
 .upbtn:hover{border-color:var(--orange);background:var(--orange-soft)}

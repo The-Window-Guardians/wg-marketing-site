@@ -5373,17 +5373,19 @@ function viewUploader(v){
     c.appendChild(a); v.appendChild(c); return;
   }
 
-  v.appendChild(el('div','page-head',`<h2>Quick Upload</h2><p>Snap → upload → done. Photos go straight to the whole team. Open the full dashboard when you’re ready to make posts.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Quick Upload</h2><p>Snap → upload → done. Goes straight to the team.</p>`));
 
   const card=el('div','card pad');
-  const photo=el('button','upbtn','<span class="upic">📷</span><span class="uptx"><b>Photos</b><small>Everyday job photos</small></span>');
+  const photo=el('button','upbtn big','<span class="upic">📷</span><span class="uptx"><b>Add Photos</b><small>Everyday job photos</small></span>');
   photo.onclick=()=>uploaderPick('image/*,.heic,.heif','',false);
   const ba=el('button','upbtn','<span class="upic">🔀</span><span class="uptx"><b>Before / After</b><small>Pick the pair, then tap to label</small></span>');
   ba.onclick=()=>uploaderPick('image/*,.heic,.heif','Before & After',true);
-  const vlabel = UPLOAD_VIDEO_READY ? 'Job videos' : 'Turns on after the storage step';
-  const vid=el('button','upbtn'+(UPLOAD_VIDEO_READY?'':' locked'),'<span class="upic">🎬</span><span class="uptx"><b>Video</b><small>'+vlabel+'</small></span>');
-  vid.onclick=()=>{ if(UPLOAD_VIDEO_READY)uploaderPick('video/*,.mov','Videos',false); else toast('🎬 Video turns on after the quick Firebase storage step — photos are ready to use right now.'); };
-  card.appendChild(photo);card.appendChild(ba);card.appendChild(vid);
+  card.appendChild(photo);card.appendChild(ba);
+  if(UPLOAD_VIDEO_READY){
+    const vid=el('button','upbtn','<span class="upic">🎬</span><span class="uptx"><b>Video</b><small>Job videos</small></span>');
+    vid.onclick=()=>uploaderPick('video/*,.mov','Videos',false);
+    card.appendChild(vid);
+  }
   v.appendChild(card);
 
   // "Just added" strip — ONLY this session's uploads, so it's honest reassurance (not old library content)
