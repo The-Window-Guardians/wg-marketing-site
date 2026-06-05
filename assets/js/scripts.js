@@ -2122,7 +2122,7 @@ var TRADE_KB=[
   {keys:['full frame','full-frame','to the studs','rough opening'], fact:'This was a full-frame replacement — we took it back to the rough opening to check for hidden rot and seal it properly, not just drop a unit into the old frame.'},
   {keys:['insert','pocket window','pocket replacement','retrofit'], fact:'An insert (pocket) replacement — the existing frame was solid, so we fit the new window precisely into it and sealed it airtight.'},
   {keys:['flash','flashing','flashed','water seal','weatherproof','weather seal'], fact:'Properly flashed and sealed so water stays out — the detail that decides whether an install lasts 5 years or 30.'},
-  {keys:['foam','spray foam','energy','draft','drafty','efficien','air seal','air-seal'], fact:'Foamed and sealed every gap for a tighter, quieter, more energy-efficient home — lower bills, no more drafts.'},
+  {keys:['foam','spray foam','draft','drafty','caulk','air seal','air-seal'], fact:'Foamed and sealed every gap for a tighter, quieter, more energy-efficient home — lower bills, no more drafts.'},
   {keys:['level','plumb','square','shim','shimmed'], fact:'Set level, plumb, and square and shimmed solid — so it opens smooth and seals tight for the life of the home.'},
   // ----- carpentry / structure -----
   {keys:['rot','rotted','rotten','dry rot','rebuild','re-build','framing','reframe','header','jamb'], fact:'We rebuilt the rotted framing before installing — the carpentry under the surface is what makes a window or door actually last.'},
@@ -2139,7 +2139,41 @@ var TRADE_KB=[
   // ----- general remodel -----
   {keys:['remodel','renovation','renovate','transformation','curb appeal','facelift','exterior makeover'], fact:'A full exterior upgrade that boosts curb appeal and value — the kind of change you notice from the street.'},
   {keys:['siding','hardie','james hardie','clapboard'], fact:'New siding for a tight, protected, great-looking exterior built to handle Bucks County weather.'},
-  {keys:['fascia','soffit','gutter'], fact:'Cleaned up the fascia and soffit for a finished, weather-tight roofline.'}
+  {keys:['fascia','soffit','gutter'], fact:'Cleaned up the fascia and soffit for a finished, weather-tight roofline.'},
+  // ----- window operating styles -----
+  {keys:['double hung','double-hung'], fact:'Double-hung windows — both sashes open and tilt in, so they’re easy to clean and great for top-and-bottom airflow.'},
+  {keys:['single hung','single-hung'], fact:'Single-hung windows — the bottom sash operates while the top stays fixed; a clean, budget-smart classic.'},
+  {keys:['casement'], fact:'Casement windows crank fully open for maximum airflow and clamp tight to the frame when shut — one of the most energy-efficient styles.'},
+  {keys:['awning'], fact:'Awning windows hinge at the top and crank outward, so you can leave them open for fresh air even in the rain.'},
+  {keys:['slider','sliding window','glider window'], fact:'Slider windows glide side-to-side on smooth tracks — simple, durable, and perfect for wide openings.'},
+  {keys:['picture window','fixed window','fixed pane'], fact:'A fixed picture window — no sash, just maximum glass, a big clean view, and a tight seal.'},
+  {keys:['bay window','bow window','bay & bow','bay and bow'], fact:'A bay/bow window projects outward to add light, space, and a built-in ledge — a true architectural upgrade.'},
+  {keys:['garden window'], fact:'A garden window bumps out like a mini greenhouse — perfect for herbs and extra light over the sink.'},
+  {keys:['hopper'], fact:'A hopper window hinges at the bottom and tilts inward — a solid choice for basements and baths.'},
+  {keys:['egress'], fact:'An egress window meets code for a safe exit and finally lets real daylight into the basement.'},
+  // ----- frame materials -----
+  {keys:['vinyl'], fact:'Vinyl frames never need painting, shrug off moisture, and insulate well — the low-maintenance workhorse of replacement windows.'},
+  {keys:['fiberglass frame','fiberglass window'], fact:'Fiberglass frames are exceptionally strong and stable — they barely expand or contract, so the seals stay tight for decades.'},
+  {keys:['wood window','wood-clad','wood clad','clad-wood','clad wood'], fact:'Clad-wood windows give you real wood warmth inside with a tough, low-maintenance exterior shell.'},
+  {keys:['aluminum window','aluminum frame'], fact:'Aluminum frames are slim and strong for big openings, paired with a thermal break to keep them efficient.'},
+  {keys:['composite frame','composite window','fibrex'], fact:'Composite frames blend fiberglass strength with the look of wood — stable, efficient, and low-maintenance.'},
+  // ----- glass packages & ratings -----
+  {keys:['laminated','impact glass','impact-resistant','impact resistant','hurricane glass'], fact:'Laminated/impact glass has a tough inner layer that holds together if it’s struck — extra security and a big drop in outside noise.'},
+  {keys:['obscure','frosted','privacy glass','tinted glass'], fact:'Obscure/privacy glass lets the light in while keeping the view out — ideal for baths and front entries.'},
+  {keys:['spacer','warm edge','warm-edge','super spacer'], fact:'A warm-edge spacer between the panes cuts condensation and edge heat-loss for a more efficient, longer-lasting seal.'},
+  {keys:['u-factor','u factor','shgc','nfrc'], fact:'The NFRC label tells the story — a lower U-factor means better insulation, and the SHGC shows how much solar heat it lets in; we match the glass to your exposure.'},
+  {keys:['energy star','energy-star','energystar'], fact:'ENERGY STAR–certified for this climate zone — independently rated to cut heating and cooling costs.'},
+  // ----- hardware & extras -----
+  {keys:['tilt in','tilt-in','tilt sash'], fact:'Tilt-in sashes let you clean the outside glass from inside — no ladder needed.'},
+  {keys:['screen','screens'], fact:'Fresh screens keep the bugs out and the breeze in.'},
+  {keys:['cam lock','sash lock','locks'], fact:'Solid cam locks pull the sash tight to the frame — better security and a tighter seal.'},
+  // ----- common problems / why replace -----
+  {keys:['fog','foggy','cloudy glass','seal failure','failed seal','moisture between','condensation between'], fact:'Fog between the panes means the seal failed and the insulating gas escaped — a patch won’t hold, but a new insulated unit fixes it for good.'},
+  {keys:['condensation','sweating window','moisture on the glass'], fact:'Condensation on old glass usually means poor insulation — modern Low-E, gas-filled units run warmer and drier.'},
+  {keys:['noise','noisy','quiet','soundproof','stc'], fact:'Laminated or triple-pane glass knocks down street and neighbor noise for noticeably quieter rooms.'},
+  {keys:['dp rating','design pressure','wind load','dp50'], fact:'A higher Design Pressure (DP) rating means it stands up to stronger wind and weather — important for exposed elevations.'},
+  // ----- warranty -----
+  {keys:['warranty','lifetime warranty','transferable','guarantee'], fact:'Backed by a strong manufacturer warranty (often lifetime and transferable) plus our workmanship guarantee — covered for the long haul.'}
 ];
 function tradeFacts(text){
   var n=' '+(text||'').toLowerCase()+' ';
@@ -5660,8 +5694,14 @@ function openComposer(idOrPost,isNew){
   const box=el('div','cmp-box');
   box.innerHTML=`<div class="cmp-head"><h3>${isNew?'New post':'Edit post'} · Week ${p.week}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);
-  ov.onclick=e=>{if(e.target===ov)closeComposer()};
-  $('#cmpX').onclick=closeComposer;
+  // auto-save the in-progress post so closing/leaving never loses your typing — it comes back in "Your posts" drafts
+  function composerSaveDraft(){ try{ if(p && p.status!=='posted'){ var has=(p.caption||'').trim()||(Array.isArray(p.media)&&p.media.length)||(p.jobNote||'').trim()||(p.hashtags||'').trim(); if(has){ if(!p.status)p.status='draft'; savePost(p); } } }catch(e){} }
+  let _draftT=null; function scheduleDraft(){ clearTimeout(_draftT); _draftT=setTimeout(composerSaveDraft,1500); } // debounced while typing (survives navigation/refresh)
+  function composerClose(){ clearTimeout(_draftT); composerSaveDraft(); closeComposer(); }
+  // only close on a backdrop click that STARTED on the backdrop — so highlighting text that ends on the dim area doesn't close the post
+  ov.addEventListener('pointerdown',function(e){ ov._downSelf=(e.target===ov); });
+  ov.onclick=e=>{ if(e.target===ov && ov._downSelf)composerClose(); };
+  $('#cmpX').onclick=composerClose;
   const b=$('#cmpBody');
 
   // post type segmented (the format)
@@ -5792,12 +5832,12 @@ function openComposer(idOrPost,isNew){
   const jf=el('div','cmp-field');jf.innerHTML='<label>Job note <span class="muted" style="font-weight:600">— what you did, in your words (feeds the AI)</span></label>';
   const jn=el('textarea','cmp-in');jn.rows=2;jn.value=p.jobNote||'';jn.placeholder='e.g. swapped 8 drafty double-hungs for Okna, whole job in a day';
   jn.oninput=()=>{p.jobNote=jn.value;const t=detectCity(jn.value);if(t&&t!==p.town){p.town=t; // name ANY city → Town field follows (add it as an option if it's not one of the 7)
-    if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t;}};
+    if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t;} scheduleDraft();};
   jf.appendChild(jn);b.appendChild(jf);
 
   // caption — you write it; the expert suggests options you can swap in
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write your own, or tap Suggest for expert options</span></label>';
-  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice…';ca.oninput=()=>p.caption=ca.value;
+  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice…';ca.oninput=()=>{p.caption=ca.value;scheduleDraft();};
   const caAI=el('button','btn-set ai-draft','✨ Improve / suggest');caAI.title='Type a sentence or two first — this keeps your words, fixes them up, and adds the product + town specifics';
   const caOpts=el('div','sugbox');
   caAI.onclick=()=>{
@@ -5819,7 +5859,7 @@ function openComposer(idOrPost,isNew){
 
   // hashtags — same pattern
   const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags</label>';
-  const ha=el('input','cmp-in');ha.value=p.hashtags||'';ha.placeholder='#WindowGuardians …';ha.oninput=()=>p.hashtags=ha.value;
+  const ha=el('input','cmp-in');ha.value=p.hashtags||'';ha.placeholder='#WindowGuardians …';ha.oninput=()=>{p.hashtags=ha.value;scheduleDraft();};
   const haAI=el('button','btn-set ai-draft','✨ Suggest hashtags');
   const haOpts=el('div','sugbox');
   haAI.onclick=()=>{
