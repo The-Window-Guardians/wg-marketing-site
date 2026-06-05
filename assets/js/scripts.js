@@ -1766,7 +1766,7 @@ async function enrichLocations(){
 function clusterBaseName(items, idx){
   var cn=(items.find(function(m){return m&&m.cname;})||{}).cname; if(cn)return cn;
   var t=(items.find(function(m){return m&&m.town;})||{});
-  if(t.town)return t.town+(t.zip?' '+t.zip:'');
+  if(t.town)return t.town+(t.zip?': '+t.zip:''); // "Langhorne: 19047" — colon format; dups get a "2 " prefix
   return 'Job '+(idx+1);
 }
 /* rename a location group — stores a custom name on its photos (clear it to go back to auto) */
@@ -2085,7 +2085,10 @@ function _rot(arr){ if(!arr||!arr.length)return arr; var k=_biweek()%arr.length;
    Seeded with Okna's hallmarks; send more brands' spec sheets and they drop straight in here. */
 var PRODUCT_KB={
   brands:{
-    'Okna':{keys:['okna'],features:['fusion-welded frames & sashes','foam-insulated for strength and efficiency','warm-edge Super Spacer glass','Energy Star certified','lifetime transferable warranty']}
+    'Okna':{keys:['okna'],features:['fusion-welded frames & sashes','foam-insulated for strength and efficiency','warm-edge Super Spacer glass','Energy Star certified','lifetime transferable warranty']},
+    'ProVia':{keys:['provia','endure','aeris','ecolite','signet','embarq'],
+      features:['custom-built to your exact opening','professional-grade vinyl','Energy Star certified','multiple glass & grid options'],
+      doorFeatures:['custom-built to your exact opening','energy-efficient insulated core','fiberglass or steel construction','decorative glass & hardware options']}
     // more brands go here, e.g. 'Andersen':{keys:['andersen'],features:[...]}
   },
   styles:{'double hung':'double-hung','double-hung':'double-hung','casement':'casement','slider':'slider','sliding window':'slider','bay':'bay/bow','bow':'bay/bow','picture window':'picture','awning':'awning','patio door':'patio door','sliding door':'patio door','entry door':'entry door','front door':'entry door'}
@@ -2097,8 +2100,10 @@ function productLine(text){
   for(var b in PRODUCT_KB.brands){ if(PRODUCT_KB.brands[b].keys.some(function(k){return n.indexOf(k)>=0;})){bn=b;bf=PRODUCT_KB.brands[b];break;} }
   if(!bf)return '';
   var style=''; for(var s in PRODUCT_KB.styles){ if(n.indexOf(s)>=0){style=PRODUCT_KB.styles[s];break;} }
-  var noun=style?(style+(/door/.test(style)?'s':' windows')):'windows';
-  return 'These are '+bn+' '+noun+' — '+bf.features.slice(0,3).join(', ')+'.';
+  var isDoor=/door/.test(style);
+  var noun=style?(style+(isDoor?'s':' windows')):'windows';
+  var feats=(isDoor&&bf.doorFeatures)?bf.doorFeatures:bf.features;
+  return 'These are '+bn+' '+noun+' — '+feats.slice(0,3).join(', ')+'.';
 }
 /* keep the user's 1–3 sentences, polish them, and weave in real product facts + town + a CTA.
    This is the "type a little, get a polished specific caption" flow. */
