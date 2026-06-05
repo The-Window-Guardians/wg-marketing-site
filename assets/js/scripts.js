@@ -1716,35 +1716,40 @@ function openJobPicker(item){
     b.appendChild(opt);
   });
 }
-/* ---- reverse geocoding: turn a photo's GPS into "Town ZIP" (e.g. "Langhorne 19053") so jobs
-   auto-name themselves. Uses BigDataCloud's free client endpoint (no key, CORS-ok). Cached,
-   throttled, and fails quietly — if it can't reach the service the job just stays "Job N". ---- */
-var _geoCache={}, _geoBusy=false;
+/* ---- reverse geocoding: turn a photo's GPS into "Town ZIP" (e.g. "Langhorne 19047") so jobs
+   auto-name themselves. Uses OpenStreetMap Nominatim (returns the real borough, not the metro
+   city). Cached, throttled (~1 req/sec), and fails quietly — if it can't reach the service the
+   job just stays "Job N". ---- */
+var _geoCache={}, _geoBusy=false, GEO_VERSION=2; // bump to re-geocode everything with the better provider
 async function reverseGeocode(lat,lng){
   if(typeof lat!=='number'||typeof lng!=='number')return null;
   var key=lat.toFixed(4)+','+lng.toFixed(4);
   if(_geoCache[key]!==undefined)return _geoCache[key];
   try{
-    var u='https://api.bigdatacloud.net/data/reverse-geocode-client?latitude='+lat+'&longitude='+lng+'&localityLanguage=en';
-    var r=await pTimeout(fetch(u),8000,'geo'); if(!r.ok)throw 0;
-    var d=await r.json();
-    var town=d.city||d.locality||d.principalSubdivision||'';
-    var zip=d.postcode||'';
+    // OpenStreetMap Nominatim returns the ACTUAL borough/town (e.g. "Langhorne"), not the metro city.
+    var u='https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&lat='+lat+'&lon='+lng;
+    var r=await pTimeout(fetch(u,{headers:{'Accept':'application/json'}}),9000,'geo'); if(!r.ok)throw 0;
+    var d=await r.json(); var a=d.address||{};
+    // most-specific place first; the big "city" is a LAST resort so boroughs don't collapse to Philadelphia
+    var town=a.town||a.borough||a.village||a.hamlet||a.municipality||a.city_district||a.suburb||a.neighbourhood||a.city||a.county||'';
+    town=String(town).replace(/\s+(borough|township|city|town|cdp)$/i,'').trim(); // "Langhorne Borough" -> "Langhorne"
+    var zip=a.postcode||'';
     var out=town?{town:town,zip:zip}:null;
     _geoCache[key]=out; return out;
   }catch(e){ _geoCache[key]=null; return null; }
 }
-/* background pass: fill town/zip on located photos that lack it (one place at a time), then refresh */
+/* background pass: (re)label located photos with town/ZIP using the current provider version, then refresh.
+   Re-runs anything tagged by an older provider so the bad "Philadelphia" labels get corrected. */
 async function enrichLocations(){
   if(_geoBusy)return;
   var located=(typeof poolAvailable==='function')?poolAvailable().filter(hasLoc):[];
-  var clusters=clusterByLocation(located,60).filter(function(c){return c.items.some(function(m){return !m.town;});});
+  var clusters=clusterByLocation(located,60).filter(function(c){return c.items.some(function(m){return m.geov!==GEO_VERSION;});});
   if(!clusters.length)return;
   _geoBusy=true; var changed=false;
   for(var i=0;i<clusters.length;i++){
     var c=clusters[i]; var g=await reverseGeocode(c.lat,c.lng);
-    if(g){ c.items.forEach(function(m){ if(!m.town){ m.town=g.town; if(g.zip)m.zip=g.zip; m._ut=Date.now(); changed=true; } }); }
-    await new Promise(function(r){setTimeout(r,900);}); // be polite to the free endpoint
+    c.items.forEach(function(m){ if(m.geov!==GEO_VERSION){ if(g&&g.town){ m.town=g.town; m.zip=g.zip||''; } m.geov=GEO_VERSION; m._ut=Date.now(); changed=true; } });
+    await new Promise(function(r){setTimeout(r,1100);}); // Nominatim asks ~1 request/second
   }
   _geoBusy=false;
   if(changed){ try{commit();}catch(e){} if(typeof rerenderCal==='function')rerenderCal(); }
@@ -5306,7 +5311,7 @@ function socLibrary(v){
     const clusters=clusterByLocation(located,60);
     const _nameCount={};
     clusters.forEach((c,i)=>{
-      const d=el('details','jobgroup');
+      const d=el('details','jobgroup');if(i<2)d.open=true; // open the first couple so photos are tickable right away; rest show a peek
       let base=clusterBaseName(c.items,i);
       const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
       if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
@@ -5524,8 +5529,11 @@ function openComposer(idOrPost,isNew){
   pf.appendChild(seg);b.appendChild(pf);
 
   // town (Ruth gets the "how to add the location" steps in her queue + guide)
-  const tf=el('div','cmp-field');tf.innerHTML='<label>Town <span class="muted" style="font-weight:600">— Ruth tags this as the post location</span></label>';
+  const tf=el('div','cmp-field');tf.innerHTML='<label>Town <span class="muted" style="font-weight:600">— auto-filled from the photo location; Ruth tags this as the post location</span></label>';
+  // auto-fill the town from the photos' GPS-derived town so Sebastian doesn't retype it
+  if(!p.town){ let _mt=''; postMedia(p).forEach(function(mm){ if(_mt)return; var pm=(typeof socPool==='function')?socPool().find(function(x){return x.id===mm.id;}):null; if(pm&&pm.town)_mt=pm.town; }); if(_mt)p.town=_mt; }
   const sel=el('select','cmp-in');{const ph=document.createElement('option');ph.value='';ph.textContent='— Pick a town —';if(!p.town)ph.selected=true;sel.appendChild(ph);}SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===p.town)o.selected=true;sel.appendChild(o)});
+  if(p.town && SOC_TOWNS.indexOf(p.town)<0){const o=document.createElement('option');o.value=p.town;o.textContent=p.town;o.selected=true;sel.appendChild(o);} // a GPS town outside the core list
   sel.onchange=()=>p.town=sel.value;tf.appendChild(sel);b.appendChild(tf);
 
   // media
