@@ -4951,6 +4951,8 @@ function socLibrary(v){
   const poolAll=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
   // source folders: Main + each Drive subfolder (e.g. your Before/After folder)
   const subfolders=[...new Set(poolAll.filter(m=>!isMain(m)).map(m=>m.folder))];
+  const baJobsAll=(typeof socBaJobs==='function')?socBaJobs():[];
+  if(baJobsAll.length&&subfolders.indexOf('Before & After')<0)subfolders.unshift('Before & After'); // saved before/after jobs live here even when every photo is already used inside a job
   if(POOL_SRC!=='main'&&subfolders.indexOf(POOL_SRC)===-1)POOL_SRC='main';
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
   const avail=srcItems;
@@ -4964,7 +4966,11 @@ function socLibrary(v){
   if(subfolders.length){
     const srcSel=el('select','cmp-in');
     const mainN=poolAll.filter(isMain).length;
-    const opts=[['main',`📷 Content (${mainN})`]].concat(subfolders.map(f=>[f,`${f==='Before & After'?'🔀':f==='Videos'?'🎬':'📁'} ${f} (${poolAll.filter(m=>m.folder===f).length})`]));
+    const opts=[['main',`📷 Content (${mainN})`]].concat(subfolders.map(f=>{
+      const n=poolAll.filter(m=>m.folder===f).length;
+      if(f==='Before & After'){const j=baJobsAll.length;const parts=[];if(j)parts.push(j+' job'+(j!==1?'s':''));if(n)parts.push(n+' loose');return [f,`🔀 Before & After (${parts.join(' · ')||'0'})`];}
+      return [f,`${f==='Videos'?'🎬':'📁'} ${f} (${n})`];
+    }));
     opts.forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_SRC===v2)o.selected=true;srcSel.appendChild(o)});
     srcSel.onchange=()=>{POOL_SEL.clear();POOL_SRC=srcSel.value;rerenderCal()};
     ctrls.appendChild(srcSel);
@@ -5004,13 +5010,19 @@ function socLibrary(v){
     cell.onclick=()=>openMediaPreview(m.id,m.name);
     return cell;
   };
-  if(grouped)renderSavedJobs(poolCard); // saved before/after jobs only show in the Before & After area
+  if(POOL_SRC==='Before & After')renderSavedJobs(poolCard); // saved before/after jobs ONLY show in the Before & After area — never under Content
   if(!avail.length){
-    if(!(grouped&&socBaJobs().length)){
-      const totalElsewhere=poolAll.length;   // photos available in OTHER folders
+    const showingJobs=(POOL_SRC==='Before & After'&&baJobsAll.length); // jobs already rendered just above
+    if(!showingJobs){
       let msg;
-      if(totalElsewhere>0){ msg='No photos in this folder — your '+totalElsewhere+' photo'+(totalElsewhere>1?'s are':' is')+' in another folder. Switch the dropdown above (try “📷 Content” or “🔀 Before &amp; After”).'; }
-      else { msg=POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos”.':'Nothing here yet — add with “🔀 Upload before/after”.'; }
+      if(POOL_SRC==='main'&&baJobsAll.length){
+        const j=baJobsAll.length;
+        msg='Your before/after work is under “🔀 Before &amp; After.” Switch the dropdown above to see your '+j+' job'+(j!==1?'s':'')+'.';
+      } else {
+        const totalElsewhere=poolAll.length;   // photos available in OTHER folders
+        if(totalElsewhere>0){ msg='No photos in this folder — your '+totalElsewhere+' photo'+(totalElsewhere>1?'s are':' is')+' in another folder. Switch the dropdown above (try “📷 Content” or “🔀 Before &amp; After”).'; }
+        else { msg=POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos” or “🔀 Upload before/after”.':'Nothing here yet — add with “🔀 Upload before/after”.'; }
+      }
       poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
     }
   }else if(grouped){
