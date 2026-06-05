@@ -1347,42 +1347,61 @@ async function readGps(file){
   try{ const g2=await exifGps(file); if(g2)return g2; }catch(e){} // fallback for plain JPEG
   return null;
 }
+/* full-screen progress while a batch uploads — so the user sees it working AND knows to keep
+   the screen open. done<0 hides it. */
+function uploadProgress(done,total){
+  var ov=document.getElementById('uplprog');
+  if(done<0){ if(ov){ov.classList.remove('show');setTimeout(function(){try{ov.remove()}catch(e){}},250);} return; }
+  if(!ov){ ov=el('div','uplprog');ov.id='uplprog';
+    ov.innerHTML='<div class="uplprog-box"><div class="uplprog-txt"></div><div class="uplprog-bar"><i></i></div><div class="uplprog-sub">Saving each photo — keep this screen open…</div></div>';
+    document.body.appendChild(ov); setTimeout(function(){ov.classList.add('show')},10); }
+  var pct=total?Math.round(done/total*100):0;
+  ov.querySelector('.uplprog-txt').textContent='Uploading photos — '+done+' of '+total;
+  ov.querySelector('.uplprog-bar>i').style.width=pct+'%';
+}
 async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
-  if(files.some(isHeic))toast('iPhone photos — preparing…');
-  const pool=socPool(); let localVid=false, imgFailed=0;
+  const total=files.length; uploadProgress(0,total);
+  const pool=socPool(); let localVid=false, imgFailed=0, doneN=0;
   for(const raw of files){
     const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
-    if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
-    if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
-      try{
-        const geo=await readGps(raw);            // location BEFORE compressing (exifr reads HEIC + JPEG)
-        const norm=await normalizeImage(raw);    // HEIC -> JPEG if the browser needs it
-        const dataUrl=await imgToWebp(norm);     // small webp (or jpeg on iOS) that fits Firestore
-        const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
-        const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
-        const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-        const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
-        await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
-        const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
-        if(geo){item.lat=geo.lat;item.lng=geo.lng;}
-        if(folder)item.folder=folder;            // e.g. 'Before & After' — keeps it in its own group
-        pool.push(item); VTHUMB[id]=dataUrl;     // cache so it shows instantly
-      }catch(e){ imgFailed++; const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }
-    } else { // video (or offline image) -> local
-      const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
-      const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
-      const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
-      it.folder = isVideo ? 'Videos' : (folder||''); // videos always go to their own bulk area
-      pool.push(it);
-    }
+    try{
+      if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
+      if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
+        try{
+          const geo=await readGps(raw);
+          const norm=await normalizeImage(raw);
+          const dataUrl=await imgToWebp(norm);
+          const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
+          const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
+          const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+          const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
+          await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()});
+          const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
+          if(geo){item.lat=geo.lat;item.lng=geo.lng;}
+          if(folder)item.folder=folder;
+          pool.push(item); VTHUMB[id]=dataUrl;
+        }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; pool.push(it); }catch(e2){} }
+      } else { // video (or offline image) -> local
+        const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
+        const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
+        const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
+        it.folder = isVideo ? 'Videos' : (folder||'');
+        pool.push(it);
+      }
+    }catch(e){ imgFailed++; }
+    ST.pool=pool; try{Store.save(S);}catch(e){}    // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done
+    doneN++; uploadProgress(doneN,total);
+    await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
   }
-  ST.pool=pool;if(files.length)logActivity('added '+files.length+' item'+(files.length>1?'s':'')+' to content');commit();
+  if(total)logActivity('added '+total+' item'+(total>1?'s':'')+' to content');
+  commit();                                          // final commit pushes to the team cloud
+  uploadProgress(-1);
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
-  if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500); // try the backbone right away in case it was a transient hiccup
-  return files.length;
+  if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
+  return total;
 }
 /* Is this content safely on the shared backbone (so every device + the team can see it)?
    - pf_ id or cloud flag  → already a Firestore cloud copy

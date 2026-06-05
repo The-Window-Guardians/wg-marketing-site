@@ -796,6 +796,14 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .upbtn.big{border-color:var(--orange);background:var(--orange-soft,#fde7da);padding:24px 18px}
 .upbtn.big .upic{font-size:34px}
 .upbtn.big .uptx b{font-size:18px}
+/* upload progress overlay */
+.uplprog{position:fixed;inset:0;z-index:10060;background:#0c1c3de6;display:grid;place-items:center;padding:24px;opacity:0;transition:opacity .2s}
+.uplprog.show{opacity:1}
+.uplprog-box{background:#fff;border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;box-shadow:0 20px 60px #00000055}
+.uplprog-txt{font-size:16px;font-weight:800;color:var(--ink);margin-bottom:12px}
+.uplprog-bar{height:12px;border-radius:999px;background:var(--line2);overflow:hidden}
+.uplprog-bar>i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--orange),var(--orange-2,#f7a072));transition:width .25s}
+.uplprog-sub{margin-top:12px;font-size:12.5px;color:var(--muted)}
 .upbtn:first-of-type{margin-top:0}
 .upbtn:active{transform:scale(.99)}
 .upbtn:hover{border-color:var(--orange);background:var(--orange-soft)}
