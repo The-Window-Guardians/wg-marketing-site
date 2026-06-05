@@ -1279,6 +1279,14 @@ function polishText(t){
   t=t.replace(/\s+([,.!?;:])/g,'$1').replace(/([,.!?;:])(?=[^\s])/g,'$1 '); // tidy punctuation spacing
   t=t.replace(/([.!?]\s+)([a-z])/g,function(m,p,c){return p+c.toUpperCase();}); // capitalize after . ! ?
   t=t.charAt(0).toUpperCase()+t.slice(1);                          // capitalize first letter
+  // capitalize the things people lowercase: brand names, target towns, PA, and I-contractions
+  var PROPER=['Window Guardians','James Hardie','Hardie','Okna','Andersen','Pella','ProVia','Marvin','Sunrise','Harvey','Simonton','Energy Star'];
+  try{ if(typeof SOC_TOWNS!=='undefined')PROPER=PROPER.concat(SOC_TOWNS); }catch(e){}
+  PROPER.forEach(function(w){ t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'), w); });
+  t=t.replace(/\bpa\b/g,'PA').replace(/\bi'm\b/gi,"I'm").replace(/\bi've\b/gi,"I've").replace(/\bi'll\b/gi,"I'll").replace(/\bi'd\b/gi,"I'd");
+  // common missing-apostrophe contractions (casual typing → proper)
+  var FIX={im:"I'm",ive:"I've",dont:"don't",cant:"can't",wont:"won't",didnt:"didn't",doesnt:"doesn't",isnt:"isn't",arent:"aren't",wasnt:"wasn't",werent:"weren't",hasnt:"hasn't",havent:"haven't",couldnt:"couldn't",wouldnt:"wouldn't",shouldnt:"shouldn't",theyre:"they're",youre:"you're",youve:"you've",thats:"that's",heres:"here's",lets:"let's",weve:"we've"};
+  t=t.replace(/\b(im|ive|dont|cant|wont|didnt|doesnt|isnt|arent|wasnt|werent|hasnt|havent|couldnt|wouldnt|shouldnt|theyre|youre|youve|thats|heres|lets|weve)\b/gi,function(m){var f=FIX[m.toLowerCase()];if(!f)return m;return (m.charAt(0)===m.charAt(0).toUpperCase())?(f.charAt(0).toUpperCase()+f.slice(1)):f;});
   if(!/[.!?…]$/.test(t))t+='.';                                    // ensure it ends with punctuation
   return t.replace(/\s+/g,' ').trim();
 }
@@ -2071,6 +2079,42 @@ function seasonAngle(){
 function _biweek(){ try{var d=new Date();return Math.floor(((d.getMonth()*31)+d.getDate())/14);}catch(e){return 0;} }
 function _rot(arr){ if(!arr||!arr.length)return arr; var k=_biweek()%arr.length; return arr.slice(k).concat(arr.slice(0,k)); }
 /* Polished, ready-to-post caption options — town-accurate, product-aware, seasonal. */
+/* ---- PRODUCT KNOWLEDGE BASE ----
+   When Sebastian names a product in his caption, the "Improve" tool weaves in the real, factual
+   features of that product. Easy to extend: add a brand under brands{} with keys + feature bullets.
+   Seeded with Okna's hallmarks; send more brands' spec sheets and they drop straight in here. */
+var PRODUCT_KB={
+  brands:{
+    'Okna':{keys:['okna'],features:['fusion-welded frames & sashes','foam-insulated for strength and efficiency','warm-edge Super Spacer glass','Energy Star certified','lifetime transferable warranty']}
+    // more brands go here, e.g. 'Andersen':{keys:['andersen'],features:[...]}
+  },
+  styles:{'double hung':'double-hung','double-hung':'double-hung','casement':'casement','slider':'slider','sliding window':'slider','bay':'bay/bow','bow':'bay/bow','picture window':'picture','awning':'awning','patio door':'patio door','sliding door':'patio door','entry door':'entry door','front door':'entry door'}
+};
+/* a factual sentence about the product the user named — empty unless a known brand is mentioned (keeps it specific, never generic) */
+function productLine(text){
+  var n=' '+(text||'').toLowerCase()+' ';
+  var bn='',bf=null;
+  for(var b in PRODUCT_KB.brands){ if(PRODUCT_KB.brands[b].keys.some(function(k){return n.indexOf(k)>=0;})){bn=b;bf=PRODUCT_KB.brands[b];break;} }
+  if(!bf)return '';
+  var style=''; for(var s in PRODUCT_KB.styles){ if(n.indexOf(s)>=0){style=PRODUCT_KB.styles[s];break;} }
+  var noun=style?(style+(/door/.test(style)?'s':' windows')):'windows';
+  return 'These are '+bn+' '+noun+' — '+bf.features.slice(0,3).join(', ')+'.';
+}
+/* keep the user's 1–3 sentences, polish them, and weave in real product facts + town + a CTA.
+   This is the "type a little, get a polished specific caption" flow. */
+function captionImprove(p){
+  var base=polishText(p.caption||'');
+  if(!base)return aiCaptionOptions(p);                 // nothing typed → fall back to starter templates
+  var town=effectiveTown(p);
+  var pf=productLine((p.caption||'')+' '+(p.jobNote||''));
+  var cta='📲 Free, no-pressure estimate — link in bio.';
+  var localLine=town?('Proud to do it right here in '+town+'.'):'';
+  var v1=[base,pf,localLine,cta].filter(Boolean).join(' ');
+  var v2=[base,pf,cta].filter(Boolean).join(' ');
+  var v3=[base,(town?('Another happy '+town+' homeowner. '):'')+cta].filter(Boolean).join(' ');
+  var out=[]; [v1,v2,v3].forEach(function(x){ x=(x||'').replace(/\s+/g,' ').trim(); if(x&&out.indexOf(x)<0)out.push(x); });
+  return out.length?out:[ (base+' '+cta).trim() ];
+}
 function aiCaptionOptions(p){
   const town=effectiveTown(p), where=town?` in ${town}`:'';
   const sig=noteSignals(p&&p.jobNote); const noun=WORK_NOUN[sig.work]||'windows';
@@ -5649,13 +5693,17 @@ function openComposer(idOrPost,isNew){
   // caption — you write it; the expert suggests options you can swap in
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write your own, or tap Suggest for expert options</span></label>';
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice…';ca.oninput=()=>p.caption=ca.value;
-  const caAI=el('button','btn-set ai-draft','✨ Suggest captions');
+  const caAI=el('button','btn-set ai-draft','✨ Improve / suggest');caAI.title='Type a sentence or two first — this keeps your words, fixes them up, and adds the product + town specifics';
   const caOpts=el('div','sugbox');
   caAI.onclick=()=>{
     caOpts.innerHTML='';
     if(caOpts.dataset.open==='1'){caOpts.dataset.open='0';return}
     caOpts.dataset.open='1';
-    aiCaptionOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
+    p.caption=ca.value; // make sure we improve the latest text
+    const typed=(ca.value||'').trim();
+    const opts=typed?captionImprove(p):aiCaptionOptions(p);
+    caOpts.appendChild(el('div','sughdr',typed?'Built from what you wrote — tap one to use it:':'Starters (type your own words first for a sharper result) — tap one:'));
+    opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
   };
   cf.appendChild(ca);
   const caPolish=el('button','btn-set','✨ Polish grammar');caPolish.title='Clean up capitalization, spacing & punctuation in what you wrote';

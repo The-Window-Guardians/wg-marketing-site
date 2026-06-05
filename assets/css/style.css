@@ -581,6 +581,7 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .mprev-cap{margin-top:10px;color:#fff;font-size:13px;opacity:.85;max-width:92vw;text-align:center;word-break:break-all}
 /* expert suggestion options in the composer */
 .sugbox{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+.sughdr{font-size:12px;color:var(--muted);font-weight:700}
 .sugopt{text-align:left;border:1px solid var(--line2);background:var(--bg);border-radius:10px;padding:9px 11px;font-size:13px;color:var(--ink);cursor:pointer;line-height:1.4}
 .sugopt:hover{border-color:var(--orange);background:var(--orange-soft)}
 /* Ruth: ready-card location hint */
