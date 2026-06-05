@@ -1280,7 +1280,7 @@ function polishText(t){
   t=t.replace(/([.!?]\s+)([a-z])/g,function(m,p,c){return p+c.toUpperCase();}); // capitalize after . ! ?
   t=t.charAt(0).toUpperCase()+t.slice(1);                          // capitalize first letter
   // capitalize the things people lowercase: brand names, target towns, PA, and I-contractions
-  var PROPER=['Window Guardians','James Hardie','Hardie','Okna','Andersen','Pella','ProVia','Marvin','Sunrise','Harvey','Simonton','Energy Star'];
+  var PROPER=['Window Guardians','James Hardie','Hardie','Okna','Andersen','Pella','ProVia','Marvin','Sunrise','Harvey','Simonton','Energy Star','AZEK','Low-E'];
   try{ if(typeof SOC_TOWNS!=='undefined')PROPER=PROPER.concat(SOC_TOWNS); }catch(e){}
   PROPER.forEach(function(w){ t=t.replace(new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'), w); });
   t=t.replace(/\bpa\b/g,'PA').replace(/\bi'm\b/gi,"I'm").replace(/\bi've\b/gi,"I've").replace(/\bi'll\b/gi,"I'll").replace(/\bi'd\b/gi,"I'd");
@@ -2105,17 +2105,54 @@ function productLine(text){
   var feats=(isDoor&&bf.doorFeatures)?bf.doorFeatures:bf.features;
   return 'These are '+bn+' '+noun+' — '+feats.slice(0,3).join(', ')+'.';
 }
-/* keep the user's 1–3 sentences, polish them, and weave in real product facts + town + a CTA.
-   This is the "type a little, get a polished specific caption" flow. */
+/* ---- TRADE KNOWLEDGE BASE (home remodeling / window & door install / carpentry / materials) ----
+   The assistant only speaks to a topic when Sebastian MENTIONS it in his caption — then it weaves in
+   an accurate, plain-English fact. Add topics by dropping another {keys, fact} row in. ---- */
+var TRADE_KB=[
+  // ----- materials -----
+  {keys:['azek','cellular pvc','pvc trim'], fact:'Finished with AZEK cellular PVC trim — it won’t rot, warp, crack, or peel, and never needs painting, so it stays sharp for decades.'},
+  {keys:['aluminum cap','aluminum capping','capping','capped','trim coil','coil stock','wrap the trim','wrapped the trim','aluminum wrap'], fact:'We wrapped the exterior wood trim in custom-bent aluminum capping — a seamless, weather-tight finish that protects the wood and never needs painting again.'},
+  {keys:['azek decking','composite deck','pvc decking'], fact:'Built with AZEK capped-PVC decking — moisture-, mold-, and stain-resistant, with a lifetime that laughs at PA winters.'},
+  // ----- window install method -----
+  {keys:['full frame','full-frame','to the studs','rough opening'], fact:'This was a full-frame replacement — we took it back to the rough opening to check for hidden rot and seal it properly, not just drop a unit into the old frame.'},
+  {keys:['insert','pocket window','pocket replacement','retrofit'], fact:'An insert (pocket) replacement — the existing frame was solid, so we fit the new window precisely into it and sealed it airtight.'},
+  {keys:['flash','flashing','flashed','water seal','weatherproof','weather seal'], fact:'Properly flashed and sealed so water stays out — the detail that decides whether an install lasts 5 years or 30.'},
+  {keys:['foam','spray foam','low-e','low e','argon','energy','draft','drafty','efficien'], fact:'Foamed and sealed every gap for a tighter, quieter, more energy-efficient home — lower bills, no more drafts.'},
+  {keys:['level','plumb','square','shim','shimmed'], fact:'Set level, plumb, and square and shimmed solid — so it opens smooth and seals tight for the life of the home.'},
+  // ----- carpentry / structure -----
+  {keys:['rot','rotted','rotten','dry rot','sill','rebuild','re-build','framing','reframe','header','jamb'], fact:'We rebuilt the rotted framing and sill before installing — the carpentry under the surface is what makes a window or door actually last.'},
+  {keys:['carpentry','finish carpentry','custom built','custom-built'], fact:'Real carpentry, not a quick swap — built and fit to the opening so the finished work looks like it was always meant to be there.'},
+  {keys:['trim','casing','molding','moulding','returns','miters','mitered'], fact:'Finished with clean, tight trim and casing for a crisp, built-in look inside and out.'},
+  // ----- doors -----
+  {keys:['entry door','front door','exterior door','prehung','pre-hung'], fact:'A properly plumbed, shimmed, and weather-sealed entry door — it swings true and seals tight against the weather for years.'},
+  {keys:['patio door','sliding door','slider door','french door'], fact:'A patio door set dead-level and sealed for an airtight, smooth glide every time.'},
+  {keys:['storm door'], fact:'Topped it off with a storm door for extra protection and an energy buffer at the entry.'},
+  {keys:['weatherstrip','weather strip','threshold','sweep'], fact:'New weatherstripping and threshold seal it tight — no drafts, no leaks at the bottom.'},
+  // ----- general remodel -----
+  {keys:['remodel','renovation','renovate','transformation','curb appeal','facelift','exterior makeover'], fact:'A full exterior upgrade that boosts curb appeal and value — the kind of change you notice from the street.'},
+  {keys:['siding','hardie','james hardie','clapboard'], fact:'New siding for a tight, protected, great-looking exterior built to handle Bucks County weather.'},
+  {keys:['fascia','soffit','gutter'], fact:'Cleaned up the fascia and soffit for a finished, weather-tight roofline.'}
+];
+function tradeFacts(text){
+  var n=' '+(text||'').toLowerCase()+' ';
+  var out=[];
+  TRADE_KB.forEach(function(t){ if(out.length<2 && t.keys.some(function(k){return n.indexOf(k)>=0;}))out.push(t.fact); });
+  return out; // at most 2, so the caption stays tight
+}
+/* keep the user's 1–3 sentences, polish them, and weave in real product + trade facts + town + a CTA.
+   This is the "type a little, get a polished specific caption" flow. Only adds facts for things mentioned. */
 function captionImprove(p){
   var base=polishText(p.caption||'');
   if(!base)return aiCaptionOptions(p);                 // nothing typed → fall back to starter templates
+  var txt=(p.caption||'')+' '+(p.jobNote||'');
   var town=effectiveTown(p);
-  var pf=productLine((p.caption||'')+' '+(p.jobNote||''));
+  var pf=productLine(txt);
+  var tf=tradeFacts(txt);
+  var specifics=[pf].concat(tf).filter(Boolean).slice(0,2).join(' '); // product fact + the most relevant trade fact, capped so it never bloats
   var cta='📲 Free, no-pressure estimate — link in bio.';
   var localLine=town?('Proud to do it right here in '+town+'.'):'';
-  var v1=[base,pf,localLine,cta].filter(Boolean).join(' ');
-  var v2=[base,pf,cta].filter(Boolean).join(' ');
+  var v1=[base,specifics,localLine,cta].filter(Boolean).join(' ');
+  var v2=[base,specifics,cta].filter(Boolean).join(' ');
   var v3=[base,(town?('Another happy '+town+' homeowner. '):'')+cta].filter(Boolean).join(' ');
   var out=[]; [v1,v2,v3].forEach(function(x){ x=(x||'').replace(/\s+/g,' ').trim(); if(x&&out.indexOf(x)<0)out.push(x); });
   return out.length?out:[ (base+' '+cta).trim() ];
