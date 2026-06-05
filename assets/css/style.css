@@ -698,6 +698,12 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 /* permanent-delete button in the media preview */
 .mprev-del{position:absolute;left:12px;top:10px;background:#e23b3bdd;color:#fff;border:none;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer;z-index:4}
 .mprev-del:hover{background:#c62f2f}
+.medcell .medorder{position:absolute;top:4px;left:4px;min-width:22px;height:22px;border-radius:11px;background:var(--orange);color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;padding:0 6px;z-index:4;box-shadow:0 1px 3px #0006}
+.medcell .medmove{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:8px;padding:5px 4px;background:linear-gradient(transparent,#000a);z-index:4}
+.medcell .medmvbtn{width:34px;height:28px;border:none;border-radius:7px;background:#0c1c3dcc;color:#fff;font-size:13px;font-weight:800;cursor:pointer;line-height:1;padding:0}
+.medcell .medmvbtn:disabled{opacity:.3;cursor:default}
+.medcell .medmvbtn:hover:not(:disabled){background:var(--orange)}
+.medordernote{font-size:12px;color:var(--muted);margin:0 0 8px;font-weight:600}
 .medx{position:absolute;top:4px;right:4px;width:22px;height:22px;border:none;border-radius:50%;background:#000a;color:#fff;cursor:pointer;font-size:11px;line-height:1;display:grid;place-items:center;padding:0}
 .medx:hover{background:var(--orange)}
 .meddrop.small{padding:0;aspect-ratio:1/1;display:grid;place-items:center;font-size:12px}

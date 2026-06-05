@@ -5452,8 +5452,16 @@ function openComposer(idOrPost,isNew){
       const img=el('img','medthumb');thumbInto(img,m.id);
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
       const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);renderMedia()};
-      const nm=el('div','medname',esc(m.name||'attached'));
-      cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);cell.appendChild(nm);
+      cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);
+      if(arr.length>1){ // carousel → let Sebastian set the posting order so Ruth posts them in sequence
+        cell.appendChild(el('span','medorder',(i+1)+''));
+        const mv=el('div','medmove');
+        const lb=el('button','medmvbtn','◀');lb.title='Move earlier';lb.disabled=(i===0);lb.onclick=(e)=>{e.stopPropagation();if(i>0){const t=p.media[i-1];p.media[i-1]=p.media[i];p.media[i]=t;renderMedia();}};
+        const rb=el('button','medmvbtn','▶');rb.title='Move later';rb.disabled=(i===arr.length-1);rb.onclick=(e)=>{e.stopPropagation();if(i<p.media.length-1){const t=p.media[i+1];p.media[i+1]=p.media[i];p.media[i]=t;renderMedia();}};
+        mv.appendChild(lb);mv.appendChild(rb);cell.appendChild(mv);
+      } else {
+        cell.appendChild(el('div','medname',esc(m.name||'attached')));
+      }
       // Before/After tag — Drive photos arrive unlabeled; let Sebastian set it here so Ruth posts them right
       const isVidCell=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
       if(!isVidCell){
@@ -5472,6 +5480,7 @@ function openComposer(idOrPost,isNew){
       for(const raw of files){const f=await normalizeImage(raw);const rec=await fileAdd(f,p.week,S.role,'post.'+p.id);p.media.push({id:rec.id,name:rec.name});}
       renderMedia();toast(files.length>1?files.length+' files attached':'Media attached')};
     drop.appendChild(inp);grid.appendChild(drop);
+    if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Use ◀ ▶ to reorder.'));
     media.appendChild(grid);
     // add from the existing dashboard library (where your uploaded / Drive photos live)
     const fromBtn=el('button','btn-set','🗂️ Add from your content');fromBtn.style.marginTop='8px';
