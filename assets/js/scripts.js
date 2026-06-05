@@ -4955,9 +4955,9 @@ function socLibrary(v){
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
   const avail=srcItems;
   const allAvail=poolAll; // for resolving selections when making a post
-  const grouped = (POOL_SRC!=='main' && POOL_SRC!=='Videos'); // before/after (and Drive subfolders) auto-group by GPS; Content + Videos stay flat
+  const grouped = (POOL_SRC!=='Videos'); // group EVERY photo folder (incl. Content) by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='main'?'Your everyday photos, newest first.':POOL_SRC==='Videos'?'Your videos.':'Grouped by job location — tap a photo to set Before / After.';
+  const sub = POOL_SRC==='Videos'?'Your videos.':'Grouped by job location.';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub} Tap the ◯ corner to pick for a post.</small></div></div>`;
   // controls: just the area switcher (Content · Before & After · Videos)
   const ctrls=el('div','poolctrls');
@@ -5006,7 +5006,13 @@ function socLibrary(v){
   };
   if(grouped)renderSavedJobs(poolCard); // saved before/after jobs only show in the Before & After area
   if(!avail.length){
-    if(!(grouped&&socBaJobs().length))poolCard.innerHTML+=`<p class="muted">${POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos”.':'Nothing here yet — add with “🔀 Upload before/after”.'}</p>`;
+    if(!(grouped&&socBaJobs().length)){
+      const totalElsewhere=poolAll.length;   // photos available in OTHER folders
+      let msg;
+      if(totalElsewhere>0){ msg='No photos in this folder — your '+totalElsewhere+' photo'+(totalElsewhere>1?'s are':' is')+' in another folder. Switch the dropdown above (try “📷 Content” or “🔀 Before &amp; After”).'; }
+      else { msg=POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos”.':'Nothing here yet — add with “🔀 Upload before/after”.'; }
+      poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
+    }
   }else if(grouped){
     const located=avail.filter(hasLoc);
     const noloc=avail.filter(m=>!hasLoc(m));
