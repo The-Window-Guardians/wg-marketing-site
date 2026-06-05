@@ -1806,7 +1806,7 @@ function renderSavedJobs(container){
     its.forEach(m=>{
       const pm=socPool().find(x=>x.id===m.id)||{};
       const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(pm.type||'');
-      const cell=el('div','poolcell');
+      const cell=el('div','poolcell');cell.dataset.mid=m.id;
       const img=el('img','poolimg');img.addEventListener('load',()=>img.style.display='block');
       if(VTHUMB[m.id])img.src=VTHUMB[m.id];
       else if(isVid&&pm.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id)};img.src=pm.driveThumb;}
@@ -1825,7 +1825,7 @@ function renderSavedJobs(container){
         dx.onclick=async(e)=>{e.stopPropagation();if(await uiConfirm('Delete this photo? You’ll have a few seconds to undo.',{title:'Delete photo?',confirmText:'Delete',danger:true}))deleteJobPhoto(j.id,m.id);};
         cell.appendChild(dx);
       }
-      cell.onclick=()=>openMediaPreview(m.id,m.name); // tap the photo to preview
+      cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this job's photos
       grid.appendChild(cell);
     });
     body.appendChild(grid);
@@ -5005,57 +5005,89 @@ async function thumbInto(img,mediaId){
 }
 /* full-size preview: play a video / view a photo large */
 let _mprevUrl=null;
-function closeMediaPreview(){const o=$('#mprevOv');if(o)o.remove();if(_mprevUrl){try{URL.revokeObjectURL(_mprevUrl)}catch(e){}_mprevUrl=null;}}
-async function openMediaPreview(mediaId,name){
+function closeMediaPreview(){const o=$('#mprevOv');if(o){if(o._onKey)try{document.removeEventListener('keydown',o._onKey)}catch(e){} o.remove();}if(_mprevUrl){try{URL.revokeObjectURL(_mprevUrl)}catch(e){}_mprevUrl=null;}}
+/* Full-screen preview. Pass a list (array of ids or {id,name}) to make it a SWIPEABLE gallery —
+   swipe left/right on the phone, arrow keys on desktop, or the ◀ ▶ buttons. */
+async function openMediaPreview(mediaId,name,list){
   closeMediaPreview();
+  list=(Array.isArray(list)&&list.length?list:[mediaId]).map(function(x){return (x&&typeof x==='object')?{id:x.id,name:x.name}:{id:x};});
+  var i=list.findIndex(function(m){return m.id===mediaId;}); if(i<0)i=0;
   const ov=el('div','mprev-ov');ov.id='mprevOv';
   const box=el('div','mprev-box');
   const x=el('button','mprev-x','✕');x.onclick=closeMediaPreview;box.appendChild(x);
-  const body=el('div','mprev-body','<div class="muted" style="padding:30px">Loading…</div>');box.appendChild(body);
+  const body=el('div','mprev-body');box.appendChild(body);
+  const cap=el('div','mprev-cap');
+  let prevBtn=null,nextBtn=null;
+  if(list.length>1){
+    prevBtn=el('button','mprev-nav prev','‹');prevBtn.onclick=function(e){e.stopPropagation();go(-1);};
+    nextBtn=el('button','mprev-nav next','›');nextBtn.onclick=function(e){e.stopPropagation();go(1);};
+    box.appendChild(prevBtn);box.appendChild(nextBtn);
+  }
+  let delBtn=null;
+  if(typeof isOwner==='function'&&isOwner()){ delBtn=el('button','mprev-del','🗑 Delete permanently'); box.appendChild(delBtn); }
+  box.appendChild(cap);
   ov.appendChild(box);document.body.appendChild(ov);
   ov.onclick=e=>{if(e.target===ov)closeMediaPreview()};
-  // Owner-only: permanently remove this piece of content (with undo + an in-use guard)
-  if(typeof isOwner==='function'&&isOwner()){
-    const pm=socPool().find(x=>x.id===mediaId);
-    if(pm){
-      const del=el('button','mprev-del','🗑 Delete permanently');
-      del.onclick=()=>{
-        const usedByPost=socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(m=>m.id===mediaId));
-        const usedByJob=socBaJobs().some(j=>jobItems(j).some(x=>x.id===mediaId));
-        if(usedByPost||usedByJob){ toast('In use by a post or job — remove it there first.'); return; }
-        const snap=JSON.parse(JSON.stringify(pm));
-        ST.pool=socPool().filter(x=>x.id!==mediaId); commit(); closeMediaPreview();
-        if(typeof rerenderCal==='function')rerenderCal();
-        toastUndo('Photo deleted',
-          function(){ socPool().push(snap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
-          function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} }); // free blob + cloud only if not undone
-      };
-      box.appendChild(del);
-    }
+  function go(d){ if(list.length<2)return; i=(i+d+list.length)%list.length; render(); }
+  function wireDelete(){
+    if(!delBtn)return;
+    var mid=list[i].id;
+    var pm=socPool().find(x=>x.id===mid);
+    delBtn.style.display=pm?'':'none';
+    delBtn.onclick=function(){
+      const usedByPost=socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(m=>m.id===mid));
+      const usedByJob=socBaJobs().some(j=>jobItems(j).some(z=>z.id===mid));
+      if(usedByPost||usedByJob){ toast('In use by a post or job — remove it there first.'); return; }
+      if(!pm)return;
+      const snap=JSON.parse(JSON.stringify(pm));
+      ST.pool=socPool().filter(z=>z.id!==mid); commit();
+      list.splice(i,1);
+      if(typeof rerenderCal==='function')rerenderCal();
+      if(!list.length){ closeMediaPreview(); } else { if(i>=list.length)i=list.length-1; render(); }
+      toastUndo('Photo deleted',
+        function(){ socPool().push(snap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+        function(){ try{fileDel(mid)}catch(e){} try{cloudFileDel(mid)}catch(e){} });
+    };
   }
-  try{const rec=await fileGet(mediaId);
-    body.innerHTML='';
-    if(!rec||!rec.blob){ const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){const im=document.createElement('img');im.src=c.dataUrl;im.className='mprev-media';body.appendChild(im);if(name)box.appendChild(el('div','mprev-cap',esc(name)));}else body.appendChild(el('div','muted','Preview unavailable.')); return; }
-    const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(name||'');
-    if(isVid){
-      const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
-      const wrap=el('div');wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px';
-      const vid=document.createElement('video');vid.src=url;vid.controls=true;vid.autoplay=true;vid.playsInline=true;vid.className='mprev-media';
-      const note=el('div');note.style.cssText='color:#fff;opacity:.9;font-size:12.5px;max-width:540px;text-align:center;display:none';
-      note.innerHTML='This looks like an iPhone <b>HEVC .mov</b> — desktop Chrome can’t preview that format. It still posts perfectly (watch it on your phone, or download it below). Instagram &amp; Facebook handle it natively.';
-      const dl=el('button','btn-set','⬇ Download to watch');dl.onclick=()=>{const a=document.createElement('a');a.href=url;a.download=name||'video';a.click();};
-      vid.onerror=()=>{note.style.display='block'};
-      setTimeout(()=>{if(!vid.videoWidth)note.style.display='block'},2000); // no frame decoded → show the note
-      wrap.appendChild(vid);wrap.appendChild(note);wrap.appendChild(dl);
-      body.appendChild(wrap);
-    }else{
-      var iblob=rec.blob;
-      if(/hei[cf]/i.test(rec.type||'')||/\.hei[cf]$/i.test(name||'')){ try{ const lib=await loadHeicLib(); if(lib){ const out=await lib({blob:rec.blob,toType:'image/jpeg',quality:0.9}); iblob=Array.isArray(out)?out[0]:out; } }catch(e){} }
-      const iurl=URL.createObjectURL(iblob);_mprevUrl=iurl;
-      const img=document.createElement('img');img.src=iurl;img.className='mprev-media';img.onerror=()=>{img.style.display='none';};body.appendChild(img);
-    }
-    if(name)box.appendChild(el('div','mprev-cap',esc(name)));
-  }catch(e){body.innerHTML='<div class="muted">Preview unavailable.</div>';}
+  async function render(){
+    var mid=list[i].id; var nm=list[i].name||((socPool().find(z=>z.id===mid)||{}).name)||'';
+    wireDelete();
+    cap.textContent=(list.length>1?((i+1)+' / '+list.length+(nm?'  ·  '+nm:'')):(nm||''));
+    if(_mprevUrl){try{URL.revokeObjectURL(_mprevUrl)}catch(e){}_mprevUrl=null;}
+    body.innerHTML='<div class="muted" style="padding:30px">Loading…</div>';
+    try{
+      const rec=await fileGet(mid);
+      if($('#mprevOv')!==ov)return; // closed while loading
+      body.innerHTML='';
+      if(!rec||!rec.blob){ const c=await cloudFileGet(mid); if($('#mprevOv')!==ov)return; if(c&&c.dataUrl){const im=document.createElement('img');im.src=c.dataUrl;im.className='mprev-media';body.appendChild(im);}else body.appendChild(el('div','muted','Preview unavailable.')); return; }
+      const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(nm||'');
+      if(isVid){
+        const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
+        const wrap=el('div');wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px';
+        const vid=document.createElement('video');vid.src=url;vid.controls=true;vid.autoplay=true;vid.playsInline=true;vid.className='mprev-media';
+        const note=el('div');note.style.cssText='color:#fff;opacity:.9;font-size:12.5px;max-width:540px;text-align:center;display:none';
+        note.innerHTML='This looks like an iPhone <b>HEVC .mov</b> — desktop Chrome can’t preview that format. It still posts perfectly (watch it on your phone, or download it below). Instagram &amp; Facebook handle it natively.';
+        const dl=el('button','btn-set','⬇ Download to watch');dl.onclick=()=>{const a=document.createElement('a');a.href=url;a.download=nm||'video';a.click();};
+        vid.onerror=()=>{note.style.display='block'};
+        setTimeout(()=>{if(!vid.videoWidth)note.style.display='block'},2000);
+        wrap.appendChild(vid);wrap.appendChild(note);wrap.appendChild(dl);
+        body.appendChild(wrap);
+      }else{
+        var iblob=rec.blob;
+        if(/hei[cf]/i.test(rec.type||'')||/\.hei[cf]$/i.test(nm||'')){ try{ const lib=await loadHeicLib(); if(lib){ const out=await lib({blob:rec.blob,toType:'image/jpeg',quality:0.9}); iblob=Array.isArray(out)?out[0]:out; } }catch(e){} }
+        if($('#mprevOv')!==ov)return;
+        const iurl=URL.createObjectURL(iblob);_mprevUrl=iurl;
+        const img=document.createElement('img');img.src=iurl;img.className='mprev-media';img.onerror=()=>{img.style.display='none';};body.appendChild(img);
+      }
+    }catch(e){body.innerHTML='<div class="muted">Preview unavailable.</div>';}
+  }
+  // swipe to sift through photos on the phone
+  let sx=null,sy=null;
+  body.addEventListener('touchstart',function(e){ if(e.touches&&e.touches[0]){sx=e.touches[0].clientX;sy=e.touches[0].clientY;} },{passive:true});
+  body.addEventListener('touchend',function(e){ if(sx==null||!e.changedTouches||!e.changedTouches[0])return; var dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy; sx=null; if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.3)go(dx<0?1:-1); },{passive:true});
+  const onKey=function(e){ if(e.key==='ArrowLeft')go(-1); else if(e.key==='ArrowRight')go(1); else if(e.key==='Escape')closeMediaPreview(); };
+  document.addEventListener('keydown',onKey); ov._onKey=onKey;
+  render();
 }
 function statusPill(s){const m={draft:['Draft','draft'],approved:['Ready','approved'],posted:['Posted','posted']}[s]||['Draft','draft'];return `<span class="pst ${m[1]}">${m[0]}</span>`}
 /* Themed confirm dialog (replaces the generic browser confirm) — matches the app's
@@ -5313,6 +5345,7 @@ function socLibrary(v){
   const buildCell=(m)=>{
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
     const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
+    cell.dataset.mid=m.id;
     cell.dataset.search=((m.name||'')+' '+(m.town||'')+' '+(m.desc||'')+' '+(m.folder||'')).toLowerCase();
     if(POOL_Q&&cell.dataset.search.indexOf(POOL_Q)<0)cell.style.display='none'; // honor an active search after re-render
     const img=el('img','poolimg');
@@ -5331,7 +5364,7 @@ function socLibrary(v){
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(POOL_SEL.has(m.id))POOL_SEL.delete(m.id);else POOL_SEL.add(m.id);cell.classList.toggle('sel');updateMakeBtn();};
     cell.appendChild(ck);
-    cell.onclick=()=>openMediaPreview(m.id,m.name);
+    cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid
     return cell;
   };
   if(POOL_SRC==='Before & After')renderSavedJobs(poolCard); // saved before/after jobs ONLY show in the Before & After area — never under Content
