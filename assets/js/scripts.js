@@ -2083,27 +2083,62 @@ function _rot(arr){ if(!arr||!arr.length)return arr; var k=_biweek()%arr.length;
    When Sebastian names a product in his caption, the "Improve" tool weaves in the real, factual
    features of that product. Easy to extend: add a brand under brands{} with keys + feature bullets.
    Seeded with Okna's hallmarks; send more brands' spec sheets and they drop straight in here. */
+/* PRODUCT KNOWLEDGE BASE — brand + series level. When Sebastian names a brand OR a specific series
+   (e.g. "Okna 800 ProLine", "ProVia Signet"), the caption Improve tool weaves in that series' real
+   features. Brand keys are DISTINCTIVE words only (so common words like "aspect/legacy" never false-fire);
+   series like aspect/heritage/legacy/ascent are only checked once the brand is already identified.
+   NOTE: feature bullets are hallmark facts from public info + industry knowledge — drop in exact
+   U-factor / DP / warranty numbers from each brand's spec sheet to make them airtight. */
 var PRODUCT_KB={
   brands:{
-    'Okna':{keys:['okna'],features:['fusion-welded frames & sashes','foam-insulated for strength and efficiency','warm-edge Super Spacer glass','Energy Star certified','lifetime transferable warranty']},
-    'ProVia':{keys:['provia','endure','aeris','ecolite','signet','embarq'],
-      features:['custom-built to your exact opening','professional-grade vinyl','Energy Star certified','multiple glass & grid options'],
-      doorFeatures:['custom-built to your exact opening','energy-efficient insulated core','fiberglass or steel construction','decorative glass & hardware options']}
+    'Okna':{
+      keys:['okna','enviro star','envirostar','proline','insultec','defendermax','starmark'],
+      features:['fusion-welded frame & sash','foam-insulated for strength and efficiency','warm-edge Super Spacer glass','Energy Star certified','lifetime transferable warranty'],
+      doorFeatures:['heavy-duty welded construction','foam-insulated for efficiency','warm-edge insulated glass','smooth, secure operation'],
+      series:{
+        'enviro star':{name:'Enviro Star',features:['fusion-welded vinyl frame & sash','warm-edge insulated, Energy Star–certified glass','available double-hung, slider, casement, and bay & bow','low-maintenance — never needs painting']},
+        'envirostar':{name:'Enviro Star',features:['fusion-welded vinyl frame & sash','warm-edge insulated, Energy Star–certified glass','available double-hung, slider, casement, and bay & bow','low-maintenance — never needs painting']},
+        'starmark':{name:'StarMark',features:['Okna’s flagship premium window','maximum chambers with foam insulation','triple-pane ready with top energy ratings','premium hardware and finish options']},
+        'proline':{name:'800 ProLine',features:['Okna’s top-tier window','multi-chamber, foam-filled frame & sash for maximum insulation','triple-pane glass available with a high Design Pressure rating','heavy-duty hardware, lifetime transferable warranty']},
+        'insultec':{name:'500 InsulTec',features:['Okna’s popular mid-tier','fusion-welded, foam-filled frame','warm-edge Super Spacer + Low-E glass, Energy Star certified','strong value and efficiency']},
+        'defendermax':{name:'600 DefenderMax',features:['reinforced, multi-chamber frame for strength and security','foam-filled and weld-tight for efficiency','Low-E, gas-filled insulated glass','built for tougher, larger openings']}
+      }
+    },
+    'ProVia':{
+      keys:['provia','endure','aeris','ecolite','signet','embarq'],
+      features:['custom-built to your exact opening','professional FineLine welds','Energy Star certified','multiple Low-E glass & grid options'],
+      doorFeatures:['custom-built to your exact opening','energy-efficient insulated core','fiberglass or steel construction','decorative glass, finishes & hardware options'],
+      series:{
+        'endure':{name:'Endure',features:['ProVia’s flagship vinyl window','FineLine Technology professional welds','full style range — double-hung, slider, casement/awning, bay & bow, picture, garden, hopper, shaped','Energy Star certified with built-in screens and flat/cottage/colonial grids']},
+        'aeris':{name:'Aeris',features:['ProVia’s premium wood-clad-look vinyl window','warm interior look with a low-maintenance exterior','top energy efficiency with Low-E glass packages','internal blinds and architectural shapes available']},
+        'aspect':{name:'Aspect',features:['ProVia’s mid-range vinyl window','solid efficiency and a clean look at a smart price','Energy Star certified with Low-E glass','a range of styles and colors']},
+        'ecolite':{name:'ecoLite',features:['ProVia’s value vinyl window','budget-friendly without giving up Energy Star efficiency','clean, low-maintenance vinyl','great for whole-home swaps and rentals']},
+        'eco lite':{name:'ecoLite',features:['ProVia’s value vinyl window','budget-friendly without giving up Energy Star efficiency','clean, low-maintenance vinyl','great for whole-home swaps and rentals']},
+        'signet':{name:'Signet',type:'door',features:['ProVia’s premium fiberglass entry door','the most realistic, stainable wood-grain texture','the widest range of decorative & art glass and finishes','energy-efficient insulated core, custom-built to your opening']},
+        'heritage':{name:'Heritage',type:'door',features:['ProVia fiberglass entry door','authentic wood-grain or smooth finish','energy-efficient insulated core','decorative glass and hardware options']},
+        'embarq':{name:'Embarq',type:'door',features:['ProVia’s most energy-efficient entry door','extra-thick, high-R insulated fiberglass','tight weather-sealing for serious energy savings','fiberglass that won’t rot, dent, or rust']},
+        'legacy':{name:'Legacy',type:'door',features:['ProVia steel entry door','strong, secure, and budget-friendly','foam-insulated core for efficiency','smooth finish with decorative glass options']},
+        'ascent':{name:'Ascent',type:'door',features:['ProVia fiberglass entry door','clean, modern fiberglass build','energy-efficient insulated core','custom glass, finishes & hardware']}
+      }
+    }
     // more brands go here, e.g. 'Andersen':{keys:['andersen'],features:[...]}
   },
-  styles:{'double hung':'double-hung','double-hung':'double-hung','casement':'casement','slider':'slider','sliding window':'slider','bay':'bay/bow','bow':'bay/bow','picture window':'picture','awning':'awning','patio door':'patio door','sliding door':'patio door','entry door':'entry door','front door':'entry door'}
+  styles:{'double hung':'double-hung','double-hung':'double-hung','casement':'casement','slider':'slider','sliding window':'slider','bay':'bay/bow','bow':'bay/bow','picture window':'picture','awning':'awning','patio door':'patio door','sliding door':'patio door','entry door':'entry door','front door':'entry door','storm door':'storm door','french door':'french door'}
 };
-/* a factual sentence about the product the user named — empty unless a known brand is mentioned (keeps it specific, never generic) */
+/* a factual sentence about the product/series the user named — empty unless a known brand is mentioned */
 function productLine(text){
   var n=' '+(text||'').toLowerCase()+' ';
   var bn='',bf=null;
   for(var b in PRODUCT_KB.brands){ if(PRODUCT_KB.brands[b].keys.some(function(k){return n.indexOf(k)>=0;})){bn=b;bf=PRODUCT_KB.brands[b];break;} }
   if(!bf)return '';
+  var ser=null,serName='';
+  if(bf.series){ for(var sk in bf.series){ if(n.indexOf(sk)>=0){ ser=bf.series[sk]; serName=ser.name; break; } } }
   var style=''; for(var s in PRODUCT_KB.styles){ if(n.indexOf(s)>=0){style=PRODUCT_KB.styles[s];break;} }
-  var isDoor=/door/.test(style);
-  var noun=style?(style+(isDoor?'s':' windows')):'windows';
-  var feats=(isDoor&&bf.doorFeatures)?bf.doorFeatures:bf.features;
-  return 'These are '+bn+' '+noun+' — '+feats.slice(0,3).join(', ')+'.';
+  var isDoor=/door/.test(style)||(ser&&ser.type==='door');
+  var noun=isDoor?(/door/.test(style)?style+'s':'doors'):(style?style+' windows':'windows');
+  var feats=ser?ser.features:((isDoor&&bf.doorFeatures)?bf.doorFeatures:bf.features);
+  var label=serName?(bn+' '+serName):bn;
+  return 'These are '+label+' '+noun+' — '+feats.slice(0,3).join(', ')+'.';
 }
 /* ---- TRADE KNOWLEDGE BASE (home remodeling / window & door install / carpentry / materials) ----
    The assistant only speaks to a topic when Sebastian MENTIONS it in his caption — then it weaves in
