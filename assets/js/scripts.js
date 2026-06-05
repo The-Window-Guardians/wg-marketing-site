@@ -2113,16 +2113,24 @@ var TRADE_KB=[
   {keys:['azek','cellular pvc','pvc trim'], fact:'Finished with AZEK cellular PVC trim — it won’t rot, warp, crack, or peel, and never needs painting, so it stays sharp for decades.'},
   {keys:['aluminum cap','aluminum capping','capping','capped','trim coil','coil stock','wrap the trim','wrapped the trim','aluminum wrap'], fact:'We wrapped the exterior wood trim in custom-bent aluminum capping — a seamless, weather-tight finish that protects the wood and never needs painting again.'},
   {keys:['azek decking','composite deck','pvc decking'], fact:'Built with AZEK capped-PVC decking — moisture-, mold-, and stain-resistant, with a lifetime that laughs at PA winters.'},
+  // ----- glass & grids -----
+  {keys:['tempered','temper glass','tempered glass','safety glass'], fact:'Tempered safety glass where code calls for it (next to doors, low-to-the-floor, and in baths) — roughly 4x stronger than standard glass and it breaks into small, blunt pieces instead of sharp shards.'},
+  {keys:['triple pane','triple-pane','triple glazed','triple-glazed','3 pane','3-pane'], fact:'Triple-pane glass — three panes with insulating gas fills between them for top-tier energy efficiency and noticeably quieter rooms.'},
+  {keys:['double pane','double-pane','dual pane','dual-pane','insulated glass','low-e','low e','argon','krypton'], fact:'Insulated glass with a Low-E coating and gas fill — it reflects heat to keep you cooler in summer and warmer in winter, and protects floors and furniture from fading.'},
+  {keys:['grid','grids','grille','grilles','muntin','colonial','prairie','diamond grid','divided lite','divided light',' sdl',' gbg',' tdl'], fact:'Grids (grilles) add classic character — Colonial, Prairie, Diamond, and top-row styles. Grids sealed between the glass keep cleaning easy; simulated divided lites give the truest historic look.'},
   // ----- window install method -----
   {keys:['full frame','full-frame','to the studs','rough opening'], fact:'This was a full-frame replacement — we took it back to the rough opening to check for hidden rot and seal it properly, not just drop a unit into the old frame.'},
   {keys:['insert','pocket window','pocket replacement','retrofit'], fact:'An insert (pocket) replacement — the existing frame was solid, so we fit the new window precisely into it and sealed it airtight.'},
   {keys:['flash','flashing','flashed','water seal','weatherproof','weather seal'], fact:'Properly flashed and sealed so water stays out — the detail that decides whether an install lasts 5 years or 30.'},
-  {keys:['foam','spray foam','low-e','low e','argon','energy','draft','drafty','efficien'], fact:'Foamed and sealed every gap for a tighter, quieter, more energy-efficient home — lower bills, no more drafts.'},
+  {keys:['foam','spray foam','energy','draft','drafty','efficien','air seal','air-seal'], fact:'Foamed and sealed every gap for a tighter, quieter, more energy-efficient home — lower bills, no more drafts.'},
   {keys:['level','plumb','square','shim','shimmed'], fact:'Set level, plumb, and square and shimmed solid — so it opens smooth and seals tight for the life of the home.'},
   // ----- carpentry / structure -----
-  {keys:['rot','rotted','rotten','dry rot','sill','rebuild','re-build','framing','reframe','header','jamb'], fact:'We rebuilt the rotted framing and sill before installing — the carpentry under the surface is what makes a window or door actually last.'},
+  {keys:['rot','rotted','rotten','dry rot','rebuild','re-build','framing','reframe','header','jamb'], fact:'We rebuilt the rotted framing before installing — the carpentry under the surface is what makes a window or door actually last.'},
   {keys:['carpentry','finish carpentry','custom built','custom-built'], fact:'Real carpentry, not a quick swap — built and fit to the opening so the finished work looks like it was always meant to be there.'},
   {keys:['trim','casing','molding','moulding','returns','miters','mitered'], fact:'Finished with clean, tight trim and casing for a crisp, built-in look inside and out.'},
+  {keys:['sill','stool','apron','window trim','interior trim'], fact:'Finished the interior with clean trim — the stool (sill), apron, and casing — for a crisp, custom built-in look.'},
+  {keys:['j-channel','j channel','jchannel'], fact:'Trimmed the openings with J-channel so the siding tucks in clean and stays weather-tight around the windows and doors.'},
+  {keys:['new construction','new-construction','nailing fin','nail fin','tear off','tear-off'], fact:'New-construction install (a nailing-fin unit set into open framing) is for new builds or full tear-offs — versus a replacement install, where we fit the new unit into your existing opening without tearing off siding or trim.'},
   // ----- doors -----
   {keys:['entry door','front door','exterior door','prehung','pre-hung'], fact:'A properly plumbed, shimmed, and weather-sealed entry door — it swings true and seals tight against the weather for years.'},
   {keys:['patio door','sliding door','slider door','french door'], fact:'A patio door set dead-level and sealed for an airtight, smooth glide every time.'},
