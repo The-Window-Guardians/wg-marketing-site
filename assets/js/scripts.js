@@ -1716,6 +1716,60 @@ function openJobPicker(item){
     b.appendChild(opt);
   });
 }
+/* ---- reverse geocoding: turn a photo's GPS into "Town ZIP" (e.g. "Langhorne 19053") so jobs
+   auto-name themselves. Uses BigDataCloud's free client endpoint (no key, CORS-ok). Cached,
+   throttled, and fails quietly — if it can't reach the service the job just stays "Job N". ---- */
+var _geoCache={}, _geoBusy=false;
+async function reverseGeocode(lat,lng){
+  if(typeof lat!=='number'||typeof lng!=='number')return null;
+  var key=lat.toFixed(4)+','+lng.toFixed(4);
+  if(_geoCache[key]!==undefined)return _geoCache[key];
+  try{
+    var u='https://api.bigdatacloud.net/data/reverse-geocode-client?latitude='+lat+'&longitude='+lng+'&localityLanguage=en';
+    var r=await pTimeout(fetch(u),8000,'geo'); if(!r.ok)throw 0;
+    var d=await r.json();
+    var town=d.city||d.locality||d.principalSubdivision||'';
+    var zip=d.postcode||'';
+    var out=town?{town:town,zip:zip}:null;
+    _geoCache[key]=out; return out;
+  }catch(e){ _geoCache[key]=null; return null; }
+}
+/* background pass: fill town/zip on located photos that lack it (one place at a time), then refresh */
+async function enrichLocations(){
+  if(_geoBusy)return;
+  var located=(typeof poolAvailable==='function')?poolAvailable().filter(hasLoc):[];
+  var clusters=clusterByLocation(located,60).filter(function(c){return c.items.some(function(m){return !m.town;});});
+  if(!clusters.length)return;
+  _geoBusy=true; var changed=false;
+  for(var i=0;i<clusters.length;i++){
+    var c=clusters[i]; var g=await reverseGeocode(c.lat,c.lng);
+    if(g){ c.items.forEach(function(m){ if(!m.town){ m.town=g.town; if(g.zip)m.zip=g.zip; m._ut=Date.now(); changed=true; } }); }
+    await new Promise(function(r){setTimeout(r,900);}); // be polite to the free endpoint
+  }
+  _geoBusy=false;
+  if(changed){ try{commit();}catch(e){} if(typeof rerenderCal==='function')rerenderCal(); }
+}
+/* the display name for a location group: custom override → "Town ZIP" → "Job N" */
+function clusterBaseName(items, idx){
+  var cn=(items.find(function(m){return m&&m.cname;})||{}).cname; if(cn)return cn;
+  var t=(items.find(function(m){return m&&m.town;})||{});
+  if(t.town)return t.town+(t.zip?' '+t.zip:'');
+  return 'Job '+(idx+1);
+}
+/* rename a location group — stores a custom name on its photos (clear it to go back to auto) */
+async function renameCluster(items, current){
+  var name=await uiPrompt('Name this job (e.g. an address). Leave blank to go back to the auto name.', current, {title:'Rename job', placeholder:'e.g. 123 Maple St', confirmText:'Save'});
+  items.forEach(function(m){ if(name)m.cname=name; else delete m.cname; m._ut=Date.now(); });
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  toast(name?'Renamed':'Back to the auto name');
+}
+/* small thumbnail peek shown on a COLLAPSED job so you can glance before expanding */
+function peekStrip(items){
+  var strip=el('div','peekstrip');
+  items.slice(0,6).forEach(function(m){ var t=el('img','peekthumb'); t.addEventListener('load',function(){t.style.display='block';}); if(VTHUMB[m.id])t.src=VTHUMB[m.id]; else thumbInto(t,m.id); strip.appendChild(t); });
+  if(items.length>6)strip.appendChild(el('span','peekmore','+'+(items.length-6)));
+  return strip;
+}
 /* render saved before/after jobs as collapsible stacks AT THE TOP of the content list.
    Photos show in one uniform grid; each has a Before/After pill you can tap to set/change. */
 function renderSavedJobs(container){
@@ -1729,7 +1783,11 @@ function renderSavedJobs(container){
     const post=el('button','btn-set primary');
     const updatePostBtn=()=>{post.textContent=jobSel.size?('Make this post from '+jobSel.size+' selected'):('Make this post'+(its.length>1?(' (all '+its.length+')'):''));};
     const d=el('details','jobgroup savedjob');
-    d.appendChild(el('summary','jobsum',`🔀 ${esc(j.name||'Job')} · ${its.length} photo${its.length>1?'s':''}`));
+    const sum=el('summary','jobsum');
+    sum.appendChild(el('span','jobsum-t',`🔀 ${esc(j.name||'Job')} · ${its.length} photo${its.length>1?'s':''}`));
+    if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=async(e)=>{e.preventDefault();e.stopPropagation(); const nn=await uiPrompt('Rename this before/after job.', j.name||'', {title:'Rename job',confirmText:'Save'}); if(nn){ j.name=nn; saveBaJob(j); rerenderCal(); toast('Renamed'); } }; sum.appendChild(ed); }
+    sum.appendChild(peekStrip(its));
+    d.appendChild(sum);
     const body=el('div','savedbody');
     const grid=el('div','poolgrid');
     its.forEach(m=>{
@@ -4974,6 +5032,30 @@ function uiConfirm(message, opts){
     setTimeout(()=>{try{ok.focus()}catch(e){}},30);
   });
 }
+/* on-brand text prompt (returns the typed string, or null on cancel/empty) */
+function uiPrompt(message, current, opts){
+  opts=opts||{};
+  return new Promise(function(resolve){
+    const ov=el('div','conf-ov');
+    const box=el('div','conf-box');
+    box.innerHTML=`<div class="conf-title">${esc(opts.title||'Rename')}</div><div class="conf-body">${esc(message||'')}</div>`;
+    const inp=el('input','cmp-in');inp.value=current||'';inp.placeholder=opts.placeholder||'';inp.style.marginTop='10px';
+    box.appendChild(inp);
+    const foot=el('div','conf-foot');
+    const cancel=el('button','btn-set',opts.cancelText||'Cancel');
+    const ok=el('button','btn-set primary',opts.confirmText||'Save');
+    foot.appendChild(cancel);foot.appendChild(ok);box.appendChild(foot);
+    ov.appendChild(box);document.body.appendChild(ov);
+    let done=false;
+    const close=(val)=>{ if(done)return; done=true; document.removeEventListener('keydown',onKey); ov.remove(); resolve(val); };
+    function onKey(e){ if(e.key==='Escape')close(null); else if(e.key==='Enter')close((inp.value||'').trim()||null); }
+    cancel.onclick=()=>close(null);
+    ok.onclick=()=>close((inp.value||'').trim()||null);
+    ov.onclick=e=>{ if(e.target===ov)close(null); };
+    document.addEventListener('keydown',onKey);
+    setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},30);
+  });
+}
 function postCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
   const card=el('div','postcard '+p.status);
@@ -5222,14 +5304,22 @@ function socLibrary(v){
     const located=avail.filter(hasLoc);
     const noloc=avail.filter(m=>!hasLoc(m));
     const clusters=clusterByLocation(located,60);
+    const _nameCount={};
     clusters.forEach((c,i)=>{
-      const d=el('details','jobgroup');if(i<2)d.open=true;
-      const nm=(c.items.find(m=>m&&m.town)||{}).town;
-      d.appendChild(el('summary','jobsum',`📍 ${nm?esc(nm):'Job '+(i+1)} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      const d=el('details','jobgroup');
+      let base=clusterBaseName(c.items,i);
+      const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
+      if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
+      const sum=el('summary','jobsum');
+      sum.appendChild(el('span','jobsum-t',`📍 ${esc(base)} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=(e)=>{e.preventDefault();e.stopPropagation();renameCluster(c.items,base);}; sum.appendChild(ed); }
+      sum.appendChild(peekStrip(c.items));
+      d.appendChild(sum);
       const g=el('div','poolgrid');c.items.forEach(m=>g.appendChild(buildCell(m)));d.appendChild(g);
       if(c.items.length>=2){ const mk=el('button','btn-set baclust','🔀 Mark this location before/after'); mk.onclick=()=>openBaBuilder(c.items.slice()); d.appendChild(mk); }
       poolCard.appendChild(d);
     });
+    setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
       const d=el('details','jobgroup needsort');d.open=true;
       d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tap “Add to a job” to file each.`));
