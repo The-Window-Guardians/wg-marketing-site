@@ -810,6 +810,8 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .uplprog-bar{height:12px;border-radius:999px;background:var(--line2);overflow:hidden}
 .uplprog-bar>i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--orange),var(--orange-2,#f7a072));transition:width .25s}
 .uplprog-sub{margin-top:12px;font-size:12.5px;color:var(--muted)}
+.uplprog-cancel{margin-top:16px;width:100%;padding:11px;border:1.5px solid var(--line2);border-radius:10px;background:#fff;color:var(--ink);font-weight:800;font-size:14px;cursor:pointer}
+.uplprog-cancel:hover{background:#f5f7fb;border-color:var(--orange)}
 .upbtn:first-of-type{margin-top:0}
 .upbtn:active{transform:scale(.99)}
 .upbtn:hover{border-color:var(--orange);background:var(--orange-soft)}

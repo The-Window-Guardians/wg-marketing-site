@@ -1347,14 +1347,17 @@ async function readGps(file){
   try{ const g2=await exifGps(file); if(g2)return g2; }catch(e){} // fallback for plain JPEG
   return null;
 }
-/* full-screen progress while a batch uploads — so the user sees it working AND knows to keep
-   the screen open. done<0 hides it. */
+var _uplAbort=false; // set true by the Stop button so workers stop pulling new photos
+/* full-screen progress while a batch uploads. done<0 hides it. There is ALWAYS a Stop button so
+   the user can never get trapped — anything already added is saved. */
 function uploadProgress(done,total){
   var ov=document.getElementById('uplprog');
   if(done<0){ if(ov){ov.classList.remove('show');setTimeout(function(){try{ov.remove()}catch(e){}},250);} return; }
   if(!ov){ ov=el('div','uplprog');ov.id='uplprog';
-    ov.innerHTML='<div class="uplprog-box"><div class="uplprog-txt"></div><div class="uplprog-bar"><i></i></div><div class="uplprog-sub">Saving each photo — keep this screen open…</div></div>';
-    document.body.appendChild(ov); setTimeout(function(){ov.classList.add('show')},10); }
+    ov.innerHTML='<div class="uplprog-box"><div class="uplprog-txt"></div><div class="uplprog-bar"><i></i></div><div class="uplprog-sub">Saving each photo — what’s done is already saved.</div><button class="uplprog-cancel" type="button">Stop / Close</button></div>';
+    document.body.appendChild(ov); setTimeout(function(){ov.classList.add('show')},10);
+    ov.querySelector('.uplprog-cancel').onclick=function(){ _uplAbort=true; uploadProgress(-1); try{toast('Upload stopped — everything already added is saved.')}catch(e){} try{if(typeof rerenderCal==='function')rerenderCal();}catch(e){} };
+  }
   var pct=total?Math.round(done/total*100):0;
   ov.querySelector('.uplprog-txt').textContent='Uploading photos — '+done+' of '+total;
   ov.querySelector('.uplprog-bar>i').style.width=pct+'%';
@@ -1368,7 +1371,7 @@ function fileSig(file){
 async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
-  const total=files.length; uploadProgress(0,total);
+  const total=files.length; _uplAbort=false; uploadProgress(0,total);
   const pool=socPool(); let localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
   const startLen=pool.length;
   const seen=new Set(); pool.forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
@@ -1377,7 +1380,7 @@ async function poolAddFiles(fileList,folder){
   // a photo can upload while the next one encodes. Each photo still saves the instant it lands.
   async function uploadWorker(){
     while(true){
-      const idx=next++; if(idx>=files.length)break;
+      const idx=next++; if(idx>=files.length||_uplAbort)break; // Stop button → workers stop pulling new photos
       const raw=files[idx];
       const _sig=fileSig(raw); // sync — claimed before any await, so concurrent workers can't double-add a dup
       if(_sig && seen.has(_sig)){ dupSkipped++; doneN++; uploadProgress(doneN,total); continue; }
@@ -1387,13 +1390,13 @@ async function poolAddFiles(fileList,folder){
         if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
         if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
           try{
-            const geo=await readGps(raw);
+            let geo=null; try{ geo=await pTimeout(readGps(raw),8000,'gps'); }catch(_g){ geo=null; } // GPS is optional — never let it stall
             const dataUrl=await encodePhoto(raw); // native decode first (iOS does HEIC), JS lib only as fallback
             const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
             const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
             const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
-            await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 45000, 'upload'); // stalled cloud write → fall to local save below
+            await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 25000, 'upload'); // stalled cloud write → fall to local save below
             const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
             if(geo){item.lat=geo.lat;item.lng=geo.lng;}
             if(folder)item.folder=folder;
@@ -1401,7 +1404,7 @@ async function poolAddFiles(fileList,folder){
             pool.push(item); VTHUMB[id]=dataUrl;
           }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; pool.push(it); }catch(e2){} }
         } else { // video (or offline image) -> local
-          const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool');
+          const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
           const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
           it.folder = isVideo ? 'Videos' : (folder||'');
@@ -2248,7 +2251,7 @@ function canEncodeWebp(){
 function pTimeout(p,ms,label){ return Promise.race([ p, new Promise(function(_,rej){ setTimeout(function(){ rej(new Error((label||'step')+' timeout')); }, ms); }) ]); }
 async function encodePhoto(raw){
   try{ return await imgToWebp(raw); }                                  // native decode (fast on iOS)
-  catch(e){ const norm=await normalizeImage(raw); return await imgToWebp(norm); } // fallback: JS HEIC converter
+  catch(e){ const norm=await pTimeout(normalizeImage(raw),12000,'convert'); return await imgToWebp(norm); } // fallback: JS HEIC converter (time-bounded so it can't hang)
 }
 function imgToWebp(file){
   return new Promise(function(resolve,reject){
