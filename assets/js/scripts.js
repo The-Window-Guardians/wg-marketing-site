@@ -1474,6 +1474,34 @@ function delBaJob(id){
   if(j){const ids=new Set(jobItems(j).map(x=>x.id));socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used')m.status='available'});} // photos return to Your content
   ST.bajobs=socBaJobs().filter(x=>x.id!==id);commit();
 }
+/* delete one or more pool items (photos/videos) — undo-able; frees the blob + cloud copy only after the undo window closes */
+function poolDeleteItems(ids){
+  const set=new Set(ids);
+  const snaps=socPool().filter(m=>set.has(m.id)).map(m=>JSON.parse(JSON.stringify(m)));
+  if(!snaps.length)return;
+  ST.pool=socPool().filter(m=>!set.has(m.id));commit();
+  if(typeof rerenderCal==='function')rerenderCal();
+  const n=snaps.length;
+  toastUndo(n+' deleted',
+    function(){ snaps.forEach(s=>socPool().push(s)); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
+    function(){ snaps.forEach(s=>{ try{fileDel(s.id)}catch(e){} try{cloudFileDel(s.id)}catch(e){} }); });
+}
+/* delete ONE photo/video that lives inside a before/after job — pulls it from the job and deletes it (undo-able). If it was the job's last photo, the job goes too. */
+function deleteJobPhoto(jobId,mediaId){
+  const j=socBaJobs().find(x=>x.id===jobId); if(!j)return;
+  const jobSnap=JSON.parse(JSON.stringify(j));
+  const pm=socPool().find(m=>m.id===mediaId); const poolSnap=pm?JSON.parse(JSON.stringify(pm)):null;
+  if(Array.isArray(j.items))j.items=j.items.filter(x=>x.id!==mediaId);
+  if(j.before)j.before=j.before.filter(x=>x.id!==mediaId);
+  if(j.after)j.after=j.after.filter(x=>x.id!==mediaId);
+  let removedJob=false;
+  if(!jobItems(j).length){ ST.bajobs=socBaJobs().filter(x=>x.id!==jobId); removedJob=true; } else { j._ut=Date.now(); }
+  ST.pool=socPool().filter(m=>m.id!==mediaId);commit();
+  if(typeof rerenderCal==='function')rerenderCal();
+  toastUndo('Photo deleted',
+    function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap)socPool().push(poolSnap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+    function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} });
+}
 /* builder: group photos into a job; tagging before/after is OPTIONAL */
 function openBaBuilder(items){
   if(!items||!items.length)return;
@@ -1574,6 +1602,11 @@ function renderSavedJobs(container){
       pill.title='Tap to set Before / After';
       pill.onclick=(e)=>{e.stopPropagation();m.role=(!m.role)?'before':m.role==='before'?'after':'';pill.className='rolepill '+(m.role||'none');pill.textContent=m.role==='before'?'BEFORE':m.role==='after'?'AFTER':'＋ tag';saveBaJob(j);};
       cell.appendChild(pill);
+      if(typeof isOwner==='function'&&isOwner()){
+        const dx=el('button','celldel','🗑');dx.title='Delete this photo';
+        dx.onclick=async(e)=>{e.stopPropagation();if(await uiConfirm('Delete this photo? You’ll have a few seconds to undo.',{title:'Delete photo?',confirmText:'Delete',danger:true}))deleteJobPhoto(j.id,m.id);};
+        cell.appendChild(dx);
+      }
       cell.onclick=()=>openMediaPreview(m.id,m.name); // tap the photo to preview
       grid.appendChild(cell);
     });
@@ -4985,7 +5018,8 @@ function socLibrary(v){
   poolCard.appendChild(ctrls);
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
-  const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;};
+  let delBtn=null;
+  const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;if(delBtn){delBtn.textContent=POOL_SEL.size?`🗑 Delete ${POOL_SEL.size}`:'🗑 Delete';delBtn.disabled=!POOL_SEL.size;}};
   const buildCell=(m)=>{
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
     const cell=el('div','poolcell'+(POOL_SEL.has(m.id)?' sel':''));
@@ -5066,6 +5100,21 @@ function socLibrary(v){
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
   poolCard.appendChild(blank);
+  if(typeof isOwner==='function'&&isOwner()){
+    delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.textContent='🗑 Delete';delBtn.disabled=true;
+    delBtn.onclick=async()=>{
+      const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
+      const inUse=sel.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
+      const del=sel.filter(m=>inUse.indexOf(m)<0);
+      if(inUse.length)toast(inUse.length+' in use by a draft post — remove there first.');
+      if(!del.length)return;
+      const n=del.length;
+      if(!await uiConfirm('Delete '+n+' selected item'+(n>1?'s':'')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;
+      const ids=del.map(m=>m.id);POOL_SEL.clear();poolDeleteItems(ids);
+    };
+    poolCard.appendChild(delBtn);
+  }
+  updateMakeBtn();
   v.appendChild(poolCard);
 
   // ---- RECENTLY POSTED → reuse for a follow-up / correction (sim #7) ----
