@@ -5545,18 +5545,44 @@ function openComposer(idOrPost,isNew){
     const arr=postMedia(p);
     const baType = p.type==='beforeafter';
     const grid=el('div','medgrid');
+    // drag-to-reorder (pointer events → works on phone AND desktop). The grip stops it fighting scroll.
+    function attachMediaDrag(grip,cell){
+      grip.style.touchAction='none';
+      grip.addEventListener('pointerdown',function(e){
+        e.preventDefault();e.stopPropagation();
+        cell.classList.add('dragging');
+        try{grip.setPointerCapture(e.pointerId);}catch(_){}
+        function move(ev){
+          var under=document.elementFromPoint(ev.clientX,ev.clientY);
+          var over=under&&under.closest?under.closest('.medcell'):null;
+          if(over&&over!==cell&&over.parentNode===grid&&over.dataset.mid){
+            var cells=Array.prototype.slice.call(grid.querySelectorAll('.medcell'));
+            grid.insertBefore(cell, cells.indexOf(cell)<cells.indexOf(over)?over.nextSibling:over);
+          }
+        }
+        function up(){
+          cell.classList.remove('dragging');
+          try{grip.releasePointerCapture(e.pointerId);}catch(_){}
+          grip.removeEventListener('pointermove',move);grip.removeEventListener('pointerup',up);
+          var ids=Array.prototype.map.call(grid.querySelectorAll('.medcell'),function(c){return c.dataset.mid;});
+          p.media.sort(function(a,b){return ids.indexOf(a.id)-ids.indexOf(b.id);});
+          renderMedia();
+        }
+        grip.addEventListener('pointermove',move);grip.addEventListener('pointerup',up);
+      });
+    }
     arr.forEach((m,i)=>{
       const cell=el('div','medcell');
       const img=el('img','medthumb');thumbInto(img,m.id);
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
       const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);renderMedia()};
       cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);
-      if(arr.length>1){ // carousel → let Sebastian set the posting order so Ruth posts them in sequence
+      cell.dataset.mid=m.id;
+      if(arr.length>1){ // carousel → drag the handle to set the posting order Ruth follows
         cell.appendChild(el('span','medorder',(i+1)+''));
-        const mv=el('div','medmove');
-        const lb=el('button','medmvbtn','◀');lb.title='Move earlier';lb.disabled=(i===0);lb.onclick=(e)=>{e.stopPropagation();if(i>0){const t=p.media[i-1];p.media[i-1]=p.media[i];p.media[i]=t;renderMedia();}};
-        const rb=el('button','medmvbtn','▶');rb.title='Move later';rb.disabled=(i===arr.length-1);rb.onclick=(e)=>{e.stopPropagation();if(i<p.media.length-1){const t=p.media[i+1];p.media[i+1]=p.media[i];p.media[i]=t;renderMedia();}};
-        mv.appendChild(lb);mv.appendChild(rb);cell.appendChild(mv);
+        const grip=el('div','medgrip','⠿ drag');
+        attachMediaDrag(grip,cell);
+        cell.appendChild(grip);
       } else {
         cell.appendChild(el('div','medname',esc(m.name||'attached')));
       }
@@ -5578,7 +5604,7 @@ function openComposer(idOrPost,isNew){
       for(const raw of files){const f=await normalizeImage(raw);const rec=await fileAdd(f,p.week,S.role,'post.'+p.id);p.media.push({id:rec.id,name:rec.name});}
       renderMedia();toast(files.length>1?files.length+' files attached':'Media attached')};
     drop.appendChild(inp);grid.appendChild(drop);
-    if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Use ◀ ▶ to reorder.'));
+    if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Drag the ⠿ handle to reorder.'));
     media.appendChild(grid);
     // add from the existing dashboard library (where your uploaded / Drive photos live)
     const fromBtn=el('button','btn-set','🗂️ Add from your content');fromBtn.style.marginTop='8px';
