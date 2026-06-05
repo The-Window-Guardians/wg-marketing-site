@@ -18,6 +18,8 @@
     if (window.firebase && firebase.initializeApp) {
       if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(cfg);
       window.WG_AUTH = firebase.auth();
+      // keep people signed in across app re-opens (esp. the installed Quick Upload shortcut)
+      try { window.WG_AUTH.setPersistence(firebase.auth.Auth.Persistence.LOCAL); } catch (e) {}
       window.WG_DB = firebase.firestore();
       window.WG_FB_READY = true;
     } else {
