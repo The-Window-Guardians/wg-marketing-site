@@ -2058,7 +2058,7 @@ var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoM
    _ct before it can ever reach the shared doc. */
 function stampCts(){ try{ var prog=S.prog||{}; Object.keys(prog).forEach(function(pid){ var sl=prog[pid]||{}; _MERGE_ARRAYS.forEach(function(k){ var arr=sl[k]; if(Array.isArray(arr))arr.forEach(function(r){ if(r&&r.id&&typeof r._ct!=='number'){ r._ct=_tsFromId(r.id)||Date.now(); } }); }); }); }catch(e){} }
 // maps where we keep the union of keys (remote value wins per key)
-var _MERGE_MAPS=['tasks','kpis','deliv','townFacts'];
+var _MERGE_MAPS=['tasks','kpis','deliv','townFacts','pb','pbDue','pbRolled','dueOverride'];
 function mergeProg(remoteProg,sinceTs){
   if(!remoteProg||typeof remoteProg!=='object')return S.prog;
   var localProg=S.prog||{}, merged={};
