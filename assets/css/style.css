@@ -810,6 +810,10 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .uplprog-bar{height:12px;border-radius:999px;background:var(--line2);overflow:hidden}
 .uplprog-bar>i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--orange),var(--orange-2,#f7a072));transition:width .25s}
 .uplprog-sub{margin-top:12px;font-size:12.5px;color:var(--muted)}
+.dupset{border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin:10px 0;background:var(--bg)}
+.dupset-h{font-weight:800;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.poolcell.dupkeep{outline:3px solid var(--green,#1f9d57);outline-offset:-3px}
+.dupkeeptag{position:absolute;top:5px;left:5px;background:var(--green,#1f9d57);color:#fff;font-size:9px;font-weight:800;letter-spacing:.05em;border-radius:5px;padding:2px 6px;z-index:3}
 .uplprog-cancel{margin-top:16px;width:100%;padding:11px;border:1.5px solid var(--line2);border-radius:10px;background:#fff;color:var(--ink);font-weight:800;font-size:14px;cursor:pointer}
 .uplprog-cancel:hover{background:#f5f7fb;border-color:var(--orange)}
 .upbtn:first-of-type{margin-top:0}

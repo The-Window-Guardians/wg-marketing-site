@@ -1528,6 +1528,88 @@ function deleteJobPhoto(jobId,mediaId){
     function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap)socPool().push(poolSnap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
     function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} });
 }
+/* ---- LOOK-ALIKE duplicate finder: compares the actual picture (8x8 perceptual hash), so it
+   catches the same photo even from a different source/filename, and works on photos that were
+   uploaded before the upload-time skip existed. ---- */
+function _hamm(a,b){ if(!a||!b||a.length!==b.length)return 99; var d=0; for(var i=0;i<a.length;i++)if(a[i]!==b[i])d++; return d; }
+async function photoSrcFor(id){
+  if(VTHUMB[id])return VTHUMB[id];
+  try{ const c=await cloudFileGet(id); if(c&&c.dataUrl){VTHUMB[id]=c.dataUrl;return c.dataUrl;} }catch(e){}
+  try{ const rec=await fileGet(id); if(rec&&rec.blob)return URL.createObjectURL(rec.blob); }catch(e){}
+  return null;
+}
+function imgAHash(src){
+  return new Promise(function(resolve){
+    if(!src)return resolve(null);
+    var img=new Image(), done=false;
+    var to=setTimeout(function(){ if(!done){done=true;resolve(null);} },8000); // never hang the scan
+    img.onload=function(){ if(done)return; done=true; clearTimeout(to);
+      try{
+        var c=document.createElement('canvas');c.width=8;c.height=8;var x=c.getContext('2d');
+        x.drawImage(img,0,0,8,8); var d=x.getImageData(0,0,8,8).data;
+        var g=[],sum=0; for(var i=0;i<64;i++){var v=d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114;g.push(v);sum+=v;}
+        var avg=sum/64,bits=''; for(var j=0;j<64;j++)bits+=(g[j]>=avg?'1':'0');
+        resolve(bits);
+      }catch(e){resolve(null);}
+    };
+    img.onerror=function(){ if(done)return; done=true; clearTimeout(to); resolve(null); };
+    img.src=src;
+  });
+}
+async function scanDuplicates(onProgress){
+  var items=poolAvailable().filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')&&!/^video\//.test(m.type||''); }); // photos only
+  var total=items.length, done=0, computed=0;
+  for(var i=0;i<items.length;i++){
+    var m=items[i];
+    if(!m.phash){ var src=await photoSrcFor(m.id); var h=await imgAHash(src); if(h){m.phash=h;computed++;} }
+    done++; if(onProgress)onProgress(done,total);
+    await new Promise(function(r){setTimeout(r,0);}); // one image at a time → low memory even for 100s
+  }
+  if(computed){ try{commit();}catch(e){} } // persist fingerprints so the next scan is instant
+  var groups=[], used={};
+  for(var a=0;a<items.length;a++){
+    if(used[items[a].id]||!items[a].phash)continue;
+    var grp=[items[a]]; used[items[a].id]=1;
+    for(var b=a+1;b<items.length;b++){
+      if(used[items[b].id]||!items[b].phash)continue;
+      if(_hamm(items[a].phash,items[b].phash)<=5){ grp.push(items[b]); used[items[b].id]=1; } // <=5/64 bits → same picture
+    }
+    if(grp.length>1)groups.push(grp);
+  }
+  return groups;
+}
+async function openDuplicateScanner(){
+  closeComposer();
+  const ov=el('div','cmp-ov');ov.id='cmpOv';
+  const box=el('div','cmp-box');
+  box.innerHTML='<div class="cmp-head"><h3>Find look-alike photos</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"><p class="muted">Scanning your photos…</p><div class="uplprog-bar" style="margin-top:10px"><i style="width:0"></i></div></div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.onclick=function(e){if(e.target===ov)closeComposer()};
+  $('#cmpX').onclick=closeComposer;
+  const body=$('#cmpBody');
+  const bar=body.querySelector('.uplprog-bar>i');
+  const groups=await scanDuplicates(function(d,t){ if(bar)bar.style.width=Math.round(d/t*100)+'%'; var p=body.querySelector('p.muted'); if(p)p.textContent='Scanning your photos… '+d+' of '+t; });
+  if(!document.getElementById('cmpOv'))return; // user closed it mid-scan
+  body.innerHTML='';
+  if(!groups.length){ body.appendChild(el('p','muted','✅ No look-alikes found — your library is clean.')); return; }
+  const totalExtra=groups.reduce(function(s,g){return s+(g.length-1);},0);
+  const head=el('div');head.innerHTML='<p style="font-weight:700;margin:0 0 4px">Found '+groups.length+' set'+(groups.length>1?'s':'')+' of look-alikes — '+totalExtra+' extra photo'+(totalExtra>1?'s':'')+'.</p><p class="muted" style="font-size:12px;margin:0">Keeps the first of each set, removes the rest. You can undo.</p>';
+  body.appendChild(head);
+  const bulk=el('button','btn-set danger','🗑 Remove all '+totalExtra+' extras (keep 1 of each)');bulk.style.margin='10px 0 14px';
+  bulk.onclick=async function(){ if(!await uiConfirm('Remove '+totalExtra+' duplicate photo'+(totalExtra>1?'s':'')+'? One copy of each look-alike set is kept. You can undo.',{title:'Remove duplicates?',confirmText:'Remove',danger:true}))return; var ids=[];groups.forEach(function(g){g.slice(1).forEach(function(m){ids.push(m.id);});}); closeComposer(); poolDeleteItems(ids); };
+  body.appendChild(bulk);
+  groups.forEach(function(g,gi){
+    const card=el('div','dupset');
+    card.appendChild(el('div','dupset-h','Set '+(gi+1)+' · '+g.length+' look-alikes'));
+    const row=el('div','poolgrid');
+    g.forEach(function(m,mi){ const cell=el('div','poolcell'+(mi===0?' dupkeep':''));const img=el('img','poolimg');img.addEventListener('load',function(){img.style.display='block';});thumbInto(img,m.id);cell.appendChild(img); if(mi===0)cell.appendChild(el('span','dupkeeptag','KEEP')); row.appendChild(cell); });
+    card.appendChild(row);
+    const del=el('button','btn-set','Delete the other '+(g.length-1));del.style.marginTop='6px';
+    del.onclick=function(){ const ids=g.slice(1).map(function(m){return m.id;}); del.disabled=true; del.textContent='Removed ✓'; poolDeleteItems(ids); };
+    card.appendChild(del);
+    body.appendChild(card);
+  });
+}
 /* auto-guess before/after by upload order: earliest half = before, later half = after.
    A single photo stays untagged. Always editable via the pills. */
 function autoGuessRoles(items){
@@ -5192,6 +5274,9 @@ function socLibrary(v){
       const ids=del.map(m=>m.id);POOL_SEL.clear();poolDeleteItems(ids);
     };
     poolCard.appendChild(delBtn);
+    const dupBtn=el('button','btn-set','🔍 Find duplicates');dupBtn.style.cssText='margin:12px 0 0 8px';
+    dupBtn.onclick=()=>openDuplicateScanner();
+    poolCard.appendChild(dupBtn);
   }
   updateMakeBtn();
   v.appendChild(poolCard);
