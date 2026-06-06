@@ -1453,9 +1453,10 @@ async function poolAddFiles(fileList,folder){
       try{
         if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
         if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
+          let _du=null; // the encoded thumbnail — reused so EVERY outcome (cloud OR fallback) has a visible image
           try{
             let geo=null; try{ geo=await pTimeout(readGps(raw),8000,'gps'); }catch(_g){ geo=null; } // GPS is optional — never let it stall
-            const dataUrl=await encodePhoto(raw); // native decode first (iOS does HEIC), JS lib only as fallback
+            const dataUrl=await encodePhoto(raw); _du=dataUrl; // native decode first (iOS does HEIC), JS lib only as fallback
             const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
             const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -1466,7 +1467,7 @@ async function poolAddFiles(fileList,folder){
             if(folder)item.folder=folder;
             if(_sig)item.sig=_sig;
             addToPool(item); VTHUMB[id]=dataUrl;
-          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); }catch(e2){} }
+          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); if(_du)VTHUMB[rec.id]=_du; else { try{VTHUMB[rec.id]=await encodePhoto(raw);}catch(_t){} } }catch(e2){} } // cloud failed → keep a local copy AND a thumbnail so it never shows blank
         } else { // video (or offline image) -> local
           const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
@@ -1474,6 +1475,7 @@ async function poolAddFiles(fileList,folder){
           it.folder = isVideo ? 'Videos' : (folder||'');
           if(_sig)it.sig=_sig;
           addToPool(it);
+          if(!isVideo){ try{ VTHUMB[rec.id]=await encodePhoto(raw); }catch(_t){} } // offline image → still cache a thumbnail
         }
       }catch(e){ imgFailed++; }
       try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done (ST.pool is already live)
@@ -3019,7 +3021,7 @@ function imgToWebp(file){
     var tmr=setTimeout(function(){ fail(new Error('decode timeout')); }, 9000); // a photo that never loads can't freeze the batch
     img.onload=function(){
       try{
-        var w=img.naturalWidth,h=img.naturalHeight,M=1600;
+        var w=img.naturalWidth,h=img.naturalHeight,M=1280; // 1280px is plenty for social and keeps the file well under Firestore's 1 MB doc limit
         if(!w||!h){return fail(new Error('empty image'));}
         if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
         var mime=canEncodeWebp()?'image/webp':'image/jpeg';
@@ -3027,10 +3029,10 @@ function imgToWebp(file){
           if(mime==='image/jpeg'){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,cw,ch);} // jpeg has no alpha — white, not black
           ctx.drawImage(img,0,0,cw,ch);return c.toDataURL(mime,q);};
         var q=0.8, data=enc(w,h,q);
-        while(data.length>950000 && q>0.4){ q-=0.12; data=enc(w,h,q); }          // 1) drop quality
+        while(data.length>780000 && q>0.4){ q-=0.12; data=enc(w,h,q); }          // 1) drop quality — cap well under the 1 MB cloud limit
         var s=1;
-        while(data.length>950000 && s>0.35){ s-=0.2; data=enc(Math.round(w*s),Math.round(h*s),0.7); } // 2) shrink dimensions
-        if(data.length>1010000) return fail(new Error('still too large for cloud'));
+        while(data.length>780000 && s>0.3){ s-=0.2; data=enc(Math.round(w*s),Math.round(h*s),0.7); } // 2) shrink dimensions
+        if(data.length>820000) return fail(new Error('still too large for cloud'));
         ok(data);
       }catch(e){ fail(e); }
     };
