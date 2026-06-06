@@ -1436,9 +1436,9 @@ async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   const total=files.length; _uplAbort=false; uploadProgress(0,total);
-  const pool=socPool(); let localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
-  const startLen=pool.length;
-  const seen=new Set(); pool.forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
+  let addedN=0, localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
+  const addToPool=function(it){ socPool().push(it); addedN++; }; // ALWAYS push to the live pool — a mid-upload cloud sync swaps the pool object, so a captured reference would silently lose photos
+  const seen=new Set(); socPool().forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
   let next=0;
   // each worker pulls the next photo and runs the full pipeline; up to 3 run at once so
   // a photo can upload while the next one encodes. Each photo still saves the instant it lands.
@@ -1465,25 +1465,24 @@ async function poolAddFiles(fileList,folder){
             if(geo){item.lat=geo.lat;item.lng=geo.lng;}
             if(folder)item.folder=folder;
             if(_sig)item.sig=_sig;
-            pool.push(item); VTHUMB[id]=dataUrl;
-          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; pool.push(it); }catch(e2){} }
+            addToPool(item); VTHUMB[id]=dataUrl;
+          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); }catch(e2){} }
         } else { // video (or offline image) -> local
           const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
           const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
           it.folder = isVideo ? 'Videos' : (folder||'');
           if(_sig)it.sig=_sig;
-          pool.push(it);
+          addToPool(it);
         }
       }catch(e){ imgFailed++; }
-      ST.pool=pool; try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done
+      try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done (ST.pool is already live)
       doneN++; uploadProgress(doneN,total);
       await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
     }
   }
   const CONC=Math.min(3, files.length); // 3 at a time — overlaps upload+encode without exhausting phone memory
   await Promise.all(Array.from({length:CONC}, function(){ return uploadWorker(); }));
-  const addedN=pool.length-startLen;
   if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
   uploadProgress(-1);
