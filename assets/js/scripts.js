@@ -5933,35 +5933,38 @@ function socLibrary(v){
   const renderGroupBody=(d,items,opts)=>{
     opts=opts||{};
     const body=el('div','savedbody');
-    const sel=new Set();
+    const sel=POOL_SEL;                                   // SHARED selection — lets you tick across different groups for one post
+    const inGroup=()=>items.filter(m=>sel.has(m.id));     // just THIS group's ticked photos
+    const pickChosen=()=>{ const pk=inGroup(); return pk.length?pk:items.slice(); }; // ticked-in-this-group, else all of it
+    const clearChosen=(arr)=>{ arr.forEach(m=>POOL_SEL.delete(m.id)); };
     const post=el('button','btn-set primary');
-    const updatePost=()=>{post.textContent=sel.size?('Make this post from '+sel.size+' selected'):('Make this post'+(items.length>1?(' (all '+items.length+')'):''));};
+    const updatePost=()=>{const k=inGroup().length;post.textContent=k?('Make this post from '+k+' selected'):('Make this post'+(items.length>1?(' (all '+items.length+')'):''));};
     const grid=el('div','poolgrid');
-    items.forEach(m=>{const cell=buildCell(m,sel,updatePost);if(opts.perCell)opts.perCell(cell,m);grid.appendChild(cell);});
+    items.forEach(m=>{const cell=buildCell(m,sel,()=>{updatePost();updateMakeBtn();});if(opts.perCell)opts.perCell(cell,m);grid.appendChild(cell);}); // toggle refreshes this group AND the shared "Make a post" bar
     body.appendChild(grid);
-    const hint=el('div','muted','Tick ✓ to pick just some (none ticked = all) · tap a photo to preview · swipe to flip through');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
+    const hint=el('div','muted','Tick ✓ to pick just some (none ticked = all) · you can also tick across other groups, then use “Make a post from … selected” at the bottom · tap a photo to preview');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
     body.appendChild(hint);
     const foot=el('div','rcactions');
     updatePost();
-    post.onclick=()=>{const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:m.role||''}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');commit();openComposer(p,true);};
+    post.onclick=()=>{const chosen=pickChosen();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:m.role||''}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
     foot.appendChild(post);
     if(opts.allowMarkBA&&items.length>=2){const mk=el('button','btn-set','🔀 Mark before/after');mk.onclick=()=>openBaBuilder(items.slice());foot.appendChild(mk);}
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
-      ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
+      ng.onclick=async()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
       foot.appendChild(ng);
       const addJob=el('button','btn-set','📍 Add to a job');addJob.title='Add the ticked photos to a job you already have (or a GPS location job)';
-      addJob.onclick=()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos first (or none = all).');return;} openJobPicker(chosen); };
+      addJob.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos first (or none = all).');return;} clearChosen(chosen); openJobPicker(chosen); };
       foot.appendChild(addJob);
     }
     if(opts.moveToContent){
       const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
-      mv.onclick=()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m._ut=Date.now();}); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); };
+      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); };
       foot.appendChild(mv);
     }
     if(typeof isOwner==='function'&&isOwner()){
       const del=el('button','btn-set danger','🗑 Delete forever');
-      del.onclick=async()=>{const pick=sel.size?items.filter(m=>sel.has(m.id)):items.slice();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(sel.size?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;poolDeleteItems(delable.map(m=>m.id));};
+      del.onclick=async()=>{const hadSel=inGroup().length>0;const pick=pickChosen();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(hadSel?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;clearChosen(delable);poolDeleteItems(delable.map(m=>m.id));};
       foot.appendChild(del);
     }
     body.appendChild(foot);
@@ -6041,7 +6044,8 @@ function socLibrary(v){
   baBtn.onclick=()=>{const sel=allAvail.filter(m=>POOL_SEL.has(m.id));startBaFromSelection(sel);};
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
-  if(!grouped){ poolCard.appendChild(makeBtn); poolCard.appendChild(baBtn); } // flat view (e.g. Videos) keeps the shared selection bar; grouped views post per-group
+  if(grouped){ const xh=el('div','muted');xh.style.cssText='font-size:12px;margin:14px 0 2px';xh.innerHTML='💡 Combining photos from different jobs into one post? Tick them in any groups above, then tap the button below.';poolCard.appendChild(xh); }
+  poolCard.appendChild(makeBtn); poolCard.appendChild(baBtn); // shared selection bar — now in grouped view too, so you can pull photos from multiple jobs into one post
   poolCard.appendChild(blank);
   if(typeof isOwner==='function'&&isOwner()){
     delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.textContent='🗑 Delete forever';delBtn.disabled=true;
