@@ -104,6 +104,11 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .sugrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .sugrow .snipbar{margin-top:0;flex:1;min-width:140px}
 .aicost{font-size:11px;color:#8a93a3;font-weight:600;align-self:center}
+.auditbox{border:1px solid #e2e6ee;border-radius:10px;overflow:hidden}
+.auditrow{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;font-size:13.5px;border-bottom:1px solid #eef1f6}
+.auditrow:last-child{border-bottom:none}
+.auditrow span{color:var(--ink2)}
+.auditrow strong{color:var(--ink)}
 .hgwrap{display:flex;flex-direction:column;gap:7px;margin-top:8px}
 .hgsel{width:100%;font-size:12.5px;padding:7px 8px}
 .hgbtns{display:flex;flex-wrap:wrap;gap:6px}

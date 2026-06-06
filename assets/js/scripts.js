@@ -1573,6 +1573,118 @@ function poolDeleteItems(ids){
     function(){ snaps.forEach(s=>socPool().push(s)); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
     function(){ snaps.forEach(s=>{ try{fileDel(s.id)}catch(e){} try{cloudFileDel(s.id)}catch(e){} }); });
 }
+/* ============================================================
+   CONTENT AUDIT — owner diagnostic + safe de-dupe + migration.
+   Duplicates are found ONLY by EXACT signals (same Google Drive
+   file id, or same upload signature) so two genuinely-different
+   photos are never merged. Cleanup keeps one copy of each, re-points
+   any draft/post that used a dropped copy to the kept one, and is
+   fully undoable. Nothing is ever silently lost.
+   ============================================================ */
+function auditFindDupes(){
+  var pool=socPool().filter(function(m){return m&&m.id&&m.status!=='archived';});
+  var parent={}; pool.forEach(function(m){parent[m.id]=m.id;});
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function uni(a,b){ parent[find(a)]=find(b); }
+  var byKey={};
+  pool.forEach(function(m){
+    var keys=[]; if(m.driveId)keys.push('d:'+m.driveId); if(m.sig)keys.push('s:'+m.sig); // EXACT signals only
+    keys.forEach(function(k){ if(byKey[k]!==undefined)uni(m.id,byKey[k]); else byKey[k]=m.id; });
+  });
+  var sets={}; pool.forEach(function(m){ var r=find(m.id); (sets[r]=sets[r]||[]).push(m); });
+  return Object.keys(sets).map(function(k){return sets[k];}).filter(function(g){return g.length>1;});
+}
+function _auditRefd(m){ return socPosts().some(function(p){return postMedia(p).some(function(x){return x.id===m.id;});}); }
+function auditPickKeep(group){ // which copy to KEEP within a duplicate set
+  return group.slice().sort(function(a,b){
+    var ra=_auditRefd(a)?1:0, rb=_auditRefd(b)?1:0; if(ra!==rb)return rb-ra;   // used by a post
+    var sa=poolSynced(a)?1:0, sb=poolSynced(b)?1:0; if(sa!==sb)return sb-sa;    // on the cloud backbone
+    var ga=hasLoc(a)?1:0, gb=hasLoc(b)?1:0; if(ga!==gb)return gb-ga;            // has GPS
+    return (a.addedAt||0)-(b.addedAt||0);                                       // else the original (oldest)
+  })[0];
+}
+function auditStats(){
+  var pool=socPool();
+  var live=pool.filter(function(m){return m.status!=='archived';});
+  var s={total:live.length,available:0,used:0,posted:0,videos:0,gps:0,nogps:0,cloud:0,device:0};
+  live.forEach(function(m){
+    if(m.status==='available')s.available++; else if(m.status==='used')s.used++; else if(m.status==='posted')s.posted++;
+    if(/^video\//.test(m.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(m.name||''))s.videos++;
+    if(hasLoc(m))s.gps++; else s.nogps++;
+    if(m.driveId||poolSynced(m))s.cloud++; else s.device++;
+  });
+  var dupes=auditFindDupes(); var removable=0; dupes.forEach(function(g){removable+=g.length-1;});
+  s.dupGroups=dupes.length; s.dupRemovable=removable;
+  var ids={}; pool.forEach(function(m){ids[m.id]=1;});
+  s.orphanRefs=0; socPosts().forEach(function(p){ postMedia(p).forEach(function(x){ if(!ids[x.id])s.orphanRefs++; }); });
+  s.baFolder=pool.filter(function(m){return m.folder==='Before & After';}).length;
+  s.baJobs=socBaJobs().length;
+  return s;
+}
+function auditDedupe(){
+  var dupes=auditFindDupes();
+  if(!dupes.length){toast('No duplicates found ✓');return 0;}
+  var snapPool=JSON.parse(JSON.stringify(socPool()));
+  var snapPosts=JSON.parse(JSON.stringify(socPosts()));
+  var map={}, dropIds=[];
+  dupes.forEach(function(g){ var keep=auditPickKeep(g); g.forEach(function(m){ if(m.id!==keep.id){ map[m.id]=keep.id; dropIds.push(m.id); } }); });
+  socPosts().forEach(function(p){                               // re-point any post that used a dropped copy
+    var mm=postMedia(p); if(!mm||!mm.length)return;
+    mm.forEach(function(x){ if(map[x.id])x.id=map[x.id]; });
+    var seen={}; p.media=mm.filter(function(x){ if(seen[x.id])return false; seen[x.id]=1; return true; }); p._ut=Date.now();
+  });
+  var drop=new Set(dropIds);
+  ST.pool=socPool().filter(function(m){return !drop.has(m.id);});
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  toastUndo('Removed '+dropIds.length+' duplicate'+(dropIds.length>1?'s':'')+' — kept one of each',
+    function(){ ST.pool=snapPool; ST.posts=snapPosts; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Duplicates restored'); });
+  return dropIds.length;
+}
+function migrateBeforeAfterToContent(){
+  var snapPool=JSON.parse(JSON.stringify(socPool()));
+  var snapJobs=JSON.parse(JSON.stringify(socBaJobs()));
+  var movedSet={};
+  function moveOne(m){ if(m&&m.folder==='Before & After'){ m.folder=''; m._ut=Date.now(); movedSet[m.id]=1; } }
+  socPool().forEach(moveOne);
+  socBaJobs().forEach(function(j){ jobItems(j).forEach(function(it){ moveOne(socPool().find(function(x){return x.id===it.id;})); }); }); // safety net
+  var moved=Object.keys(movedSet).length;
+  var hadJobs=socBaJobs().length; ST.bajobs=[];
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  toastUndo('Moved '+moved+' Before/After photo'+(moved!==1?'s':'')+' into Content'+(hadJobs?(' · cleared '+hadJobs+' saved job'+(hadJobs>1?'s':'')):''),
+    function(){ ST.pool=snapPool; ST.bajobs=snapJobs; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Before/After restored'); });
+  return moved;
+}
+function openContentAudit(){
+  if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return;}
+  closeComposer();
+  var s=auditStats();
+  var ov=el('div','cmp-ov');ov.id='cmpOv';
+  var box=el('div','cmp-box');
+  box.innerHTML='<div class="cmp-head"><h3>🔎 Content audit</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.onclick=function(e){if(e.target===ov)closeComposer();};
+  $('#cmpX').onclick=closeComposer;
+  var b=$('#cmpBody');
+  var rows=[['Total photos & videos',s.total],['• Available',s.available],['• In a draft',s.used],['• Posted',s.posted],['Videos',s.videos],['With GPS location',s.gps],['No GPS (needs sorting)',s.nogps],['On the cloud backbone',s.cloud],['On this device only',s.device]];
+  var tbl=el('div','auditbox');
+  rows.forEach(function(r){ var row=el('div','auditrow'); row.appendChild(el('span','',r[0])); row.appendChild(el('strong','',String(r[1]))); tbl.appendChild(row); });
+  b.appendChild(tbl);
+  var df=el('div','cmp-field');df.style.marginTop='12px';
+  if(s.dupRemovable>0){
+    df.innerHTML='<label>Duplicates</label><p class="muted">Found <b>'+s.dupRemovable+'</b> duplicate cop'+(s.dupRemovable>1?'ies':'y')+' (same file imported more than once). Cleanup keeps one of each, keeps your drafts working, and can be undone.</p>';
+    var cl=el('button','btn-set primary','🧹 Remove '+s.dupRemovable+' duplicate'+(s.dupRemovable>1?'s':''));
+    cl.onclick=function(){ auditDedupe(); closeComposer(); };
+    df.appendChild(cl);
+  } else { df.innerHTML='<label>Duplicates</label><p class="muted">✓ No duplicates found.</p>'; }
+  b.appendChild(df);
+  if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
+  var bf=el('div','cmp-field');bf.style.marginTop='12px';
+  if(s.baFolder||s.baJobs){
+    bf.innerHTML='<label>Before / After folder</label><p class="muted">Move your '+s.baFolder+' Before/After photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into your main Content (re-groups by location). Undoable.</p>';
+    var mg=el('button','btn-set','📦 Move Before/After into Content'); mg.onclick=function(){ migrateBeforeAfterToContent(); closeComposer(); }; bf.appendChild(mg);
+  } else { bf.innerHTML='<label>Before / After folder</label><p class="muted">✓ Empty — nothing to migrate.</p>'; }
+  b.appendChild(bf);
+}
 /* delete ONE photo/video that lives inside a before/after job — pulls it from the job and deletes it (undo-able). If it was the job's last photo, the job goes too. */
 function deleteJobPhoto(jobId,mediaId){
   const j=socBaJobs().find(x=>x.id===jobId); if(!j)return;
@@ -2018,8 +2130,11 @@ async function gdSyncNow(interactive){
     if(_gdListErr){ if(interactive)toast(_gdListErr===404?'Drive: that content folder wasn’t found for this Google account (404). Tap Connect and choose the account that OWNS the folder.':_gdListErr===403?'Drive: this Google account can’t access the folder (403). Connect the account that owns it.':('Drive couldn’t read the folder (error '+_gdListErr+'). Try Sync again shortly.')); return; }
     const pool=socPool();
     const byDrive=new Map(pool.filter(m=>m.driveId).map(m=>[m.driveId,m]));
+    const seenInPass=new Set(); // guard against the same Drive file id appearing twice in one listing (multi-parent / pagination overlap)
     let added=0,backfilled=0;
     for(const f of list){
+      if(seenInPass.has(f.id))continue; // this file already handled this pass → never download/add it twice
+      seenInPass.add(f.id);
       const ex=byDrive.get(f.id);
       if(ex){ // already have it — backfill location/folder/time/thumb if missing
         if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
@@ -2038,7 +2153,7 @@ async function gdSyncNow(interactive){
       if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
-      pool.push(item);added++;
+      pool.push(item);byDrive.set(f.id,item);added++; // register immediately so nothing else this pass re-adds the same file
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
     if(added)toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');
@@ -5805,6 +5920,11 @@ function socLibrary(v){
     const dupBtn=el('button','btn-set','🔍 Find duplicates');dupBtn.style.cssText='margin:12px 0 0 8px';
     dupBtn.onclick=()=>openDuplicateScanner();
     poolCard.appendChild(dupBtn);
+    if(typeof isOwner==='function'&&isOwner()){
+      const auditBtn=el('button','btn-set','🔎 Content audit');auditBtn.style.cssText='margin:12px 0 0 8px';auditBtn.title='Counts, duplicate cleanup, and Before/After migration';
+      auditBtn.onclick=()=>openContentAudit();
+      poolCard.appendChild(auditBtn);
+    }
   }
   updateMakeBtn();
   v.appendChild(poolCard);
