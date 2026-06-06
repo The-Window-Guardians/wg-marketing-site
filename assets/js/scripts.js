@@ -1795,7 +1795,7 @@ function renderSavedJobs(container){
     const jobSel=new Set();
     const post=el('button','btn-set primary');
     const updatePostBtn=()=>{post.textContent=jobSel.size?('Make this post from '+jobSel.size+' selected'):('Make this post'+(its.length>1?(' (all '+its.length+')'):''));};
-    const d=el('details','jobgroup savedjob');
+    const d=el('details','jobgroup savedjob');applyGroupOpen(d,'job:'+j.id, false);
     const sum=el('summary','jobsum');
     sum.appendChild(el('span','jobsum-t',`🔀 ${esc(j.name||'Job')} · ${its.length} photo${its.length>1?'s':''}`));
     if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=async(e)=>{e.preventDefault();e.stopPropagation(); const nn=await uiPrompt('Rename this before/after job.', j.name||'', {title:'Rename job',confirmText:'Save'}); if(nn){ j.name=nn; saveBaJob(j); rerenderCal(); toast('Renamed'); } }; sum.appendChild(ed); }
@@ -5413,6 +5413,8 @@ function actionCenterCard(){
   rows.forEach(function(r){ var row=el('button','actrowbtn'); row.innerHTML='<span class="ac-ic">'+r.icon+'</span><span>'+esc(r.txt)+'</span>'+(r.go?'<span class="ac-arrow">→</span>':''); if(r.go)row.onclick=r.go; else row.disabled=true; c.appendChild(row); });
   return c;
 }
+var OPEN_GROUPS={}; // remembers which photo groups you've expanded, so a delete or re-render keeps them open (you collapse them yourself)
+function applyGroupOpen(d,gkey,def){ d.dataset.gkey=gkey; d.open=OPEN_GROUPS.hasOwnProperty(gkey)?OPEN_GROUPS[gkey]:def; d.addEventListener('toggle',function(){ OPEN_GROUPS[gkey]=d.open; }); }
 function socLibrary(v){
   const cw=currentWeek();
   const wk=cw?cw.id:(WEEKS[0]&&WEEKS[0].id)||1;
@@ -5584,7 +5586,7 @@ function socLibrary(v){
     const clusters=clusterByLocation(located,60);
     const _nameCount={};
     clusters.forEach((c,i)=>{
-      const d=el('details','jobgroup');if(i<2)d.open=true; // open the first couple so photos are tickable right away; rest show a peek
+      const d=el('details','jobgroup');applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), i<2); // remember expand state across deletes; default-open the first couple
       let base=clusterBaseName(c.items,i);
       const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
       if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
@@ -5598,7 +5600,7 @@ function socLibrary(v){
     });
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
-      const d=el('details','jobgroup needsort');d.open=true;
+      const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', true);
       d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tap “Add to a job” to file each.`));
       renderGroupBody(d,noloc,{allowMarkBA:true,perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
