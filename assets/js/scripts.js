@@ -1287,8 +1287,38 @@ function polishText(t){
   // common missing-apostrophe contractions (casual typing → proper)
   var FIX={im:"I'm",ive:"I've",dont:"don't",cant:"can't",wont:"won't",didnt:"didn't",doesnt:"doesn't",isnt:"isn't",arent:"aren't",wasnt:"wasn't",werent:"weren't",hasnt:"hasn't",havent:"haven't",couldnt:"couldn't",wouldnt:"wouldn't",shouldnt:"shouldn't",theyre:"they're",youre:"you're",youve:"you've",thats:"that's",heres:"here's",lets:"let's",weve:"we've"};
   t=t.replace(/\b(im|ive|dont|cant|wont|didnt|doesnt|isnt|arent|wasnt|werent|hasnt|havent|couldnt|wouldnt|shouldnt|theyre|youre|youve|thats|heres|lets|weve)\b/gi,function(m){var f=FIX[m.toLowerCase()];if(!f)return m;return (m.charAt(0)===m.charAt(0).toUpperCase())?(f.charAt(0).toUpperCase()+f.slice(1)):f;});
+  // common misspellings
+  var SP={alot:'a lot',definately:'definitely',recieve:'receive',recieved:'received',seperate:'separate',occured:'occurred',untill:'until',tommorow:'tomorrow',thier:'their',teh:'the',wich:'which',becuase:'because'};
+  t=t.replace(/\b(alot|definately|recieve|recieved|seperate|occured|untill|tommorow|thier|teh|wich|becuase)\b/gi,function(m){var f=SP[m.toLowerCase()];return (m.charAt(0)===m.charAt(0).toUpperCase())?(f.charAt(0).toUpperCase()+f.slice(1)):f;});
+  t=t.replace(/\b(\d+)in\b/g,'$1-inch');     // 8in → 8-inch
+  t=t.replace(/([!?])\1+/g,'$1');            // collapse !!! / ??? → ! / ?
   if(!/[.!?…]$/.test(t))t+='.';                                    // ensure it ends with punctuation
   return t.replace(/\s+/g,' ').trim();
+}
+/* ---- tone restyles (rule-based: word swaps + grammar; not a true AI rewrite) ---- */
+function formalizeText(t){
+  t=polishText((t||'').replace(/[’]/g,"'"));
+  var contr={"don't":'do not',"doesn't":'does not',"can't":'cannot',"won't":'will not',"it's":'it is',"we're":'we are',"they're":'they are',"i'm":'I am',"i've":'I have',"we've":'we have',"that's":'that is',"here's":'here is',"you're":'you are',"isn't":'is not',"aren't":'are not',"didn't":'did not',"wasn't":'was not',"weren't":'were not',"couldn't":'could not',"wouldn't":'would not',"shouldn't":'should not',"i'll":'I will',"we'll":'we will',"let's":'let us'};
+  Object.keys(contr).forEach(function(k){ t=t.replace(new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'),function(m){var f=contr[k];return (m.charAt(0)===m.charAt(0).toUpperCase())?(f.charAt(0).toUpperCase()+f.slice(1)):f;}); });
+  var swap={gonna:'going to',wanna:'want to',gotta:'have to',kinda:'somewhat',sorta:'somewhat',yeah:'yes',yep:'yes',nope:'no',super:'very',awesome:'excellent',amazing:'outstanding',huge:'significant',stuff:'materials',guys:'team',cuz:'because',cause:'because',til:'until'};
+  Object.keys(swap).forEach(function(k){ t=t.replace(new RegExp('\\b'+k+'\\b','gi'),function(m){var f=swap[k];return (m.charAt(0)===m.charAt(0).toUpperCase())?(f.charAt(0).toUpperCase()+f.slice(1)):f;}); });
+  t=t.replace(/\ba ton of\b/gi,'a great deal of').replace(/\btons of\b/gi,'many').replace(/\blots of\b/gi,'many');
+  t=t.replace(/\b(just|really|literally|actually|basically|honestly)\s+/gi,'');   // drop filler
+  t=t.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu,''); // strip emoji
+  return polishText(t);
+}
+function friendlyText(t){
+  t=polishText(t);
+  var swap={excellent:'awesome',outstanding:'amazing',significant:'big',utilize:'use',purchase:'get','do not':"don't",cannot:"can't"};
+  Object.keys(swap).forEach(function(k){ t=t.replace(new RegExp('\\b'+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','gi'),swap[k]); });
+  t=t.replace(/\.\s*$/,'!');                                  // upbeat ending
+  if(!/[!🙌😊👏🔥👍✨]/.test(t)) t=t+' 🙌';                   // a touch of warmth if there's none
+  return t.replace(/\s{2,}/g,' ').trim();
+}
+function shortenText(t){
+  t=polishText(t);
+  t=t.replace(/\b(just|really|very|so|pretty|quite|actually|basically|literally|honestly|simply|definitely|truly)\s+/gi,'');
+  return t.replace(/\s{2,}/g,' ').trim();
 }
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
 function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
@@ -5997,9 +6027,16 @@ function openComposer(idOrPost,isNew){
     opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
   };
   cf.appendChild(ca);
-  const caPolish=el('button','btn-set','✨ Polish grammar');caPolish.title='Clean up capitalization, spacing & punctuation in what you wrote';
-  caPolish.onclick=()=>{ const t=(ca.value||'').trim(); if(!t){toast('Write something first, then Polish');return;} const fixed=polishText(t); ca.value=fixed;p.caption=fixed; toast(fixed===t?'Looks clean already ✓':'Polished ✓'); };
-  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(caPolish);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  const restyle=(fn,emptyMsg,doneMsg)=>{ const t=(ca.value||'').trim(); if(!t){toast(emptyMsg);return;} const out=fn(t); ca.value=out;p.caption=out;scheduleDraft(); toast(out===t?'Looks good already ✓':doneMsg); };
+  const caPolish=el('button','btn-set','✨ Polish');caPolish.title='Fix grammar, spelling, capitalization & punctuation';
+  caPolish.onclick=()=>restyle(polishText,'Write something first, then Polish','Polished ✓');
+  const caFormal=el('button','btn-set','👔 Formal');caFormal.title='More professional tone — expands contractions, swaps casual words';
+  caFormal.onclick=()=>restyle(formalizeText,'Write something first','Made it more formal ✓');
+  const caFriendly=el('button','btn-set','😊 Friendly');caFriendly.title='Warmer, upbeat tone';
+  caFriendly.onclick=()=>restyle(friendlyText,'Write something first','Warmed it up ✓');
+  const caShort=el('button','btn-set','✂️ Shorter');caShort.title='Trim filler words';
+  caShort.onclick=()=>restyle(shortenText,'Write something first','Trimmed ✓');
+  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
   cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
