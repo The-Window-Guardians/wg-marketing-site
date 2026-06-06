@@ -2615,11 +2615,11 @@ async function buildMyWeek(){
   if(!ok)return 0;
   toast('🪄 Building '+target+' post'+(target>1?'s':'')+'… give it a few seconds');
   const cw=currentWeek(); const wk=cw?cw.id:1;
-  let made=0;
+  let made=0, warned=0;
   for(let gi=0; gi<groups.length && made<target; gi++){
     const g=groups[gi];
     const pics=g.items.slice(0,3); // up to 3 photos per post
-    const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:'',media:pics.map(m=>({id:m.id,name:m.name}))};
+    const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:'',media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))};
     let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
       const np=newPost(wk);
@@ -2630,13 +2630,14 @@ async function buildMyWeek(){
       np.hashtags=d.hashtags||'';
       if(d.category)np.pillar=d.category;
       np.aiDrafted=true;
+      if(d.warn){np.aiWarn=d.warn;warned++;}   // flag drafts where the photos may be old/before/in-progress
       savePost(np);
       poolSetStatus(pics.map(m=>m.id),'used');
       made++;
     }
   }
   commit(); if(typeof rerenderCal==='function')rerenderCal();
-  toast(made?('✨ Drafted '+made+' post'+(made>1?'s':'')+' — review them in “Your posts”'):'Couldn’t draft right now — check the AI is set up, then try again.');
+  toast(made?('✨ Drafted '+made+' post'+(made>1?'s':'')+(warned?(' · ⚠️ '+warned+' need'+(warned>1?'':'s')+' a photo double-check'):'')+' — review them in “Your posts”'):'Couldn’t draft right now — check the AI is set up, then try again.');
   return made;
 }
 // Merge two hashtag strings, de-duped, preserving order (so groups can stack without repeats).
@@ -5701,6 +5702,7 @@ function postCard(p){
       <div class="pcmeta"><span class="pchip">${pl.icon} ${esc(pl.t)}</span>${statusPill(p.status)}</div>
       <div class="pctown">📍 ${esc(p.town||'—')}${p.date?` · ${esc(p.date)}${p.time?' '+esc(p.time):''}`:''}</div>
       <div class="pccap">${cap?esc(cap.slice(0,90))+(cap.length>90?'…':''):'<span class=\"muted\">No caption yet</span>'}</div>
+      ${p.aiWarn?`<div class="pcwarn" title="${esc(p.aiWarn)}">⚠️ check photos</div>`:''}
       <div class="pcfoot"><span class="pcplats">${plats||'—'}</span><span class="pcgap">${postReady(p)?'<span class=\"rdy\">✓ ready</span>':postGaps(p).length+' to add'}</span></div>
     </div>`;
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
@@ -6360,6 +6362,7 @@ function openComposer(idOrPost,isNew){
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
+  if(p.aiWarn){ const wb=el('div','aiwarn');wb.style.margin='6px 0';wb.innerHTML='⚠️ '+esc(p.aiWarn)+' ';const dx=el('button','linklike','Looks fine — dismiss');dx.onclick=()=>{p.aiWarn='';savePost(p);wb.remove();toast('Dismissed');};wb.appendChild(dx);cf.appendChild(wb); }
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write your caption… or describe what you want and let Claude write it';
   ca.oninput=()=>{ p.caption=ca.value; const t=detectCity(ca.value); if(t&&t!==p.town){ p.town=t; if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t; } scheduleDraft(); };
   cf.appendChild(ca);
@@ -6381,6 +6384,7 @@ function openComposer(idOrPost,isNew){
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
+      if(d.warn)caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)));
       caOpts.appendChild(el('div','sughdr','Tap one to use it:'));
       d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
@@ -6406,6 +6410,7 @@ function openComposer(idOrPost,isNew){
       if(d.category){ setCategory(d.category); }
       scheduleDraft();
       const done=[]; if(d.hashtags)done.push('hashtags'); if(d.category)done.push('category');
+      if(d.warn)caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)));
       caOpts.appendChild(el('div','sughdr','Done'+(done.length?(' — '+done.join(' + ')+' filled in'):'')+'. Tap a caption to use it:'));
       d.captions.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Caption set ✓ — hashtags + category are in')};caOpts.appendChild(o)});
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }

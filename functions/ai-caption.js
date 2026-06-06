@@ -47,14 +47,34 @@ function buildContent(images, usrText) {
   return content;
 }
 
-// Parse the one-tap full-post JSON: { captions:[..], hashtags:"..", category:".." }
-function parseFullPost(text) {
+// Pull a JSON object out of the model text (clean, or buried in prose).
+function extractObj(text) {
   if (!text) return null;
-  var obj = null;
-  try { obj = JSON.parse(text); } catch (e) {
-    var m = text.match(/\{[\s\S]*\}/);
-    if (m) { try { obj = JSON.parse(m[0]); } catch (e2) {} }
+  try { return JSON.parse(text); } catch (e) {}
+  var m = text.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
+  return null;
+}
+// Normalize the per-photo classification + a safety warning string.
+function normPhotos(obj) {
+  var kinds = { new_finished: 1, old_before: 1, in_progress: 1, other: 1 };
+  var out = [];
+  if (obj && Array.isArray(obj.photos)) {
+    obj.photos.forEach(function (p, i) {
+      if (!p) return;
+      var k = String(p.kind || '').toLowerCase().trim();
+      out.push({ n: (typeof p.n === 'number' ? p.n : i + 1), kind: kinds[k] ? k : 'other' });
+    });
   }
+  return out;
+}
+function normWarn(obj) {
+  return (obj && typeof obj.warn === 'string') ? obj.warn.slice(0, 300) : '';
+}
+
+// Parse the one-tap full-post JSON: { photos, warn, captions, hashtags, category }
+function parseFullPost(text) {
+  var obj = extractObj(text);
   if (!obj || typeof obj !== 'object') return null;
   var caps = Array.isArray(obj.captions) ? obj.captions.filter(Boolean).slice(0, 3)
            : (obj.caption ? [obj.caption] : []);
@@ -63,23 +83,20 @@ function parseFullPost(text) {
            : (Array.isArray(obj.hashtags) ? obj.hashtags.join(' ') : '');
   var cat = typeof obj.category === 'string' ? obj.category.toLowerCase().trim() : '';
   if (!{ portfolio: 1, edu: 1, fun: 1, customer: 1 }[cat]) cat = '';
-  return { captions: caps, hashtags: tags, category: cat };
+  return { captions: caps, hashtags: tags, category: cat, warn: normWarn(obj), photos: normPhotos(obj) };
 }
 
-function parseOptions(text) {
-  if (!text) return [];
-  // 1) clean JSON
-  try {
-    var d = JSON.parse(text);
-    if (d && Array.isArray(d.options)) return d.options.filter(Boolean).slice(0, 3);
-  } catch (e) {}
-  // 2) JSON buried in prose
-  var m = text.match(/\{[\s\S]*\}/);
-  if (m) { try { var d2 = JSON.parse(m[0]); if (d2 && Array.isArray(d2.options)) return d2.options.filter(Boolean).slice(0, 3); } catch (e) {} }
-  // 3) fall back: split into non-empty lines, strip numbering/quotes
-  return text.split(/\n+/).map(function (s) {
+// Parse caption JSON: { photos, warn, options }
+function parseCaption(text) {
+  var obj = extractObj(text);
+  if (obj && Array.isArray(obj.options)) {
+    return { options: obj.options.filter(Boolean).slice(0, 3), warn: normWarn(obj), photos: normPhotos(obj) };
+  }
+  // fallback: salvage lines if JSON shape was off
+  var opts = String(text || '').split(/\n+/).map(function (s) {
     return s.replace(/^\s*(\d+[\).]|[-*•])\s*/, '').replace(/^["']|["']$/g, '').trim();
-  }).filter(function (s) { return s.length > 8; }).slice(0, 3);
+  }).filter(function (s) { return s.length > 8 && s[0] !== '{' && s[0] !== '}'; }).slice(0, 3);
+  return { options: opts, warn: '', photos: [] };
 }
 
 export async function onRequestPost(context) {
@@ -104,6 +121,15 @@ export async function onRequestPost(context) {
           .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000), role: (im.role === 'before' || im.role === 'after') ? im.role : '' }; })
       : [];
 
+    // Forced per-photo classification — the core safeguard against calling an OLD/unfinished window the new install.
+    const VISION_RULE = images.length ?
+('PHOTO CHECK — do this FIRST, before writing anything:\n' +
+'Classify EACH attached photo as one of: "new_finished" (a brand-new, fully finished window/door — clean new frame, crisp caulk & trim, no tools or debris), "old_before" (an old/existing unit, or anything labeled BEFORE), "in_progress" (mid-install — gaps, tools, missing trim), or "other" (crew, interior, materials, wide exterior, landscaping, etc.).\n' +
+'The BEFORE/AFTER label above each photo is the source of truth when present: BEFORE => old_before, AFTER => new_finished.\n' +
+'HARD RULE: you may credit a NEW install or a "finished/new" product ONLY if at least one attached photo is "new_finished". If none are, write a transformation, behind-the-scenes, or teaser caption instead — NEVER describe an old, existing, or unfinished window as the new install.\n' +
+'Set "warn" to a SHORT plain-English heads-up (e.g. "Photo 1 looks like the old/before window — written as a transformation; double-check before posting.") whenever the finished NEW product is NOT clearly shown. If a new finished product is clearly shown, set "warn" to "".\n')
+: '';
+
     var sys, usr;
     if (mode === 'hashtags') {
       sys =
@@ -127,13 +153,13 @@ export async function onRequestPost(context) {
 'You are shown one or more PHOTOS of a real job, plus an optional note from the owner. Look closely at the photos and write a complete, ready-to-post social post.\n' +
 'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
 'Rules:\n' +
+VISION_RULE +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
-'- NEW vs OLD (very important): only say a window/door was newly installed or finished if a photo CLEARLY shows a brand-new, finished unit (clean new frame, crisp caulk and trim, no tools/debris). If a photo shows an OLD/existing window, a mid-install/in-progress shot, or the crew working — or you are not sure it is the finished new product — do NOT claim "we installed this new window." Describe it honestly instead (the before, the process, the team, the transformation). Trust the BEFORE/AFTER labels above each photo: BEFORE = the old window (never promote it as new); AFTER = the finished new product.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
 '- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji.\n' +
 '- hashtags: ONE set of 8 to 12 relevant tags — always include #WindowGuardians and a local tag if a town is given; match what the photos actually show.\n' +
 '- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
-'- Return ONLY valid JSON in this exact shape: {"captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
+'- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
       usr =
 'Town: ' + (town || '(none)') + '\n' +
 'Owner note (optional): ' + (caption || jobNote || '(none)') + '\n' +
@@ -153,13 +179,13 @@ export async function onRequestPost(context) {
 'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use.\n' +
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
+VISION_RULE +
 '- Keep the owner’s facts and meaning. NEVER invent brands, materials, counts, prices, warranties, or claims that were not given.\n' +
-'- NEW vs OLD (very important): if photos are attached, only say a window/door was newly installed or finished if a photo CLEARLY shows a brand-new, finished unit (clean new frame, crisp caulk and trim, no tools/debris). If a photo shows an OLD/existing window, a mid-install/in-progress shot, or the crew working — or you are unsure — do NOT claim it is the new install. Describe it honestly (the before, the process, the team). Trust any BEFORE/AFTER labels: BEFORE = old (never promote as new); AFTER = the finished product.\n' +
 '- Fix all grammar, spelling, capitalization, and flow.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
 styleRule + '\n' +
 '- No hashtags. At most one emoji, only if it fits.\n' +
-'- Return ONLY valid JSON in this exact shape: {"options":["option one","option two","option three"]} — three distinct captions, nothing else.';
+'- Return ONLY valid JSON in this exact shape: ' + (images.length ? '{"photos":[{"n":1,"kind":"new_finished"}],"warn":"","options":["one","two","three"]}' : '{"options":["one","two","three"]}') + ' — three distinct captions, nothing else.';
       usr =
 'Town: ' + (town || '(none)') + '\n' +
 'The owner wrote (may be a draft caption OR a description of what they want): ' + (caption || jobNote || '(nothing yet — write a fresh, on-brand caption for this kind of job)') + '\n' +
@@ -178,7 +204,7 @@ styleRule + '\n' +
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: (mode === 'fullpost') ? 900 : 700,
+        max_tokens: (mode === 'fullpost') ? 1000 : (images.length ? 900 : 700),
         system: sys,
         messages: [{ role: 'user', content: buildContent(images, usr) }]
       })
@@ -197,9 +223,9 @@ styleRule + '\n' +
       if (!fp) return json({ error: 'empty', message: 'AI replied but I couldn’t read it — try again.' });
       return json(fp);
     }
-    const options = parseOptions(text);
-    if (!options.length) return json({ error: 'empty', message: 'AI replied but I couldn’t read it — try again.' });
-    return json({ options: options });
+    const cap = parseCaption(text);
+    if (!cap.options.length) return json({ error: 'empty', message: 'AI replied but I couldn’t read it — try again.' });
+    return json({ options: cap.options, warn: cap.warn, photos: cap.photos });
   } catch (e) {
     return json({ error: 'exception', message: String((e && e.message) || e) });
   }
