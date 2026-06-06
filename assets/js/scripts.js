@@ -1687,6 +1687,45 @@ function migrateBeforeAfterToContent(){
     function(){ ST.pool=snapPool; ST.bajobs=snapJobs; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Before/After restored'); });
   return moved;
 }
+/* Bulk "no preview" cleanup: find photos whose image won't load from ANY source, then remove them
+   (undoable + Drive-tombstoned). Drive photos that fail only because Drive isn't signed in are
+   reported separately — never auto-deleted — since a sync would bring them back. */
+function _loadTest(src){ return new Promise(function(res){ if(!src)return res(false); var im=new Image(); var t=setTimeout(function(){res(false);},6000); im.onload=function(){clearTimeout(t);res(!!(im.naturalWidth));}; im.onerror=function(){clearTimeout(t);res(false);}; im.src=src; }); }
+async function canLoadPhoto(m,tok){
+  if(!m)return true;
+  if(/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||''))return true; // never flag videos
+  if(VTHUMB[m.id] && await _loadTest(VTHUMB[m.id]))return true;
+  try{ var rec=await fileGet(m.id); if(rec&&rec.blob){ var u=URL.createObjectURL(rec.blob); var ok=await _loadTest(u); try{URL.revokeObjectURL(u)}catch(e){} if(ok)return true; } }catch(e){}
+  try{ var c=await cloudFileGet(m.id); if(c&&c.dataUrl && await _loadTest(c.dataUrl))return true; }catch(e){}
+  if(m.driveThumb && await _loadTest(m.driveThumb))return true;
+  if(m.driveId && tok){ try{ var r=await fetch('https://www.googleapis.com/drive/v3/files/'+m.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}}); if(r.ok){ var b=await r.blob(); var u2=URL.createObjectURL(b); var ok2=await _loadTest(u2); try{URL.revokeObjectURL(u2)}catch(e){} if(ok2)return true; } }catch(e){} }
+  return false;
+}
+async function scanBrokenPhotos(onProgress){
+  var tok=(typeof gdGetToken==='function')?await gdGetToken(false):null;
+  var items=poolAvailable().filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')&&!/^video\//.test(m.type||''); });
+  var broken=[], driveUnknown=[], total=items.length;
+  for(var i=0;i<items.length;i++){ var m=items[i]; var ok=await canLoadPhoto(m,tok);
+    if(!ok){ if(m.driveId && !tok) driveUnknown.push(m); else broken.push(m); }
+    if(onProgress)onProgress(i+1,total); await new Promise(function(r){setTimeout(r,0);}); }
+  return {broken:broken, driveUnknown:driveUnknown};
+}
+async function cleanupNoPreview(btn){
+  if(typeof isOwner==='function'&&!isOwner())return;
+  const orig=btn?btn.textContent:'';
+  if(btn){btn.disabled=true;}
+  const res=await scanBrokenPhotos(function(d,t){ if(btn)btn.textContent='Scanning… '+d+'/'+t; });
+  if(btn){btn.disabled=false;btn.textContent=orig;}
+  const broken=res.broken, du=res.driveUnknown;
+  if(!broken.length){ toast(du.length?('No broken photos — but '+du.length+' Drive photo'+(du.length>1?'s':'')+' need Google sign-in to check. Tap “Sync Google Drive,” then re-run.'):'✓ No broken / blank photos found'); return; }
+  const inUse=broken.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
+  const delable=broken.filter(m=>inUse.indexOf(m)<0);
+  if(!delable.length){ toast(broken.length+' blank photo'+(broken.length>1?'s are':' is')+' in a draft — remove there first.'); return; }
+  const ok=await uiConfirm('Found '+delable.length+' photo'+(delable.length>1?'s':'')+' with no preview anywhere (failed uploads / blank tiles)'+(inUse.length?(' — '+inUse.length+' kept because they’re in a draft'):'')+(du.length?(' · '+du.length+' Drive photo'+(du.length>1?'s':'')+' skipped (sign in to Drive to check those)'):'')+'. Remove the '+delable.length+'? Undoable.',{title:'Remove blank photos?',confirmText:'Remove '+delable.length,danger:true});
+  if(!ok)return;
+  poolDeleteItems(delable.map(m=>m.id));
+  closeComposer();
+}
 function openContentAudit(){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return;}
   closeComposer();
@@ -1710,6 +1749,12 @@ function openContentAudit(){
     df.appendChild(cl);
   } else { df.innerHTML='<label>Duplicates</label><p class="muted">✓ No duplicates found.</p>'; }
   b.appendChild(df);
+  // Bulk "no preview" cleanup — scans every photo and removes the ones that can't load anywhere
+  var nf=el('div','cmp-field');nf.style.marginTop='12px';
+  nf.innerHTML='<label>Blank / no-preview photos</label><p class="muted">Scan for photos that won’t load anywhere (failed uploads, blank tiles) and remove them in one tap. Drafts and Drive-recoverable photos are kept. Undoable.</p>';
+  var nb=el('button','btn-set primary','🧹 Remove no-preview photos');
+  nb.onclick=function(){ cleanupNoPreview(nb); };
+  nf.appendChild(nb); b.appendChild(nf);
   if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
   var bf=el('div','cmp-field');bf.style.marginTop='12px';
   if(s.baFolder||s.baJobs){
