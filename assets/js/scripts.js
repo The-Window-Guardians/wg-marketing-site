@@ -1710,19 +1710,31 @@ function openJobPicker(item){
   ov.onclick=e=>{if(e.target===ov)closeComposer()};
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
-  if(!clusters.length){
-    b.appendChild(el('div','muted','No location-based jobs in this folder yet to join. Pair this photo as a Before/After job instead, or sync more located photos first.'));
-    return;
-  }
-  b.appendChild(el('div','cmp-field','<label>Pick the job this photo belongs to — it’ll join that stack</label>'));
-  clusters.forEach((c,i)=>{
+  const manualNames=[...new Set(poolAvailable().filter(m=>m.cgroup&&m.id!==item.id).map(m=>m.cgroup))];
+  // CREATE a brand-new group
+  const create=el('button','btn-set primary','📁 Create a new group');create.style.cssText='width:100%;margin-bottom:10px';
+  create.onclick=async()=>{ const name=await uiPrompt('Name the new group (e.g. an address or the job).','',{title:'New group',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; item.cgroup=name; item._ut=Date.now(); commit(); closeComposer(); toast('Created group “'+name+'” — find it in Your content.'); rerenderCal(); };
+  b.appendChild(create);
+  // JOIN an existing group you made
+  manualNames.forEach(function(gname){
     const opt=el('button','jobpick');
-    const thumb=el('img','jp-thumb');const first=c.items[0];if(first){if(VTHUMB[first.id])thumb.src=VTHUMB[first.id];else thumbInto(thumb,first.id);thumb.addEventListener('load',()=>thumb.style.display='block');}
-    opt.appendChild(thumb);
-    opt.appendChild(el('span','jp-label',`📍 Job ${i+1} · ${c.items.length} photo${c.items.length>1?'s':''}`));
-    opt.onclick=()=>{item.lat=c.lat;item.lng=c.lng;item.locManual=true;commit();closeComposer();toast('Added to the job');rerenderCal();};
+    opt.appendChild(el('span','jp-label','📁 '+esc(gname)));
+    opt.onclick=()=>{ item.cgroup=gname; item._ut=Date.now(); commit(); closeComposer(); toast('Added to “'+gname+'”'); rerenderCal(); };
     b.appendChild(opt);
   });
+  // JOIN a GPS location job
+  if(clusters.length){
+    b.appendChild(el('div','cmp-field','<label>…or join a location job:</label>'));
+    clusters.forEach((c,i)=>{
+      const opt=el('button','jobpick');
+      const thumb=el('img','jp-thumb');const first=c.items[0];if(first){if(VTHUMB[first.id])thumb.src=VTHUMB[first.id];else thumbInto(thumb,first.id);thumb.addEventListener('load',()=>thumb.style.display='block');}
+      opt.appendChild(thumb);
+      const nm=(c.items.find(m=>m&&m.town)||{}).town;
+      opt.appendChild(el('span','jp-label','📍 '+(nm?esc(nm):'Job '+(i+1))+' · '+c.items.length+' photo'+(c.items.length>1?'s':'')));
+      opt.onclick=()=>{item.lat=c.lat;item.lng=c.lng;item.locManual=true;delete item.cgroup;commit();closeComposer();toast('Added to the job');rerenderCal();};
+      b.appendChild(opt);
+    });
+  }
 }
 /* ---- reverse geocoding: turn a photo's GPS into "Town ZIP" (e.g. "Langhorne 19047") so jobs
    auto-name themselves. Uses OpenStreetMap Nominatim (returns the real borough, not the metro
@@ -1775,6 +1787,14 @@ async function renameCluster(items, current){
   items.forEach(function(m){ if(name)m.cname=name; else delete m.cname; m._ut=Date.now(); });
   commit(); if(typeof rerenderCal==='function')rerenderCal();
   toast(name?'Renamed':'Back to the auto name');
+}
+/* rename a manual (user-created) group — updates the group name on all its photos */
+async function renameManualGroup(items, current){
+  var name=await uiPrompt('Rename this group.', current, {title:'Rename group', placeholder:'e.g. 123 Maple St', confirmText:'Save'});
+  if(!name)return;
+  items.forEach(function(m){ m.cgroup=name; m._ut=Date.now(); });
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  toast('Renamed');
 }
 /* small thumbnail peek shown on a COLLAPSED job so you can glance before expanding */
 function peekStrip(items){
@@ -5557,6 +5577,11 @@ function socLibrary(v){
     post.onclick=()=>{const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:m.role||''}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');commit();openComposer(p,true);};
     foot.appendChild(post);
     if(opts.allowMarkBA&&items.length>=2){const mk=el('button','btn-set','🔀 Mark before/after');mk.onclick=()=>openBaBuilder(items.slice());foot.appendChild(mk);}
+    if(opts.newGroup){
+      const ng=el('button','btn-set','📁 New group');
+      ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the group first (or none = all).');return;} const name=await uiPrompt('Name this new group (e.g. an address or the job).', '', {title:'New group',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created group “'+name+'” — find it up in Your content.'); };
+      foot.appendChild(ng);
+    }
     if(typeof isOwner==='function'&&isOwner()){
       const del=el('button','btn-set danger','🗑 Delete');
       del.onclick=async()=>{const pick=sel.size?items.filter(m=>sel.has(m.id)):items.slice();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(sel.size?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;poolDeleteItems(delable.map(m=>m.id));};
@@ -5581,8 +5606,22 @@ function socLibrary(v){
       poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
     }
   }else if(grouped){
-    const located=avail.filter(hasLoc);
-    const noloc=avail.filter(m=>!hasLoc(m));
+    // manual groups the user created (no GPS needed) take priority over auto GPS clustering
+    const manualMap={}; avail.forEach(m=>{ if(m.cgroup){ (manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); } });
+    const rest=avail.filter(m=>!m.cgroup);
+    const located=rest.filter(hasLoc);
+    const noloc=rest.filter(m=>!hasLoc(m));
+    Object.keys(manualMap).forEach(function(gname){
+      const items=manualMap[gname];
+      const d=el('details','jobgroup');applyGroupOpen(d,'mg:'+gname, true);
+      const sum=el('summary','jobsum');
+      sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+' photo'+(items.length>1?'s':'')));
+      if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename group'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
+      sum.appendChild(peekStrip(items));
+      d.appendChild(sum);
+      renderGroupBody(d,items,{allowMarkBA:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from group');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
+      poolCard.appendChild(d);
+    });
     const clusters=clusterByLocation(located,60);
     const _nameCount={};
     clusters.forEach((c,i)=>{
@@ -5601,8 +5640,8 @@ function socLibrary(v){
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
       const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', true);
-      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tap “Add to a job” to file each.`));
-      renderGroupBody(d,noloc,{allowMarkBA:true,perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
+      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “📁 New group”, or “Add to a job”.`));
+      renderGroupBody(d,noloc,{allowMarkBA:true,newGroup:true,perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
     }
     if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
