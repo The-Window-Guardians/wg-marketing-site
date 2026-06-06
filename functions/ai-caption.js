@@ -61,6 +61,7 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : 'caption';
+    const style    = (body.style === 'elaborate' || body.style === 'funny') ? body.style : 'rewrite';
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
     var sys, usr;
@@ -81,19 +82,27 @@ export async function onRequestPost(context) {
 'Media type: ' + type + '.\n' +
 'Write 3 hashtag sets now.';
     } else {
+      var styleRule =
+        style === 'elaborate'
+          ? '- MODE: ELABORATE. Expand into a fuller caption — add a little story, context, and benefit to the homeowner. 2 to 4 sentences. Still 100% truthful: do not invent any fact.'
+        : style === 'funny'
+          ? '- MODE: FUNNY. Write a light, playful, genuinely funny caption (a wink, a relatable joke about old drafty windows, etc.) — still on-brand and tasteful, not corny or unprofessional. 1 to 3 short sentences.'
+          : '- MODE: REWRITE. Produce a clean, polished, ready-to-post caption. Keep it tight: 1 to 3 short sentences.';
       sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
-'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use. Short sentences.\n' +
+'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use.\n' +
+'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 '- Keep the owner’s facts and meaning. NEVER invent brands, materials, counts, prices, warranties, or claims that were not given.\n' +
 '- Fix all grammar, spelling, capitalization, and flow.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
-'- 1 to 3 short sentences. No hashtags. At most one emoji, only if it fits.\n' +
+styleRule + '\n' +
+'- No hashtags. At most one emoji, only if it fits.\n' +
 '- Return ONLY valid JSON in this exact shape: {"options":["option one","option two","option three"]} — three distinct captions, nothing else.';
       usr =
 'Town: ' + (town || '(none)') + '\n' +
-'What the owner wants this post to be about: ' + (jobNote || '(none)') + '\n' +
-'What the owner typed as a caption (their voice — preserve it if present): ' + (caption || '(nothing yet — write a fresh one from the topic above)') + '\n' +
+'The owner wrote (may be a draft caption OR a description of what they want): ' + (caption || jobNote || '(nothing yet — write a fresh, on-brand caption for this kind of job)') + '\n' +
+'Extra context on the job: ' + (jobNote || '(none)') + '\n' +
 'Product / trade facts you MAY weave in if they fit (do not force, do not add others): ' + (grounding || '(none)') + '\n' +
 'Media type: ' + type + '.\n' +
 'Write 3 caption options now.';

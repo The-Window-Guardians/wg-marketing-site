@@ -2503,14 +2503,14 @@ function captionImprove(p){
 // Real AI rewrite — calls the secure /ai-caption backend (Cloudflare Function holding the Anthropic key).
 // Grounds Claude with our own product/trade knowledge so it only weaves in facts we actually know.
 // Returns {options:[...]} on success, or {error,message} so the caller can fall back to captionImprove.
-async function aiCaptionLive(p){
+async function aiCaptionLive(p,style){
   var text=(p.caption||'').trim();
   var ctx=text+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite')})
   });
   return await r.json();
 }
@@ -6202,55 +6202,38 @@ function openComposer(idOrPost,isNew){
   };
   renderMedia();mf.appendChild(media);b.appendChild(mf);
 
-  // ① what's this post about — the brief that feeds the AI
-  const jf=el('div','cmp-field');jf.innerHTML='<label>① What’s this post about? <span class="muted" style="font-weight:600">— a line or two in your words. Claude uses this to write the caption.</span></label>';
-  const jn=el('textarea','cmp-in');jn.rows=2;jn.value=p.jobNote||'';jn.placeholder='e.g. swapped 8 drafty double-hungs for Okna Enviro Star, whole job in a day';
-  jn.oninput=()=>{p.jobNote=jn.value;const t=detectCity(jn.value);if(t&&t!==p.town){p.town=t; // name ANY city → Town field follows (add it as an option if it's not one of the 7)
-    if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t;} scheduleDraft();};
-  jf.appendChild(jn);b.appendChild(jf);
-
-  // ② caption — write your own or let Claude write it from the brief above; then edit in modes
-  const cf=el('div','cmp-field');cf.innerHTML='<label>② Caption <span class="muted" style="font-weight:600">— write your own, or leave it blank and tap 🤖 AI rewrite to have Claude write it from ①</span></label>';
-  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice… or leave blank and tap 🤖 AI rewrite';ca.oninput=()=>{p.caption=ca.value;scheduleDraft();};
-  const caAI=el('button','btn-set ai-draft','🤖 AI rewrite');caAI.title='Claude writes 3 options from your brief (①) and whatever you typed — keeps your facts, fixes grammar, adds product + town. ~1¢ per tap.';
+  // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
+  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
+  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write your caption… or describe what you want and let Claude write it';
+  ca.oninput=()=>{ p.caption=ca.value; const t=detectCity(ca.value); if(t&&t!==p.town){ p.town=t; if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t; } scheduleDraft(); };
+  cf.appendChild(ca);
   const caOpts=el('div','sugbox');
-  const fillFallback=(hdrMsg)=>{ // built-in suggestions when the live AI isn't available
-    const typed=(ca.value||'').trim();
-    const opts=typed?captionImprove(p):aiCaptionOptions(p);
-    caOpts.appendChild(el('div','sughdr',hdrMsg));
-    opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
-  };
-  caAI.onclick=async()=>{
-    if(caOpts.dataset.open==='1'){caOpts.innerHTML='';caOpts.dataset.open='0';return}
-    p.caption=ca.value; // improve the latest text
-    caOpts.dataset.open='1';caOpts.innerHTML='';
-    caOpts.appendChild(el('div','sughdr','🤖 Claude is writing…'));
-    caAI.disabled=true;
-    let d=null; try{ d=await aiCaptionLive(p); }catch(e){ d={error:'net'}; }
-    caAI.disabled=false;
-    if(caOpts.dataset.open!=='1')return; // user closed it while waiting
+  const fillFallback=(hdrMsg)=>{ const typed=(ca.value||'').trim(); const opts=typed?captionImprove(p):aiCaptionOptions(p); caOpts.appendChild(el('div','sughdr',hdrMsg)); opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)}); };
+  const caRewrite=el('button','btn-set ai-draft','🤖 AI rewrite');caRewrite.title='Clean, polished caption from what you wrote — keeps your facts, fixes grammar, adds product + town. ~1¢';
+  const caElab=el('button','btn-set ai-draft','🤖 AI elaborate');caElab.title='Expands it with more detail and a bit of story — no made-up facts. ~1¢';
+  const caFunny=el('button','btn-set ai-draft','🤖 AI funny');caFunny.title='A light, playful, funny take — still on-brand. ~1¢';
+  let aiBusy=false;
+  const runAI=async(style,workingMsg)=>{
+    if(aiBusy)return;
+    if(caOpts.dataset.open==='1'&&caOpts.dataset.style===style){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
+    p.caption=ca.value; // use the latest text
+    caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
+    caOpts.appendChild(el('div','sughdr',workingMsg));
+    aiBusy=true;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=true);
+    let d=null; try{ d=await aiCaptionLive(p,style); }catch(e){ d={error:'net'}; }
+    aiBusy=false;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=false);
+    if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
-      caOpts.appendChild(el('div','sughdr','AI options — tap one to use it:'));
+      caOpts.appendChild(el('div','sughdr','Tap one to use it:'));
       d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
-    } else {
-      const why=(d&&d.message)?(' ('+d.message+')'):'';
-      fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:');
-    }
+    } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
-  cf.appendChild(ca);
-  const restyle=(fn,emptyMsg,doneMsg)=>{ const t=(ca.value||'').trim(); if(!t){toast(emptyMsg);return;} const out=fn(t); ca.value=out;p.caption=out;scheduleDraft(); toast(out===t?'Looks good already ✓':doneMsg); };
-  const caPolish=el('button','btn-set','✨ Polish');caPolish.title='Fix grammar, spelling, capitalization & punctuation';
-  caPolish.onclick=()=>restyle(polishText,'Write something first, then Polish','Polished ✓');
-  const caFormal=el('button','btn-set','👔 Formal');caFormal.title='More professional tone — expands contractions, swaps casual words';
-  caFormal.onclick=()=>restyle(formalizeText,'Write something first','Made it more formal ✓');
-  const caFriendly=el('button','btn-set','😊 Friendly');caFriendly.title='Warmer, upbeat tone';
-  caFriendly.onclick=()=>restyle(friendlyText,'Write something first','Warmed it up ✓');
-  const caShort=el('button','btn-set','✂️ Shorter');caShort.title='Trim filler words';
-  caShort.onclick=()=>restyle(shortenText,'Write something first','Trimmed ✓');
-  const caAIRow=el('div','sugrow');caAIRow.appendChild(caAI);caAIRow.appendChild(el('span','aicost','~1¢ per tap'));
-  const caRow=el('div','sugrow');caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);
-  cf.appendChild(caAIRow);cf.appendChild(caRow);cf.appendChild(caOpts);
+  caRewrite.onclick=()=>runAI('rewrite','🤖 Claude is writing…');
+  caElab.onclick=()=>runAI('elaborate','🤖 Claude is elaborating…');
+  caFunny.onclick=()=>runAI('funny','🤖 Claude is having fun…');
+  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(el('span','aicost','~1¢ per tap'));
+  cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
