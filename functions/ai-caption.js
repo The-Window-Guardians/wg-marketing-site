@@ -9,7 +9,7 @@
 // Returns 200 with { options:[...] } on success, or 200 with { error, message }
 // so the front-end can show a friendly note and fall back to built-in suggestions.
 
-const DEFAULT_MODEL = 'claude-sonnet-4-5';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
