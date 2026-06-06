@@ -2593,6 +2593,52 @@ async function aiFullPostLive(p){
   });
   return await r.json();
 }
+/* "Build my week" — owner taps it; Claude looks at the newest GROUPED photos and drafts a few
+   complete posts (caption + hashtags + category) for review. Nothing posts automatically; each
+   lands in "Your posts" as a draft. Each photo set used is marked 'used' so a re-run won't repeat. */
+async function buildMyWeek(){
+  if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
+  const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
+  const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
+  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!usedIds.has(m.id));
+  if(!fresh.length){toast('No fresh photos to draft from — add or sync some content first.');return 0;}
+  // candidate "jobs": your hand-made groups first, then GPS location jobs (skip ungrouped no-GPS)
+  const groups=[]; const manualMap={};
+  fresh.forEach(m=>{ if(m.cgroup)(manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
+  Object.keys(manualMap).forEach(k=>groups.push({town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]}));
+  const located=fresh.filter(m=>!m.cgroup&&hasLoc(m));
+  clusterByLocation(located,60).forEach(c=>groups.push({town:(c.items.find(m=>m.town)||{}).town||'',items:c.items}));
+  if(!groups.length){toast('Your fresh photos aren’t in a job yet — add them to a job (or give them a location), then try again.');return 0;}
+  const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
+  const target=Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
+  const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
+  if(!ok)return 0;
+  toast('🪄 Building '+target+' post'+(target>1?'s':'')+'… give it a few seconds');
+  const cw=currentWeek(); const wk=cw?cw.id:1;
+  let made=0;
+  for(let gi=0; gi<groups.length && made<target; gi++){
+    const g=groups[gi];
+    const pics=g.items.slice(0,3); // up to 3 photos per post
+    const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:'',media:pics.map(m=>({id:m.id,name:m.name}))};
+    let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
+    if(d&&d.captions&&d.captions.length){
+      const np=newPost(wk);
+      np.media=pics.map(m=>({id:m.id,name:m.name,role:m.role||''}));
+      np.type=pics.length>1?'carousel':'photo';
+      np.town=g.town||'';
+      np.caption=d.captions[0];
+      np.hashtags=d.hashtags||'';
+      if(d.category)np.pillar=d.category;
+      np.aiDrafted=true;
+      savePost(np);
+      poolSetStatus(pics.map(m=>m.id),'used');
+      made++;
+    }
+  }
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  toast(made?('✨ Drafted '+made+' post'+(made>1?'s':'')+' — review them in “Your posts”'):'Couldn’t draft right now — check the AI is set up, then try again.');
+  return made;
+}
 // Merge two hashtag strings, de-duped, preserving order (so groups can stack without repeats).
 function mergeTags(existing,added){
   var seen={},out=[];
@@ -6059,6 +6105,12 @@ function socLibrary(v){
     const grid=el('div','library');
     drafts.concat(queued).forEach(p=>grid.appendChild(postCard(p)));
     postsCard.appendChild(grid);
+  }
+  // ✨ Build my week — owner taps it; Claude drafts a few posts from the newest photos to review (added AFTER innerHTML+= so the handler survives)
+  if(typeof isOwner==='function'&&isOwner()){
+    const bw=el('button','btn-set primary');bw.textContent='✨ Build my week with AI';bw.style.cssText='margin:4px 0 12px';bw.title='Claude looks at your newest photos and drafts a few posts for you to review — nothing posts automatically. ~2¢ each.';
+    bw.onclick=async()=>{ const old=bw.textContent; bw.disabled=true; bw.textContent='🪄 Building…'; try{ await buildMyWeek(); }catch(e){} bw.disabled=false; bw.textContent=old; };
+    postsCard.insertBefore(bw, postsCard.querySelector('.sec-title').nextSibling);
   }
   v.appendChild(postsCard);
   v.appendChild(contentHealthCard());
