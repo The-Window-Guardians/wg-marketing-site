@@ -31,11 +31,17 @@ function friendlyApiErr(status, body) {
   return 'AI request failed (' + status + ').';
 }
 
-// Build the Claude message content: image blocks first (vision), then the text prompt.
+// Build the Claude message content: each image gets a small label (incl. its Before/After tag),
+// then the image, then the text prompt. The labels stop the AI from calling an OLD window the new install.
 function buildContent(images, usrText) {
   if (!images || !images.length) return usrText;
-  var content = images.map(function (im) {
-    return { type: 'image', source: { type: 'base64', media_type: im.mediaType || 'image/jpeg', data: im.data } };
+  var content = [];
+  images.forEach(function (im, idx) {
+    var tag = im.role === 'before' ? ' — labeled BEFORE (this is the OLD / existing window; never describe it as newly installed)'
+            : im.role === 'after'  ? ' — labeled AFTER (this is the NEW, finished product)'
+            : '';
+    content.push({ type: 'text', text: 'Photo ' + (idx + 1) + tag + ':' });
+    content.push({ type: 'image', source: { type: 'base64', media_type: im.mediaType || 'image/jpeg', data: im.data } });
   });
   content.push({ type: 'text', text: usrText });
   return content;
@@ -95,7 +101,7 @@ export async function onRequestPost(context) {
     const images   = Array.isArray(body.images)
       ? body.images.slice(0, 4)
           .filter(function (im) { return im && typeof im.data === 'string' && im.data.length; })
-          .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000) }; })
+          .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000), role: (im.role === 'before' || im.role === 'after') ? im.role : '' }; })
       : [];
 
     var sys, usr;
@@ -122,6 +128,7 @@ export async function onRequestPost(context) {
 'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
 'Rules:\n' +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
+'- NEW vs OLD (very important): only say a window/door was newly installed or finished if a photo CLEARLY shows a brand-new, finished unit (clean new frame, crisp caulk and trim, no tools/debris). If a photo shows an OLD/existing window, a mid-install/in-progress shot, or the crew working — or you are not sure it is the finished new product — do NOT claim "we installed this new window." Describe it honestly instead (the before, the process, the team, the transformation). Trust the BEFORE/AFTER labels above each photo: BEFORE = the old window (never promote it as new); AFTER = the finished new product.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
 '- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji.\n' +
 '- hashtags: ONE set of 8 to 12 relevant tags — always include #WindowGuardians and a local tag if a town is given; match what the photos actually show.\n' +
@@ -147,6 +154,7 @@ export async function onRequestPost(context) {
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 '- Keep the owner’s facts and meaning. NEVER invent brands, materials, counts, prices, warranties, or claims that were not given.\n' +
+'- NEW vs OLD (very important): if photos are attached, only say a window/door was newly installed or finished if a photo CLEARLY shows a brand-new, finished unit (clean new frame, crisp caulk and trim, no tools/debris). If a photo shows an OLD/existing window, a mid-install/in-progress shot, or the crew working — or you are unsure — do NOT claim it is the new install. Describe it honestly (the before, the process, the team). Trust any BEFORE/AFTER labels: BEFORE = old (never promote as new); AFTER = the finished product.\n' +
 '- Fix all grammar, spelling, capitalization, and flow.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
 styleRule + '\n' +

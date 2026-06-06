@@ -2552,7 +2552,7 @@ async function mediaToB64(id,maxPx){
 /* Collect up to N of a post's photos as base64 for Claude's vision (skips videos). */
 async function postImagesB64(p,limit){
   var media=postMedia(p).filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||''); }).slice(0,limit||4);
-  var out=[]; for(var k=0;k<media.length;k++){ var b=await mediaToB64(media[k].id,640); if(b)out.push(b); }
+  var out=[]; for(var k=0;k<media.length;k++){ var b=await mediaToB64(media[k].id,640); if(b){ b.role=media[k].role||''; out.push(b); } } // pass the Before/After label so the AI never calls an OLD window the new install
   return out;
 }
 async function aiCaptionLive(p,style){
