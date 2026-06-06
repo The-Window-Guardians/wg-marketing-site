@@ -1651,7 +1651,7 @@ function migrateBeforeAfterToContent(){
   var moved=Object.keys(movedSet).length;
   var hadJobs=socBaJobs().length; ST.bajobs=[];
   commit(); if(typeof rerenderCal==='function')rerenderCal();
-  toastUndo('Moved '+moved+' Before/After photo'+(moved!==1?'s':'')+' → ✅ Finalized'+(hadJobs?(' · cleared '+hadJobs+' old job'+(hadJobs>1?'s':'')):''),
+  toastUndo('Imported '+moved+' Before/After photo'+(moved!==1?'s':'')+' — tagged in place'+(hadJobs?(' · cleared '+hadJobs+' old job'+(hadJobs>1?'s':'')):''),
     function(){ ST.pool=snapPool; ST.bajobs=snapJobs; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Before/After restored'); });
   return moved;
 }
@@ -1681,8 +1681,8 @@ function openContentAudit(){
   if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
   var bf=el('div','cmp-field');bf.style.marginTop='12px';
   if(s.baFolder||s.baJobs){
-    bf.innerHTML='<label>Old Before / After folder</label><p class="muted">Move your '+s.baFolder+' photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into ✅ Finalized — they keep their Before/After stage and stay location-tracked. Undoable.</p>';
-    var mg=el('button','btn-set primary','📦 Move Before/After → Finalized'); mg.onclick=function(){ migrateBeforeAfterToContent(); closeComposer(); }; bf.appendChild(mg);
+    bf.innerHTML='<label>Old Before / After folder</label><p class="muted">Import your '+s.baFolder+' photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into Content — they keep their Before/After stage tag and stay location-tracked. Undoable.</p>';
+    var mg=el('button','btn-set primary','📦 Import old Before/After'); mg.onclick=function(){ migrateBeforeAfterToContent(); closeComposer(); }; bf.appendChild(mg);
   } else { bf.innerHTML='<label>Old Before / After folder</label><p class="muted">✓ Empty — nothing to migrate.</p>'; }
   b.appendChild(bf);
 }
@@ -2601,8 +2601,8 @@ async function buildMyWeek(){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
   const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
   const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
-  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.stage&&!usedIds.has(m.id)); // only ✅ Finalized (tagged) photos — guarantees correct stage so captions are 100% safe
-  if(!fresh.length){toast('No Finalized photos yet — tag some photos 🟩 After (or 🟥/🟨) to finalize them, then try again.');return 0;}
+  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.stage&&!usedIds.has(m.id)); // only TAGGED photos — guarantees correct stage so captions are 100% safe
+  if(!fresh.length){toast('No tagged photos yet — tag photos 🔵 Before / 🟡 During / 🟠 After, then try again.');return 0;}
   // candidate "jobs": your hand-made groups first, then GPS location jobs (skip ungrouped no-GPS)
   const groups=[]; const manualMap={};
   fresh.forEach(m=>{ if(m.cgroup)(manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
@@ -2624,7 +2624,7 @@ async function buildMyWeek(){
     let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
       const np=newPost(wk);
-      np.media=pics.map(m=>({id:m.id,name:m.name,role:m.role||''}));
+      np.media=pics.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
       np.type=pics.length>1?'carousel':'photo';
       np.town=g.town||'';
       np.caption=d.captions[0];
@@ -5875,32 +5875,26 @@ function socLibrary(v){
   // ---- CONTENT POOL: tick pieces → make a post ----
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
   const isMain=m=>(!m.folder||m.folder==='Drive')&&!isVidItem(m); // photos sitting directly in the synced folder
-  const isFinal=m=>isMain(m)&&!!m.stage;   // tagged Before/During/After = Finalized (curated, ready)
-  const isRaw=m=>isMain(m)&&!m.stage;      // untagged = raw Content, still to sort/tag
   const poolAll=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
-  // legacy subfolders (Videos, and the old Before & After folder until it's migrated into Finalized)
+  // legacy subfolders (Videos, and the old Before & After folder until it's migrated)
   const subfolders=[...new Set(poolAll.filter(m=>m.folder&&m.folder!=='Drive').map(m=>m.folder))];
   const baJobsAll=(typeof socBaJobs==='function')?socBaJobs():[];
   if(baJobsAll.length&&subfolders.indexOf('Before & After')<0)subfolders.unshift('Before & After');
-  const finalN=poolAll.filter(isFinal).length;
-  const validSrc={main:1,Finalized:1}; subfolders.forEach(f=>validSrc[f]=1);
-  if(!validSrc[POOL_SRC]||(POOL_SRC==='Finalized'&&!finalN))POOL_SRC='main';
-  const srcItems = POOL_SRC==='main' ? poolAll.filter(isRaw)
-    : POOL_SRC==='Finalized' ? poolAll.filter(isFinal)
-    : poolAll.filter(m=>m.folder===POOL_SRC);
+  const validSrc={main:1}; subfolders.forEach(f=>validSrc[f]=1);
+  if(!validSrc[POOL_SRC])POOL_SRC='main';
+  const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
   const avail=srcItems;
   const allAvail=poolAll; // for resolving selections when making a post
   const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='Videos'?'Your videos.':POOL_SRC==='Finalized'?'Tagged & ready — grouped by job location.':'Raw photos to sort. Tag a stage (🟥 Before · 🟨 During · 🟩 After) to finalize one.';
+  const sub = POOL_SRC==='Videos'?'Your videos.':'Grouped by job location. Tag each photo 🔴 Before · 🟡 During · 🟢 After — tagged jobs rise to the top.';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub}</small></div></div>`;
   // controls: the area switcher (Content · Finalized · Videos · legacy)
   const ctrls=el('div','poolctrls');
   {
     const srcSel=el('select','cmp-in');
-    const rawN=poolAll.filter(isRaw).length;
-    const opts=[['main',`📷 Content (${rawN})`]];
-    if(finalN)opts.push(['Finalized',`✅ Finalized (${finalN})`]);
+    const mainN=poolAll.filter(isMain).length;
+    const opts=[['main',`📷 Content (${mainN})`]];
     subfolders.forEach(f=>{
       const n=poolAll.filter(m=>m.folder===f).length;
       if(f==='Before & After'){const j=baJobsAll.length;const parts=[];if(j)parts.push(j+' job'+(j!==1?'s':''));if(n)parts.push(n+' loose');opts.push([f,`🔀 Before & After — old (${parts.join(' · ')||'0'})`]);return;}
@@ -5951,15 +5945,16 @@ function socLibrary(v){
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');onToggle();};
     cell.appendChild(ck);
-    // STAGE TAGS — tag a photo Before/During/After → it auto-finalizes (moves to ✅ Finalized). Photos only.
+    // STAGE PILLS — tap Before/During/After to tag the photo; the lit pill + corner badge show the stage at a glance.
     if(!isVid){
       const sb=el('div','stagebar');
-      [['before','🟥','Before'],['during','🟨','During'],['after','🟩','After']].forEach(function(st){
-        const b=el('button','stagebtn'+(m.stage===st[0]?' on':''),st[1]);b.title='Tag as '+st[2]+(m.stage===st[0]?' (tap to remove)':'');
-        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[2]+' → ✅ Finalized'):'Tag removed — back in Content'); };
+      [['before','Before'],['during','During'],['after','After']].forEach(function(st){
+        const b=el('button','stagepill st-'+st[0]+(m.stage===st[0]?' on':''),st[1]);b.title='Tag as '+st[1]+(m.stage===st[0]?' (tap to clear)':'');
+        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[1]):'Tag cleared'); };
         sb.appendChild(b);
       });
       cell.appendChild(sb);
+      if(m.stage){ const lbl={before:'BEFORE',during:'DURING',after:'AFTER'}[m.stage]; cell.appendChild(el('span','stagebadge st-'+m.stage,lbl)); } // visible status pill
     }
     cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid
     return cell;
@@ -5981,9 +5976,23 @@ function socLibrary(v){
     body.appendChild(hint);
     const foot=el('div','rcactions');
     updatePost();
-    post.onclick=()=>{const chosen=pickChosen();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:m.role||''}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
+    post.onclick=()=>{const chosen=pickChosen();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
     foot.appendChild(post);
-    if(opts.allowMarkBA&&items.length>=2){const mk=el('button','btn-set','🔀 Mark before/after');mk.onclick=()=>openBaBuilder(items.slice());foot.appendChild(mk);}
+    // Select all in this group (for making one post or tagging together)
+    const selAll=el('button','btn-set');
+    selAll.textContent=(items.length&&items.every(m=>sel.has(m.id)))?'◻ Unselect all':'✓ Select all';
+    selAll.onclick=()=>{ const all=items.every(m=>sel.has(m.id)); items.forEach(m=>{ if(all)sel.delete(m.id); else sel.add(m.id); }); rerenderCal(); };
+    foot.appendChild(selAll);
+    // Tag the WHOLE group at once → once every photo is tagged the job jumps to the top
+    if(items.some(m=>!isVidItem(m))){
+      const tagWrap=el('div','tagall');tagWrap.appendChild(el('span','tagall-l','Tag all:'));
+      [['before','Before'],['during','During'],['after','After']].forEach(function(st){
+        const tb=el('button','stagepill st-'+st[0],st[1]);
+        tb.onclick=()=>{ items.forEach(m=>{ if(!isVidItem(m)){m.stage=st[0];m._ut=Date.now();} }); commit(); rerenderCal(); toast('Tagged the whole job '+st[1]); };
+        tagWrap.appendChild(tb);
+      });
+      foot.appendChild(tagWrap);
+    }
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
       ng.onclick=async()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
@@ -6026,37 +6035,41 @@ function socLibrary(v){
     const rest=avail.filter(m=>!m.cgroup);
     const located=rest.filter(hasLoc);
     const noloc=rest.filter(m=>!hasLoc(m));
-    Object.keys(manualMap).forEach(function(gname){
+    const groupDone=(its)=>{ var ph=its.filter(m=>!isVidItem(m)); return ph.length>0&&ph.every(m=>m.stage); }; // every photo tagged = job done → floats to top
+    Object.keys(manualMap).sort(function(a,b){return (groupDone(manualMap[b])?1:0)-(groupDone(manualMap[a])?1:0);}).forEach(function(gname){
       const items=manualMap[gname];
-      const d=el('details','jobgroup');applyGroupOpen(d,'mg:'+gname, true);
+      const d=el('details','jobgroup'+(groupDone(items)?' done':''));applyGroupOpen(d,'mg:'+gname, true);
       const sum=el('summary','jobsum');
       sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+' photo'+(items.length>1?'s':'')));
+      if(groupDone(items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
-      renderGroupBody(d,items,{allowMarkBA:true,moveToContent:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
+      renderGroupBody(d,items,{moveToContent:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
       poolCard.appendChild(d);
     });
     const clusters=clusterByLocation(located,60);
+    clusters.sort(function(a,b){return (groupDone(b.items)?1:0)-(groupDone(a.items)?1:0);}); // fully-tagged location jobs first
     const _nameCount={};
     clusters.forEach((c,i)=>{
-      const d=el('details','jobgroup');applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), i<2); // remember expand state across deletes; default-open the first couple
+      const d=el('details','jobgroup'+(groupDone(c.items)?' done':''));applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), i<2); // remember expand state across deletes; default-open the first couple
       let base=clusterBaseName(c.items,i);
       const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
       if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
       const sum=el('summary','jobsum');
       sum.appendChild(el('span','jobsum-t',`📍 ${esc(base)} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      if(groupDone(c.items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=(e)=>{e.preventDefault();e.stopPropagation();renameCluster(c.items,base);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(c.items));
       d.appendChild(sum);
-      renderGroupBody(d,c.items,{allowMarkBA:true,moveToContent:(POOL_SRC!=='main')});
+      renderGroupBody(d,c.items,{moveToContent:(POOL_SRC!=='main')});
       poolCard.appendChild(d);
     });
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
       const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', true);
       d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
-      renderGroupBody(d,noloc,{allowMarkBA:true,newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
+      renderGroupBody(d,noloc,{newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
     }
     if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
@@ -6069,7 +6082,7 @@ function socLibrary(v){
   makeBtn.onclick=()=>{
     const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;makeBtn.disabled=true;
     const p=newPost(wk);
-    p.media=sel.map(m=>({id:m.id,name:m.name}));
+    p.media=sel.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
     p.type=sel.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(sel[0].name||'')?'reel':'photo');
     poolSetStatus(sel.map(m=>m.id),'used');commit();
     POOL_SEL.clear();
@@ -6177,7 +6190,7 @@ function readyCard(p){
     const body=card.querySelector('.rcbody');
     const sf=el('div','rcfield');sf.innerHTML='<label>Photos — post in this order'+(mm.some(m=>m.role)?' (labels shown)':'')+'</label>';
     const strip=el('div','rcstrip');
-    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):'')+(m.failedToPublish?' missing':''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':'AFTER'));if(m.failedToPublish)t.appendChild(el('span','rcmiss',m.skipReason==='video'?'▶ video':'⚠ missing'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
+    mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):'')+(m.failedToPublish?' missing':''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':m.role==='during'?'DURING':'AFTER'));if(m.failedToPublish)t.appendChild(el('span','rcmiss',m.skipReason==='video'?'▶ video':'⚠ missing'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
   card.querySelector('[data-copy="cap"]').onclick=()=>copyOut(p.caption,'Caption');

@@ -509,10 +509,22 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .poolcell:hover{border-color:var(--orange)}
 .poolcell.sel{border-color:var(--orange);box-shadow:0 0 0 2px var(--orange) inset}
 .poolcell.sel .poolck{background:var(--orange);border-color:var(--orange);color:#fff}
-.stagebar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:0;background:#000000aa;backdrop-filter:blur(2px)}
-.stagebtn{flex:1;border:none;background:transparent;font-size:13px;line-height:1;padding:5px 0;cursor:pointer;opacity:.5;filter:grayscale(.6)}
-.stagebtn.on{opacity:1;filter:none;background:#ffffff22}
-.stagebtn:hover{opacity:.9}
+.stagebar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:3px;padding:4px;background:#0007;backdrop-filter:blur(2px)}
+.stagepill{flex:1;border:none;border-radius:999px;font-size:9.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;padding:4px 0;cursor:pointer;opacity:.4}
+.stagepill.st-before{background:var(--blue,#2f6df6);color:#fff}
+.stagepill.st-during{background:#f2c21d;color:#5a4500}
+.stagepill.st-after{background:var(--orange,#ff7a18);color:#fff}
+.stagepill.on{opacity:1;box-shadow:0 0 0 2px #fff inset}
+.stagepill:hover{opacity:.85}
+.stagebadge{position:absolute;top:7px;left:7px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:3px 9px;color:#fff;box-shadow:0 1px 3px #0005}
+.stagebadge.st-before{background:var(--blue,#2f6df6)}
+.stagebadge.st-during{background:#f2c21d;color:#5a4500}
+.stagebadge.st-after{background:var(--orange,#ff7a18)}
+.tagall{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.tagall-l{font-size:11px;font-weight:700;color:var(--ink2);margin-right:2px}
+.tagall .stagepill{opacity:1;flex:0 0 auto;padding:4px 10px;font-size:10px}
+.jobdone{display:inline-block;background:#e2f3e8;border:1px solid #9cd6b3;color:#1f7a47;border-radius:999px;font-size:10.5px;font-weight:800;padding:1px 8px;margin-left:6px}
+details.jobgroup.done>summary{background:#f1faf4}
 .poolplay{position:absolute;bottom:6px;left:6px;width:26px;height:26px;border-radius:50%;background:#000a;color:#fff;display:grid;place-items:center;font-size:11px;padding-left:2px;pointer-events:none}
 .poolkind{margin:2px 0 10px}
 .poolkind select{max-width:220px}
@@ -581,6 +593,7 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .rcnum{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#000a;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
 .rcrolebadge{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:9.5px;font-weight:800;letter-spacing:.04em;color:#fff;padding:2px 0}
 .rcrolebadge.before{background:#2f6df6}
+.rcrolebadge.during{background:#f2c21d;color:#5a4500}
 .rcrolebadge.after{background:var(--orange)}
 .rcthumb.missing{border:2px solid #e23b3b}
 .rcthumb.missing img{opacity:.4}
