@@ -2629,10 +2629,13 @@ async function buildMyWeek(){
   // candidate "jobs": your hand-made groups first, then GPS location jobs (skip ungrouped no-GPS)
   const groups=[]; const manualMap={};
   fresh.forEach(m=>{ if(m.cgroup)(manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
-  Object.keys(manualMap).forEach(k=>groups.push({town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]}));
+  Object.keys(manualMap).forEach(k=>groups.push({title:k,town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]})); // manual job name = its title
   const located=fresh.filter(m=>!m.cgroup&&hasLoc(m));
-  clusterByLocation(located,60).forEach(c=>groups.push({town:(c.items.find(m=>m.town)||{}).town||'',items:c.items}));
+  clusterByLocation(located,60).forEach(function(c){ var ti=(c.items.find(m=>m&&m.cname)||{}).cname||(c.items.find(m=>m&&m.town)||{}).town||''; groups.push({title:ti,town:(c.items.find(m=>m.town)||{}).town||'',items:c.items}); });
   if(!groups.length){toast('Your fresh photos aren’t in a job yet — add them to a job (or give them a location), then try again.');return 0;}
+  // The AI should pick the richest-described jobs first — a fuller title (product + town + features) = more to work with = a better post.
+  const richness=function(g){ var t=(g.title||'').trim(); var words=t?t.split(/\s+/).length:0; var prod=productLine(t)?3:0; return words+prod; };
+  groups.sort(function(a,b){ return richness(b)-richness(a); });
   const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
   const target=Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
   const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
@@ -2643,13 +2646,14 @@ async function buildMyWeek(){
   for(let gi=0; gi<groups.length && made<target; gi++){
     const g=groups[gi];
     const pics=orderByStage(g.items).slice(0,3); // up to 3 photos per post, Before→After order
-    const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:'',media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))};
+    const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:(g.title||''),media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))}; // feed the job TITLE to the AI as context
     let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
       const np=newPost(wk);
       np.media=pics.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
       np.type=pics.length>1?'carousel':'photo';
       np.town=g.town||'';
+      np.jobNote=g.title||'';            // keep the title on the draft so future AI edits still have it
       np.caption=d.captions[0];
       np.hashtags=d.hashtags||'';
       if(d.category)np.pillar=d.category;
@@ -6016,7 +6020,7 @@ function socLibrary(v){
     body.appendChild(grid);
     const foot=el('div','rcactions');
     updatePost();
-    post.onclick=()=>{const chosen=orderByStage(pickChosen());if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
+    post.onclick=()=>{const chosen=orderByStage(pickChosen());if(!chosen.length)return;const p=newPost(wk);p.jobNote=(items.find(m=>m.cgroup)||{}).cgroup||(items.find(m=>m.cname)||{}).cname||(items.find(m=>m.town)||{}).town||'';p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
     foot.appendChild(post);
     // Select all in this group (for making one post or tagging together)
     const selAll=el('button','btn-set');
