@@ -1640,6 +1640,18 @@ function auditDedupe(){
     function(){ ST.pool=snapPool; ST.posts=snapPosts; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Duplicates restored'); });
   return dropIds.length;
 }
+// Auto-merge the OLD Before/After folder into Content (as stages) once — so there's no separate folder.
+var _baMerged=false;
+function baAutoMerge(){
+  if(_baMerged)return;
+  if(!ST||(typeof _fbSync!=='undefined'&&_fbSync.applying))return; // don't fight an incoming sync
+  if(!(socBaJobs().length>0||socPool().some(function(m){return m.folder==='Before & After';})))return;
+  _baMerged=true;
+  socBaJobs().forEach(function(j){ jobItems(j).forEach(function(it){ var m=socPool().find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); }); });
+  socPool().forEach(function(m){ if(m.folder==='Before & After'){ if((m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); } });
+  ST.bajobs=[];
+  try{commit();}catch(e){}
+}
 function migrateBeforeAfterToContent(){
   var snapPool=JSON.parse(JSON.stringify(socPool()));
   var snapJobs=JSON.parse(JSON.stringify(socBaJobs()));
@@ -3353,6 +3365,7 @@ function maybeRunTour(){
 }
 function render(){
   if(typeof enforceAccess==='function'&&enforceAccess())return;   // deactivated/removed → kicked to the gate
+  try{baAutoMerge();}catch(e){}                                   // one-time: fold the old Before/After folder into Content as stages
   const v=$('#view');if(!v)return;v.innerHTML='';
   const nb=noEmailBanner();if(nb)v.appendChild(nb);
   ({marketing:viewMarketingHub,dashboard:viewDashboard,plan:viewPlan,scorecard:viewScorecard,calendar:viewCalendar,guides:viewGuides,files:viewFiles,strategy:viewStrategy,audit:viewAudit,settings:viewSettings,upload:viewUploader,progress:viewProgressBoard}[currentView()]||viewDashboard)(v);
@@ -5945,14 +5958,22 @@ function socLibrary(v){
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');onToggle();};
     cell.appendChild(ck);
-    // STAGE TAGS — mini B/D/A buttons; the lit one is the photo's stage. Tap another to fix a mistake.
+    // STAGE TAGS — untagged: 3 mini B/D/A squares to pick. Tagged: ONE full-name pill that cycles when tapped (to fix a mistake).
     if(!isVid){
       const sb=el('div','stagebar');
-      [['before','B','Before'],['during','D','During'],['after','A','After']].forEach(function(st){
-        const b=el('button','stagepill st-'+st[0]+(m.stage===st[0]?' on':''),st[1]);b.title='Tag '+st[2]+(m.stage===st[0]?' (tap to clear)':'');
-        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[2]):'Tag cleared'); };
-        sb.appendChild(b);
-      });
+      if(!m.stage){
+        [['before','B','Before'],['during','D','During'],['after','A','After']].forEach(function(st){
+          const b=el('button','stagepill st-'+st[0],st[1]);b.title='Tag '+st[2];
+          b.onclick=function(e){e.stopPropagation(); m.stage=st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast('Tagged '+st[2]); };
+          sb.appendChild(b);
+        });
+      } else {
+        const order=['before','during','after'], names={before:'BEFORE',during:'DURING',after:'AFTER'};
+        sb.classList.add('one');
+        const p=el('button','stagefull st-'+m.stage,names[m.stage]);p.title='Tap to change the stage';
+        p.onclick=function(e){e.stopPropagation(); var i=order.indexOf(m.stage); m.stage=order[(i+1)%order.length]; m._ut=Date.now(); commit(); rerenderCal(); toast('Now '+names[m.stage]); };
+        sb.appendChild(p);
+      }
       cell.appendChild(sb);
     }
     cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid

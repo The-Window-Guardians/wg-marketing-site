@@ -516,6 +516,11 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .stagepill.st-after{background:var(--orange,#ff7a18);color:#fff}
 .stagepill.on{opacity:1;box-shadow:0 0 0 2px #fff,0 0 0 3px #0003}
 .stagepill:hover{opacity:.8}
+.stagebar.one{padding:5px 8px}
+.stagefull{flex:1;border:none;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:5px 0;cursor:pointer;color:#fff}
+.stagefull.st-before{background:var(--blue,#2f6df6);color:#fff}
+.stagefull.st-during{background:#f2c21d;color:#5a4500}
+.stagefull.st-after{background:var(--orange,#ff7a18);color:#fff}
 .tagall{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .tagall-l{font-size:11px;font-weight:700;color:var(--ink2);margin-right:2px}
 .tagall .stagepill{opacity:1;flex:0 0 auto;padding:4px 10px;font-size:10px}
