@@ -1172,10 +1172,13 @@ function fillMediaRoles(p){
     if(m.role)return;
     if(jobRole[m.id]){m.role=jobRole[m.id];return;}
     var pm=socPool().find(function(x){return x.id===m.id;});
-    if(pm&&pm.role)m.role=pm.role;
+    if(pm&&(pm.role||pm.stage))m.role=pm.role||pm.stage;   // stage tag (Before/During/After) is the source of truth now
   });
   return p.media;
 }
+/* Order photos for a post so a before/after reveal reads right: Before → During → After → untagged. */
+function _stageRank(r){ var o={before:0,during:1,after:2}; return (o[r]!=null)?o[r]:3; }
+function orderByStage(items){ return items.slice().sort(function(a,b){ return _stageRank(a.stage||a.role)-_stageRank(b.stage||b.role); }); }
 /* When a post goes to Ruth, make it self-contained: copy every photo into the shared
    cloud (Firestore) under its EXISTING id, so cloudFileGet resolves it on ANY device.
    Drive photos live in Sebastian's private Drive — Ruth can't reach those — so without
@@ -2631,7 +2634,7 @@ async function buildMyWeek(){
   let made=0, warned=0;
   for(let gi=0; gi<groups.length && made<target; gi++){
     const g=groups[gi];
-    const pics=g.items.slice(0,3); // up to 3 photos per post
+    const pics=orderByStage(g.items).slice(0,3); // up to 3 photos per post, Before→After order
     const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:'',media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))};
     let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
@@ -5994,7 +5997,7 @@ function socLibrary(v){
     body.appendChild(grid);
     const foot=el('div','rcactions');
     updatePost();
-    post.onclick=()=>{const chosen=pickChosen();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
+    post.onclick=()=>{const chosen=orderByStage(pickChosen());if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
     foot.appendChild(post);
     // Select all in this group (for making one post or tagging together)
     const selAll=el('button','btn-set');
@@ -6089,7 +6092,7 @@ function socLibrary(v){
   }
   updateMakeBtn();
   makeBtn.onclick=()=>{
-    const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;makeBtn.disabled=true;
+    const sel=orderByStage(allAvail.filter(m=>POOL_SEL.has(m.id)));if(!sel.length)return;makeBtn.disabled=true;
     const p=newPost(wk);
     p.media=sel.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
     p.type=sel.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(sel[0].name||'')?'reel':'photo');
