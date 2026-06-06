@@ -1643,15 +1643,20 @@ function auditDedupe(){
     function(){ ST.pool=snapPool; ST.posts=snapPosts; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Duplicates restored'); });
   return dropIds.length;
 }
-// Auto-merge the OLD Before/After folder into Content (as stages) once — so there's no separate folder.
-var _baMerged=false;
+// Auto-merge the OLD Before/After folder into Content (as stages). Self-healing: runs on every
+// render until no legacy before/after data remains (handles sync re-delivering old records).
 function baAutoMerge(){
-  if(_baMerged)return;
   if(!ST||(typeof _fbSync!=='undefined'&&_fbSync.applying))return; // don't fight an incoming sync
-  if(!(socBaJobs().length>0||socPool().some(function(m){return m.folder==='Before & After';})))return;
-  _baMerged=true;
-  socBaJobs().forEach(function(j){ jobItems(j).forEach(function(it){ var m=socPool().find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); }); });
-  socPool().forEach(function(m){ if(m.folder==='Before & After'){ if((m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); } });
+  var jobs=socBaJobs(), pool=socPool();
+  var hasLegacy = jobs.length>0
+    || pool.some(function(m){return m.folder==='Before & After';})
+    || pool.some(function(m){return !m.stage&&(m.role==='before'||m.role==='after');});
+  if(!hasLegacy)return;
+  jobs.forEach(function(j){ jobItems(j).forEach(function(it){ var m=pool.find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); }); });
+  pool.forEach(function(m){
+    if(m.folder==='Before & After'){ if((m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); }
+    else if(!m.stage&&(m.role==='before'||m.role==='after')){ m.stage=m.role; m._ut=Date.now(); } // old role-tagged photos → show a stage pill
+  });
   ST.bajobs=[];
   try{commit();}catch(e){}
 }
