@@ -5548,7 +5548,25 @@ async function openMediaPreview(mediaId,name,list){
       const rec=await fileGet(mid);
       if($('#mprevOv')!==ov)return; // closed while loading
       body.innerHTML='';
-      if(!rec||!rec.blob){ const c=await cloudFileGet(mid); if($('#mprevOv')!==ov)return; if(c&&c.dataUrl){const im=document.createElement('img');im.className='mprev-media';im.onload=relax;im.onerror=relax;im.src=c.dataUrl;body.appendChild(im);}else {relax();body.appendChild(el('div','muted','Preview unavailable.'));} return; }
+      if(!rec||!rec.blob){
+        const c=await cloudFileGet(mid); if($('#mprevOv')!==ov)return;
+        if(c&&c.dataUrl){const im=document.createElement('img');im.className='mprev-media';im.onload=relax;im.onerror=relax;im.src=c.dataUrl;body.appendChild(im);return;}
+        const pm=socPool().find(z=>z.id===mid)||{};
+        // photo synced from Google Drive but no local/cloud copy on THIS device → pull it from Drive on demand
+        if(pm.driveId){
+          try{ const tok=await gdGetToken(false); if($('#mprevOv')!==ov)return;
+            if(tok){ const dl=await fetch('https://www.googleapis.com/drive/v3/files/'+pm.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}}); if($('#mprevOv')!==ov)return;
+              if(dl.ok){ const blob=await dl.blob(); if($('#mprevOv')!==ov)return; const iurl=URL.createObjectURL(blob);_mprevUrl=iurl; const img=document.createElement('img');img.className='mprev-media';img.onload=relax;img.onerror=relax;img.src=iurl;body.appendChild(img); return; }
+            }
+          }catch(e){}
+        }
+        if(pm.driveThumb){ const img=document.createElement('img');img.className='mprev-media';img.onload=relax;img.onerror=relax;img.src=pm.driveThumb;body.appendChild(img); const hint=el('div','');hint.style.cssText='color:#fff;opacity:.85;font-size:12px;margin-top:8px;text-align:center';hint.textContent='Low-res preview — tap “Sync Google Drive” to pull the full photo onto this device.';body.appendChild(hint); relax(); return; }
+        // truly not on this device
+        relax();
+        const miss=el('div');miss.style.cssText='color:#fff;text-align:center;max-width:420px;padding:24px';
+        miss.innerHTML='<div style="font-size:32px">🖼️</div><b>This photo isn’t on this device.</b><div style="color:#cdd3dc;font-size:13px;margin-top:6px;line-height:1.5">It was added on another device, or its upload didn’t finish — so the picture never reached the shared cloud. Open the app on the device it came from and tap <b>Sync Google Drive</b>, or remove it with the 🗑 button.</div>';
+        body.appendChild(miss); return;
+      }
       const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(nm||'');
       if(isVid){
         const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
