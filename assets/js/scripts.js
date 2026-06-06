@@ -6098,7 +6098,7 @@ function renderGate(){
       <label class="login-lbl">Password</label>
       <input type="password" id="gatePw" class="login-pw" placeholder="Enter your password" autocomplete="current-password">
       <div class="login-actions"><button class="btn-set" id="gateBack">← Back</button><button class="btn-set primary" id="gateGo">Log in</button></div>
-      ${window.WG_FB_READY?'<div class="login-forgot"><button class="linklike" id="gateForgot">Forgot password? / first time — set it</button></div>':''}
+      ${window.WG_FB_READY?'<div class="login-forgot"><button class="linklike" id="gateForgot">Forgot password?</button></div>':''}
       <div class="login-hint">${window.WG_FB_READY?'🔒 Secure login — your work syncs to the team.':'Prototype login — real security turns on with the backend.'}</div>
     </div>`;
     const pw=$('#gatePw'); if(pw)pw.focus();
