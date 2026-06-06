@@ -6128,7 +6128,7 @@ function openComposer(idOrPost,isNew){
   caFriendly.onclick=()=>restyle(friendlyText,'Write something first','Warmed it up ✓');
   const caShort=el('button','btn-set','✂️ Shorter');caShort.title='Trim filler words';
   caShort.onclick=()=>restyle(shortenText,'Write something first','Trimmed ✓');
-  const caAIRow=el('div','sugrow');caAIRow.appendChild(caAI);
+  const caAIRow=el('div','sugrow');caAIRow.appendChild(caAI);caAIRow.appendChild(el('span','aicost','~1¢ per tap'));
   const caRow=el('div','sugrow');caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);
   cf.appendChild(caAIRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
@@ -6159,7 +6159,7 @@ function openComposer(idOrPost,isNew){
     }
   };
   hf.appendChild(ha);
-  const haRow=el('div','sugrow');haRow.appendChild(haAI);
+  const haRow=el('div','sugrow');haRow.appendChild(haAI);haRow.appendChild(el('span','aicost','~1¢ per tap'));
   hf.appendChild(haRow);
   hf.appendChild(hashGroupPicker(()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;scheduleDraft();}));
   hf.appendChild(haOpts);

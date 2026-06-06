@@ -103,6 +103,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 /* keep the AI Suggest button + the snippet "Save current"/chips on one row (wraps on mobile) */
 .sugrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .sugrow .snipbar{margin-top:0;flex:1;min-width:140px}
+.aicost{font-size:11px;color:#8a93a3;font-weight:600;align-self:center}
 .hgwrap{display:flex;flex-direction:column;gap:7px;margin-top:8px}
 .hgsel{width:100%;font-size:12.5px;padding:7px 8px}
 .hgbtns{display:flex;flex-wrap:wrap;gap:6px}
