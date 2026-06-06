@@ -60,9 +60,28 @@ export async function onRequestPost(context) {
     const town     = String(body.town     || '').slice(0, 80);
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
+    const mode     = (body.mode === 'hashtags') ? 'hashtags' : 'caption';
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
-    const sys =
+    var sys, usr;
+    if (mode === 'hashtags') {
+      sys =
+'You generate social media hashtag sets for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
+'Rules:\n' +
+'- Each set = 8 to 12 hashtags: a mix of branded (#WindowGuardians), the actual service shown, local (#BucksCountyPA, #LanghornePA and nearby towns), and a few broader reach tags homeowners search.\n' +
+'- Always include #WindowGuardians. If a town is given, include a local tag for it.\n' +
+'- Match the hashtags to what the post is actually about — do not tag siding on a window post.\n' +
+'- Each hashtag is one word, no spaces, no punctuation except the leading #. Separate tags with single spaces.\n' +
+'- Return ONLY valid JSON in this exact shape: {"options":["#a #b #c","#d #e #f","#g #h #i"]} — three distinct sets, nothing else.';
+      usr =
+'Town: ' + (town || '(none)') + '\n' +
+'Caption / what the post says: ' + (caption || '(none)') + '\n' +
+'What was done: ' + (jobNote || '(none)') + '\n' +
+'Product / trade context: ' + (grounding || '(none)') + '\n' +
+'Media type: ' + type + '.\n' +
+'Write 3 hashtag sets now.';
+    } else {
+      sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use. Short sentences.\n' +
 'Rules:\n' +
@@ -71,14 +90,14 @@ export async function onRequestPost(context) {
 '- If a town is given, work it in naturally (local pride).\n' +
 '- 1 to 3 short sentences. No hashtags. At most one emoji, only if it fits.\n' +
 '- Return ONLY valid JSON in this exact shape: {"options":["option one","option two","option three"]} — three distinct captions, nothing else.';
-
-    const usr =
+      usr =
 'Town: ' + (town || '(none)') + '\n' +
-'What the owner typed (their voice — preserve it): ' + (caption || '(nothing yet — write a fresh one)') + '\n' +
-'Job note (what was actually done): ' + (jobNote || '(none)') + '\n' +
+'What the owner wants this post to be about: ' + (jobNote || '(none)') + '\n' +
+'What the owner typed as a caption (their voice — preserve it if present): ' + (caption || '(nothing yet — write a fresh one from the topic above)') + '\n' +
 'Product / trade facts you MAY weave in if they fit (do not force, do not add others): ' + (grounding || '(none)') + '\n' +
 'Media type: ' + type + '.\n' +
 'Write 3 caption options now.';
+    }
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

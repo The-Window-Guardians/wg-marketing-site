@@ -103,8 +103,12 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 /* keep the AI Suggest button + the snippet "Save current"/chips on one row (wraps on mobile) */
 .sugrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .sugrow .snipbar{margin-top:0;flex:1;min-width:140px}
-.hgwrap{display:flex;align-items:center;gap:6px;flex:1;min-width:180px}
-.hgsel{flex:1;min-width:160px;font-size:12.5px;padding:6px 8px}
+.hgwrap{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+.hgsel{width:100%;font-size:12.5px;padding:7px 8px}
+.hgbtns{display:flex;flex-wrap:wrap;gap:6px}
+.hgedit{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid #e2e6ee;border-radius:10px;background:#f7f9fc}
+.hgedit .cmp-in{width:100%}
+.hgedit-row{display:flex;gap:8px;justify-content:flex-end}
 .hgdel{border:1px solid #f3b7b7;background:#fff;color:#cf3b3b;border-radius:8px;font-size:11px;font-weight:700;padding:5px 8px;cursor:pointer;white-space:nowrap}
 .hgdel:hover{background:#fde7e7}
 .snipchip{display:inline-flex;align-items:center;background:var(--blue-soft);border-radius:999px;overflow:hidden;max-width:100%}

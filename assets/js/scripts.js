@@ -1243,31 +1243,54 @@ var DEFAULT_HASH_GROUPS=[
 ];
 function hashGroupsUser(){ if(!ST)return []; if(!Array.isArray(ST.hashGroups))ST.hashGroups=[]; return ST.hashGroups; }
 function hashGroupsAll(){ return DEFAULT_HASH_GROUPS.concat(hashGroupsUser()); }
-/* a select to insert a hashtag group + save/delete your own groups */
+/* Hashtag group manager: pick a group to ADD it in (stacks, de-duped), plus create / edit / delete your own. */
 function hashGroupPicker(getText,setText){
   const wrap=el('div','hgwrap');
   const sel=el('select','cmp-in hgsel');
+  const editId={v:null}; // id of the user group currently being edited (null = creating new)
   const fill=()=>{
-    sel.innerHTML='<option value="">📁 Hashtag groups — pick to insert…</option>'
+    sel.innerHTML='<option value="">📁 Hashtag groups — pick to add in…</option>'
       +'<optgroup label="Built-in">'+DEFAULT_HASH_GROUPS.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'
-      +(hashGroupsUser().length?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'')
-      +'<option value="__save">＋ Save current as a group…</option>';
+      +(hashGroupsUser().length?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'');
   };
   fill();
-  const delBtn=el('button','hgdel','✕ delete group');delBtn.style.display='none';delBtn.title='Delete this saved group';
+  // inline editor (used for both New and Edit)
+  const ed=el('div','hgedit');ed.style.display='none';
+  const edName=el('input','cmp-in');edName.placeholder='Group name (e.g. Roofing — winter)';
+  const edTags=el('textarea','cmp-in');edTags.rows=2;edTags.placeholder='#WindowGuardians #roofing #BucksCountyPA …';
+  const edRow=el('div','hgedit-row');
+  const edSave=el('button','btn-set primary','Save group');
+  const edCancel=el('button','btn-set','Cancel');
+  edRow.appendChild(edSave);edRow.appendChild(edCancel);
+  ed.appendChild(edName);ed.appendChild(edTags);ed.appendChild(edRow);
+  const closeEd=()=>{ ed.style.display='none'; editId.v=null; };
+  const openEd=(grp)=>{ editId.v=grp?grp.id:null; edName.value=grp?grp.name:''; edTags.value=grp?grp.tags:((getText()||'').trim()); ed.style.display=''; edName.focus(); };
+  // action buttons
+  const newBtn=el('button','btn-set','＋ New group');newBtn.title='Save a hashtag set you can reuse';
+  const editBtn=el('button','btn-set','✎ Edit');editBtn.title='Edit the selected group';editBtn.style.display='none';
+  const delBtn=el('button','btn-set danger','🗑');delBtn.title='Delete the selected group';delBtn.style.display='none';
+  const btnRow=el('div','hgbtns');btnRow.appendChild(newBtn);btnRow.appendChild(editBtn);btnRow.appendChild(delBtn);
+
   sel.onchange=()=>{
-    const v=sel.value;
-    if(v==='__save'){ const name=(prompt('Name this hashtag group (e.g. “Roofing — winter”):')||'').trim(); const txt=(getText()||'').trim();
-      if(name&&txt){ hashGroupsUser().push({id:'hg_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),name:name,tags:txt,_ct:Date.now()}); commit(); toast('Group saved'); }
-      else if(!txt)toast('Type some hashtags first, then save them as a group');
-      fill();sel.value='';delBtn.style.display='none';return;
-    }
-    const g=hashGroupsAll().find(x=>x.id===v);
-    if(g){ setText(g.tags); toast('Inserted “'+g.name+'”'); }
-    delBtn.style.display=(g&&/^hg_/.test(g.id))?'':'none';   // only user groups are deletable
+    const g=hashGroupsAll().find(x=>x.id===sel.value);
+    if(g){ setText(mergeTags(getText(),g.tags)); toast('Added “'+g.name+'” ✓'); }
+    const isUser=!!(g&&/^hg_/.test(g.id));
+    editBtn.style.display=isUser?'':'none';
+    delBtn.style.display=isUser?'':'none';
   };
-  delBtn.onclick=()=>{ const g=hashGroupsAll().find(x=>x.id===sel.value); if(g&&/^hg_/.test(g.id)){ ST.hashGroups=hashGroupsUser().filter(z=>z.id!==g.id); commit(); fill(); sel.value=''; delBtn.style.display='none'; toast('Group deleted'); } };
-  wrap.appendChild(sel);wrap.appendChild(delBtn);
+  newBtn.onclick=()=>openEd(null);
+  editBtn.onclick=()=>{ const g=hashGroupsAll().find(x=>x.id===sel.value); if(g&&/^hg_/.test(g.id))openEd(g); };
+  delBtn.onclick=async()=>{ const g=hashGroupsAll().find(x=>x.id===sel.value); if(g&&/^hg_/.test(g.id)){ const ok=await uiConfirm('Delete the hashtag group “'+g.name+'”?',{title:'Delete group?',confirmText:'Delete',danger:true}); if(ok){ ST.hashGroups=hashGroupsUser().filter(z=>z.id!==g.id); commit(); fill(); sel.value=''; editBtn.style.display='none'; delBtn.style.display='none'; closeEd(); toast('Group deleted'); } } };
+  edCancel.onclick=closeEd;
+  edSave.onclick=()=>{
+    const name=(edName.value||'').trim(); const tags=mergeTags('',edTags.value||'');
+    if(!name){toast('Give the group a name');return;}
+    if(!tags){toast('Add a few hashtags first');return;}
+    if(editId.v){ const g=hashGroupsUser().find(z=>z.id===editId.v); if(g){g.name=name;g.tags=tags;} toast('Group updated ✓'); }
+    else { hashGroupsUser().push({id:'hg_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4),name:name,tags:tags,_ct:Date.now()}); toast('Group saved ✓'); }
+    commit(); fill(); closeEd();
+  };
+  wrap.appendChild(sel);wrap.appendChild(btnRow);wrap.appendChild(ed);
   return wrap;
 }
 /* light "expert" grammar polish on the user's OWN caption — capitalize sentences, fix lone "i",
@@ -2375,6 +2398,23 @@ async function aiCaptionLive(p){
     body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding})
   });
   return await r.json();
+}
+// Real AI hashtags — same secure backend, mode:'hashtags'. Returns {options:[...]} or {error,message}.
+async function aiHashtagsLive(p){
+  var ctx=(p.caption||'')+' '+(p.jobNote||'');
+  var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
+  var r=await fetch('/ai-caption',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding})
+  });
+  return await r.json();
+}
+// Merge two hashtag strings, de-duped, preserving order (so groups can stack without repeats).
+function mergeTags(existing,added){
+  var seen={},out=[];
+  (existing+' '+added).split(/\s+/).forEach(function(t){ t=t.trim(); if(!t)return; if(t[0]!=='#')t='#'+t.replace(/^#+/,''); var k=t.toLowerCase(); if(seen[k])return; seen[k]=1; out.push(t); });
+  return out.join(' ');
 }
 function aiCaptionOptions(p){
   const town=effectiveTown(p), where=town?` in ${town}`:'';
@@ -6042,17 +6082,17 @@ function openComposer(idOrPost,isNew){
   };
   renderMedia();mf.appendChild(media);b.appendChild(mf);
 
-  // job note
-  const jf=el('div','cmp-field');jf.innerHTML='<label>Job note <span class="muted" style="font-weight:600">— what you did, in your words (feeds the AI)</span></label>';
-  const jn=el('textarea','cmp-in');jn.rows=2;jn.value=p.jobNote||'';jn.placeholder='e.g. swapped 8 drafty double-hungs for Okna, whole job in a day';
+  // ① what's this post about — the brief that feeds the AI
+  const jf=el('div','cmp-field');jf.innerHTML='<label>① What’s this post about? <span class="muted" style="font-weight:600">— a line or two in your words. Claude uses this to write the caption.</span></label>';
+  const jn=el('textarea','cmp-in');jn.rows=2;jn.value=p.jobNote||'';jn.placeholder='e.g. swapped 8 drafty double-hungs for Okna Enviro Star, whole job in a day';
   jn.oninput=()=>{p.jobNote=jn.value;const t=detectCity(jn.value);if(t&&t!==p.town){p.town=t; // name ANY city → Town field follows (add it as an option if it's not one of the 7)
     if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t;} scheduleDraft();};
   jf.appendChild(jn);b.appendChild(jf);
 
-  // caption — you write it; the expert suggests options you can swap in
-  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write a line in your voice, then tap AI rewrite</span></label>';
-  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice…';ca.oninput=()=>{p.caption=ca.value;scheduleDraft();};
-  const caAI=el('button','btn-set ai-draft','🤖 AI rewrite');caAI.title='Type a sentence or two first — Claude keeps your words, fixes them up, and weaves in the product + town. Costs about a penny per tap.';
+  // ② caption — write your own or let Claude write it from the brief above; then edit in modes
+  const cf=el('div','cmp-field');cf.innerHTML='<label>② Caption <span class="muted" style="font-weight:600">— write your own, or leave it blank and tap 🤖 AI rewrite to have Claude write it from ①</span></label>';
+  const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice… or leave blank and tap 🤖 AI rewrite';ca.oninput=()=>{p.caption=ca.value;scheduleDraft();};
+  const caAI=el('button','btn-set ai-draft','🤖 AI rewrite');caAI.title='Claude writes 3 options from your brief (①) and whatever you typed — keeps your facts, fixes grammar, adds product + town. ~1¢ per tap.';
   const caOpts=el('div','sugbox');
   const fillFallback=(hdrMsg)=>{ // built-in suggestions when the live AI isn't available
     const typed=(ca.value||'').trim();
@@ -6088,24 +6128,41 @@ function openComposer(idOrPost,isNew){
   caFriendly.onclick=()=>restyle(friendlyText,'Write something first','Warmed it up ✓');
   const caShort=el('button','btn-set','✂️ Shorter');caShort.title='Trim filler words';
   caShort.onclick=()=>restyle(shortenText,'Write something first','Trimmed ✓');
-  const caRow=el('div','sugrow');caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
-  cf.appendChild(caRow);cf.appendChild(caOpts);
+  const caAIRow=el('div','sugrow');caAIRow.appendChild(caAI);
+  const caRow=el('div','sugrow');caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);
+  cf.appendChild(caAIRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
-  // hashtags — same pattern
-  const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags</label>';
+  // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
+  const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags <span class="muted" style="font-weight:600">— tap 🤖 Smart hashtags, or add a saved group</span></label>';
   const ha=el('input','cmp-in');ha.value=p.hashtags||'';ha.placeholder='#WindowGuardians …';ha.oninput=()=>{p.hashtags=ha.value;scheduleDraft();};
-  const haAI=el('button','btn-set ai-draft','✨ Suggest hashtags');
+  const haAI=el('button','btn-set ai-draft','🤖 Smart hashtags');haAI.title='Claude reads your post and suggests tailored hashtag sets. ~1¢ per tap.';
   const haOpts=el('div','sugbox');
-  haAI.onclick=()=>{
+  const haFallback=()=>{ aiHashtagOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;scheduleDraft();haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)}); };
+  haAI.onclick=async()=>{
+    if(haOpts.dataset.open==='1'){haOpts.innerHTML='';haOpts.dataset.open='0';return}
+    p.caption=ca.value; // use the latest caption as context
+    haOpts.dataset.open='1';haOpts.innerHTML='';
+    haOpts.appendChild(el('div','sughdr','🤖 Claude is picking hashtags…'));
+    haAI.disabled=true;
+    let d=null; try{ d=await aiHashtagsLive(p); }catch(e){ d={error:'net'}; }
+    haAI.disabled=false;
+    if(haOpts.dataset.open!=='1')return;
     haOpts.innerHTML='';
-    if(haOpts.dataset.open==='1'){haOpts.dataset.open='0';return}
-    haOpts.dataset.open='1';
-    aiHashtagOptions(p).forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
+    if(d&&d.options&&d.options.length){
+      haOpts.appendChild(el('div','sughdr','AI hashtag sets — tap one to use it:'));
+      d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;scheduleDraft();haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
+    } else {
+      const why=(d&&d.message)?(' ('+d.message+')'):'';
+      haOpts.appendChild(el('div','sughdr','⚠️ AI offline'+why+' — built-in sets instead:'));
+      haFallback();
+    }
   };
   hf.appendChild(ha);
-  const haRow=el('div','sugrow');haRow.appendChild(haAI);haRow.appendChild(hashGroupPicker(()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;}));
-  hf.appendChild(haRow);hf.appendChild(haOpts);
+  const haRow=el('div','sugrow');haRow.appendChild(haAI);
+  hf.appendChild(haRow);
+  hf.appendChild(hashGroupPicker(()=>ha.value,(t)=>{ha.value=t;p.hashtags=t;scheduleDraft();}));
+  hf.appendChild(haOpts);
   b.appendChild(hf);
 
   // date + time
