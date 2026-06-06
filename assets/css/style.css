@@ -516,6 +516,7 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .stagepill.st-after{background:var(--orange,#ff7a18);color:#fff}
 .stagepill.on{opacity:1;box-shadow:0 0 0 2px #fff,0 0 0 3px #0003}
 .stagepill:hover{opacity:.8}
+.poolcell.flash{outline:3px solid var(--orange,#ff7a18);box-shadow:0 0 0 5px #ff7a1855;transition:box-shadow .2s}
 .stagebar.one{padding:5px 8px}
 .stagefull{flex:1;border:none;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:5px 0;cursor:pointer;color:#fff}
 .stagefull.st-before{background:var(--blue,#2f6df6);color:#fff}

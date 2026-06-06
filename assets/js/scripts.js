@@ -1921,9 +1921,10 @@ function openJobPicker(item){
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
   // assign ALL selected photos to a hand-made job (durable: bump _ut so sync keeps it)
-  const assignManual=(name,createdMsg)=>{ items.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); commit(); closeComposer(); toast(createdMsg||(n>1?(n+' added to “'+name+'”'):('Added to “'+name+'”'))); rerenderCal(); };
+  const _reveal=()=>{ var first=items[0]&&items[0].id; if(first)setTimeout(function(){revealPhoto(first);},80); };
+  const assignManual=(name,createdMsg)=>{ items.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); commit(); closeComposer(); toast(createdMsg||(n>1?(n+' added to “'+name+'”'):('Added to “'+name+'”'))); rerenderCal(); _reveal(); };
   // assign ALL selected photos to a GPS job — copy the job's location AND town/zip so they inherit its name; bump _ut
-  const assignLocation=(c)=>{ const rep=c.items.find(m=>m&&m.town)||{}; items.forEach(m=>{m.lat=c.lat;m.lng=c.lng;m.locManual=true;delete m.cgroup;delete m.ungroup;if(rep.town)m.town=rep.town;if(rep.zip)m.zip=rep.zip;m._ut=Date.now();}); commit(); closeComposer(); toast(n>1?(n+' added to the job'):'Added to the job'); rerenderCal(); };
+  const assignLocation=(c)=>{ const rep=c.items.find(m=>m&&m.town)||{}; items.forEach(m=>{m.lat=c.lat;m.lng=c.lng;m.locManual=true;delete m.cgroup;delete m.ungroup;if(rep.town)m.town=rep.town;if(rep.zip)m.zip=rep.zip;m._ut=Date.now();}); commit(); closeComposer(); toast(n>1?(n+' added to the job'):'Added to the job'); rerenderCal(); _reveal(); };
   const manualNames=[...new Set(poolAvailable().filter(m=>m.cgroup&&!ids[m.id]).map(m=>m.cgroup))];
   // CREATE a brand-new job
   const create=el('button','btn-set primary','＋ Create a new job');create.style.cssText='width:100%;margin-bottom:10px';
@@ -5838,6 +5839,17 @@ function actionCenterCard(){
 }
 var OPEN_GROUPS={}; // remembers which photo groups you've expanded, so a delete or re-render keeps them open (you collapse them yourself)
 function applyGroupOpen(d,gkey,def){ d.dataset.gkey=gkey; d.open=OPEN_GROUPS.hasOwnProperty(gkey)?OPEN_GROUPS[gkey]:def; d.addEventListener('toggle',function(){ OPEN_GROUPS[gkey]=d.open; }); }
+/* After moving photos into a job, jump to them, open the group, and flash them so they're never "lost". */
+function revealPhoto(id){
+  try{
+    var cell=Array.prototype.slice.call(document.querySelectorAll('.poolcell[data-mid]')).find(function(c){return c.dataset.mid===id;});
+    if(!cell)return false;
+    var d=cell.closest('details.jobgroup'); if(d){ d.open=true; if(d.dataset.gkey)OPEN_GROUPS[d.dataset.gkey]=true; }
+    cell.scrollIntoView({behavior:'smooth',block:'center'});
+    cell.classList.add('flash'); setTimeout(function(){try{cell.classList.remove('flash');}catch(e){}},1600);
+    return true;
+  }catch(e){ return false; }
+}
 function socLibrary(v){
   const cw=currentWeek();
   const wk=cw?cw.id:(WEEKS[0]&&WEEKS[0].id)||1;
