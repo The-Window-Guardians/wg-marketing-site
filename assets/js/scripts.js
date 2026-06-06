@@ -1884,26 +1884,34 @@ function jobItems(j){
 }
 /* manually drop a (usually no-location) photo into an existing job group */
 function openJobPicker(item){
-  const located=poolAvailable().filter(m=>(POOL_SRC==='main'?poolIsMain(m):m.folder===POOL_SRC)&&hasLoc(m)&&m.id!==item.id);
+  const items=Array.isArray(item)?item.filter(Boolean):[item];   // accepts ONE photo or MANY selected photos
+  if(!items.length)return;
+  const ids={}; items.forEach(m=>{ids[m.id]=1;});
+  const n=items.length;
+  const located=poolAvailable().filter(m=>(POOL_SRC==='main'?poolIsMain(m):m.folder===POOL_SRC)&&hasLoc(m)&&!ids[m.id]);
   const clusters=clusterByLocation(located,60);
   closeComposer();
   const ov=el('div','cmp-ov');ov.id='cmpOv';
   const box=el('div','cmp-box');
-  box.innerHTML=`<div class="cmp-head"><h3>Add to a job</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
+  box.innerHTML=`<div class="cmp-head"><h3>${n>1?('Add '+n+' photos to a job'):'Add to a job'}</h3><button class="cmp-x" id="cmpX">✕</button></div><div class="cmp-body" id="cmpBody"></div>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.onclick=e=>{if(e.target===ov)closeComposer()};
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
-  const manualNames=[...new Set(poolAvailable().filter(m=>m.cgroup&&m.id!==item.id).map(m=>m.cgroup))];
+  // assign ALL selected photos to a hand-made job (durable: bump _ut so sync keeps it)
+  const assignManual=(name,createdMsg)=>{ items.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); commit(); closeComposer(); toast(createdMsg||(n>1?(n+' added to “'+name+'”'):('Added to “'+name+'”'))); rerenderCal(); };
+  // assign ALL selected photos to a GPS job — copy the job's location AND town/zip so they inherit its name; bump _ut
+  const assignLocation=(c)=>{ const rep=c.items.find(m=>m&&m.town)||{}; items.forEach(m=>{m.lat=c.lat;m.lng=c.lng;m.locManual=true;delete m.cgroup;delete m.ungroup;if(rep.town)m.town=rep.town;if(rep.zip)m.zip=rep.zip;m._ut=Date.now();}); commit(); closeComposer(); toast(n>1?(n+' added to the job'):'Added to the job'); rerenderCal(); };
+  const manualNames=[...new Set(poolAvailable().filter(m=>m.cgroup&&!ids[m.id]).map(m=>m.cgroup))];
   // CREATE a brand-new job
   const create=el('button','btn-set primary','＋ Create a new job');create.style.cssText='width:100%;margin-bottom:10px';
-  create.onclick=async()=>{ const name=await uiPrompt('Name the new job (e.g. an address or the customer).','',{title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; item.cgroup=name; item._ut=Date.now(); commit(); closeComposer(); toast('Created job “'+name+'” — find it in Your content. Add more photos with “Add to a job”.'); rerenderCal(); };
+  create.onclick=async()=>{ const name=await uiPrompt('Name the new job (e.g. an address or the customer).','',{title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; assignManual(name,'Created job “'+name+'” ✓'); };
   b.appendChild(create);
   // JOIN an existing job you made
   manualNames.forEach(function(gname){
     const opt=el('button','jobpick');
     opt.appendChild(el('span','jp-label','📁 '+esc(gname)));
-    opt.onclick=()=>{ item.cgroup=gname; item._ut=Date.now(); commit(); closeComposer(); toast('Added to “'+gname+'”'); rerenderCal(); };
+    opt.onclick=()=>assignManual(gname);
     b.appendChild(opt);
   });
   // JOIN a GPS location job
@@ -1915,7 +1923,7 @@ function openJobPicker(item){
       opt.appendChild(thumb);
       const nm=(c.items.find(m=>m&&m.town)||{}).town;
       opt.appendChild(el('span','jp-label','📍 '+(nm?esc(nm):'Job '+(i+1))+' · '+c.items.length+' photo'+(c.items.length>1?'s':'')));
-      opt.onclick=()=>{item.lat=c.lat;item.lng=c.lng;item.locManual=true;delete item.cgroup;commit();closeComposer();toast('Added to the job');rerenderCal();};
+      opt.onclick=()=>assignLocation(c);
       b.appendChild(opt);
     });
   }
@@ -5878,6 +5886,9 @@ function socLibrary(v){
       const ng=el('button','btn-set','＋ New job');
       ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
       foot.appendChild(ng);
+      const addJob=el('button','btn-set','📍 Add to a job');addJob.title='Add the ticked photos to a job you already have (or a GPS location job)';
+      addJob.onclick=()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos first (or none = all).');return;} openJobPicker(chosen); };
+      foot.appendChild(addJob);
     }
     if(opts.moveToContent){
       const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
