@@ -1564,16 +1564,26 @@ function delBaJob(id){
   if(j){const ids=new Set(jobItems(j).map(x=>x.id));socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used')m.status='available'});} // photos return to Your content
   ST.bajobs=socBaJobs().filter(x=>x.id!==id);commit();
 }
+/* Tombstone deleted Google Drive photos so the next Drive sync never re-imports them
+   (a deleted blank tile kept coming back because the file still lives in the Drive folder).
+   Stored as a synced map so the block holds across every device. */
+function tombstoneDrive(items,on){
+  if(!ST)return; if(!ST.driveDeleted||typeof ST.driveDeleted!=='object')ST.driveDeleted={};
+  (items||[]).forEach(function(m){ if(m&&m.driveId){ if(on)ST.driveDeleted[m.driveId]=1; else delete ST.driveDeleted[m.driveId]; } });
+}
+function isDriveTombstoned(driveId){ return !!(ST&&ST.driveDeleted&&ST.driveDeleted[driveId]); }
 /* delete one or more pool items (photos/videos) — undo-able; frees the blob + cloud copy only after the undo window closes */
 function poolDeleteItems(ids){
   const set=new Set(ids);
   const snaps=socPool().filter(m=>set.has(m.id)).map(m=>JSON.parse(JSON.stringify(m)));
   if(!snaps.length)return;
-  ST.pool=socPool().filter(m=>!set.has(m.id));commit();
+  ST.pool=socPool().filter(m=>!set.has(m.id));
+  tombstoneDrive(snaps,true);          // block Drive re-import of these
+  commit();
   if(typeof rerenderCal==='function')rerenderCal();
   const n=snaps.length;
   toastUndo(n+' deleted',
-    function(){ snaps.forEach(s=>socPool().push(s)); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
+    function(){ snaps.forEach(s=>socPool().push(s)); tombstoneDrive(snaps,false); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
     function(){ snaps.forEach(s=>{ try{fileDel(s.id)}catch(e){} try{cloudFileDel(s.id)}catch(e){} }); });
 }
 /* ============================================================
@@ -1717,10 +1727,10 @@ function deleteJobPhoto(jobId,mediaId){
   if(j.after)j.after=j.after.filter(x=>x.id!==mediaId);
   let removedJob=false;
   if(!jobItems(j).length){ ST.bajobs=socBaJobs().filter(x=>x.id!==jobId); removedJob=true; } else { j._ut=Date.now(); }
-  ST.pool=socPool().filter(m=>m.id!==mediaId);commit();
+  ST.pool=socPool().filter(m=>m.id!==mediaId);if(poolSnap)tombstoneDrive([poolSnap],true);commit();
   if(typeof rerenderCal==='function')rerenderCal();
   toastUndo('Photo deleted',
-    function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap)socPool().push(poolSnap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+    function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap){socPool().push(poolSnap);tombstoneDrive([poolSnap],false);} commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
     function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} });
 }
 /* ---- LOOK-ALIKE duplicate finder: compares the actual picture (8x8 perceptual hash), so it
@@ -2185,6 +2195,7 @@ async function gdSyncNow(interactive){
     for(const f of list){
       if(seenInPass.has(f.id))continue; // this file already handled this pass → never download/add it twice
       seenInPass.add(f.id);
+      if(isDriveTombstoned(f.id))continue; // user deleted this Drive photo here → never re-import it
       const ex=byDrive.get(f.id);
       if(ex){ // already have it — backfill location/folder/time/thumb if missing
         if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
@@ -2905,7 +2916,7 @@ var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoM
    _ct before it can ever reach the shared doc. */
 function stampCts(){ try{ var prog=S.prog||{}; Object.keys(prog).forEach(function(pid){ var sl=prog[pid]||{}; _MERGE_ARRAYS.forEach(function(k){ var arr=sl[k]; if(Array.isArray(arr))arr.forEach(function(r){ if(r&&r.id&&typeof r._ct!=='number'){ r._ct=_tsFromId(r.id)||Date.now(); } }); }); }); }catch(e){} }
 // maps where we keep the union of keys (remote value wins per key)
-var _MERGE_MAPS=['tasks','kpis','deliv','townFacts','pb','pbDue','pbRolled','dueOverride'];
+var _MERGE_MAPS=['tasks','kpis','deliv','townFacts','pb','pbDue','pbRolled','dueOverride','driveDeleted'];
 function mergeProg(remoteProg,sinceTs){
   if(!remoteProg||typeof remoteProg!=='object')return S.prog;
   var localProg=S.prog||{}, merged={};
@@ -5629,12 +5640,12 @@ async function openMediaPreview(mediaId,name,list){
       if(usedByPost||usedByJob){ toast('In use by a post or job — remove it there first.'); return; }
       if(!pm)return;
       const snap=JSON.parse(JSON.stringify(pm));
-      ST.pool=socPool().filter(z=>z.id!==mid); commit();
+      ST.pool=socPool().filter(z=>z.id!==mid); tombstoneDrive([snap],true); commit();
       list.splice(i,1);
       if(typeof rerenderCal==='function')rerenderCal();
       if(!list.length){ closeMediaPreview(); } else { if(i>=list.length)i=list.length-1; render(); }
       toastUndo('Photo deleted',
-        function(){ socPool().push(snap); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+        function(){ socPool().push(snap); tombstoneDrive([snap],false); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
         function(){ try{fileDel(mid)}catch(e){} try{cloudFileDel(mid)}catch(e){} });
     };
   }
