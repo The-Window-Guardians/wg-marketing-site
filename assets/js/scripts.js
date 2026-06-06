@@ -2362,6 +2362,20 @@ function captionImprove(p){
   var out=[]; [v1,v2,v3].forEach(function(x){ x=(x||'').replace(/\s+/g,' ').trim(); if(x&&out.indexOf(x)<0)out.push(x); });
   return out.length?out:[ (base+' '+cta).trim() ];
 }
+// Real AI rewrite — calls the secure /ai-caption backend (Cloudflare Function holding the Anthropic key).
+// Grounds Claude with our own product/trade knowledge so it only weaves in facts we actually know.
+// Returns {options:[...]} on success, or {error,message} so the caller can fall back to captionImprove.
+async function aiCaptionLive(p){
+  var text=(p.caption||'').trim();
+  var ctx=text+' '+(p.jobNote||'');
+  var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
+  var r=await fetch('/ai-caption',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding})
+  });
+  return await r.json();
+}
 function aiCaptionOptions(p){
   const town=effectiveTown(p), where=town?` in ${town}`:'';
   const sig=noteSignals(p&&p.jobNote); const noun=WORK_NOUN[sig.work]||'windows';
@@ -6036,19 +6050,33 @@ function openComposer(idOrPost,isNew){
   jf.appendChild(jn);b.appendChild(jf);
 
   // caption — you write it; the expert suggests options you can swap in
-  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write your own, or tap Suggest for expert options</span></label>';
+  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write a line in your voice, then tap AI rewrite</span></label>';
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write the caption in your voice…';ca.oninput=()=>{p.caption=ca.value;scheduleDraft();};
-  const caAI=el('button','btn-set ai-draft','✨ Improve / suggest');caAI.title='Type a sentence or two first — this keeps your words, fixes them up, and adds the product + town specifics';
+  const caAI=el('button','btn-set ai-draft','🤖 AI rewrite');caAI.title='Type a sentence or two first — Claude keeps your words, fixes them up, and weaves in the product + town. Costs about a penny per tap.';
   const caOpts=el('div','sugbox');
-  caAI.onclick=()=>{
-    caOpts.innerHTML='';
-    if(caOpts.dataset.open==='1'){caOpts.dataset.open='0';return}
-    caOpts.dataset.open='1';
-    p.caption=ca.value; // make sure we improve the latest text
+  const fillFallback=(hdrMsg)=>{ // built-in suggestions when the live AI isn't available
     const typed=(ca.value||'').trim();
     const opts=typed?captionImprove(p):aiCaptionOptions(p);
-    caOpts.appendChild(el('div','sughdr',typed?'Built from what you wrote — tap one to use it:':'Starters (type your own words first for a sharper result) — tap one:'));
-    opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
+    caOpts.appendChild(el('div','sughdr',hdrMsg));
+    opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
+  };
+  caAI.onclick=async()=>{
+    if(caOpts.dataset.open==='1'){caOpts.innerHTML='';caOpts.dataset.open='0';return}
+    p.caption=ca.value; // improve the latest text
+    caOpts.dataset.open='1';caOpts.innerHTML='';
+    caOpts.appendChild(el('div','sughdr','🤖 Claude is writing…'));
+    caAI.disabled=true;
+    let d=null; try{ d=await aiCaptionLive(p); }catch(e){ d={error:'net'}; }
+    caAI.disabled=false;
+    if(caOpts.dataset.open!=='1')return; // user closed it while waiting
+    caOpts.innerHTML='';
+    if(d&&d.options&&d.options.length){
+      caOpts.appendChild(el('div','sughdr','AI options — tap one to use it:'));
+      d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
+    } else {
+      const why=(d&&d.message)?(' ('+d.message+')'):'';
+      fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:');
+    }
   };
   cf.appendChild(ca);
   const restyle=(fn,emptyMsg,doneMsg)=>{ const t=(ca.value||'').trim(); if(!t){toast(emptyMsg);return;} const out=fn(t); ca.value=out;p.caption=out;scheduleDraft(); toast(out===t?'Looks good already ✓':doneMsg); };
