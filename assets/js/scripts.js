@@ -5515,14 +5515,28 @@ function videoThumb(blob){
     setTimeout(()=>finish(null),5000);
   });
 }
+/* Last-resort thumbnail: pull the real image straight from Google Drive (Google's thumbnailLink
+   frequently 403s when used as an <img src>). Only runs when Drive is already connected. Caches
+   the result so re-renders are instant. */
+async function driveFetchInto(img,pm,mediaId){
+  try{
+    if(!pm||!pm.driveId||typeof gdGetToken!=='function')return;
+    const tok=await gdGetToken(false); if(!tok)return;                 // silent — only if already signed in
+    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+pm.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok)return; const blob=await r.blob(); const url=URL.createObjectURL(blob);
+    if(mediaId)VTHUMB[mediaId]=url;                                    // cache so the next render is instant
+    img.onload=()=>{img.style.display='block'}; img.onerror=()=>{img.style.display='none'}; img.src=url;
+  }catch(e){}
+}
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(!rec||!rec.blob){ // no local copy — try cached → cloud → the Drive thumbnail
+    if(!rec||!rec.blob){ // no local copy — try cached → cloud → Drive thumbnail → real Drive fetch
       if(VTHUMB[mediaId]){img.onerror=()=>{img.style.display='none';delete VTHUMB[mediaId];};img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
       const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;return;}
       const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;   // Drive-synced photo with no local blob
-      if(pm&&pm.driveThumb){img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=pm.driveThumb;}
+      if(pm&&pm.driveThumb){img.onload=()=>{img.style.display='block'};img.onerror=()=>{img.onerror=null;driveFetchInto(img,pm,mediaId);};img.src=pm.driveThumb;return;} // Google thumb 403s → fall through to a real Drive fetch
+      if(pm&&pm.driveId){driveFetchInto(img,pm,mediaId);}
       return; }
     if(/image/.test(rec.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(rec.name||'')){
       var blob=rec.blob;
