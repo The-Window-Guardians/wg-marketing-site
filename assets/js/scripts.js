@@ -5996,10 +5996,12 @@ function socLibrary(v){
     if(POOL_Q&&cell.dataset.search.indexOf(POOL_Q)<0)cell.style.display='none'; // honor an active search after re-render
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
-    img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
-    if(VTHUMB[m.id]){img.onerror=()=>{img.style.display='none';ph.style.display='';delete VTHUMB[m.id];lazyView(cell,()=>thumbInto(img,m.id));};img.src=VTHUMB[m.id];} // in-memory thumb is cheap → immediate
-    else if(isVid&&m.driveThumb){lazyView(cell,()=>{img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;});} // Google's video thumbnail; deferred until near view
-    else lazyView(cell,()=>thumbInto(img,m.id)); // defer the IndexedDB/cloud fetch until the cell scrolls near
+    let _nimgT=null;
+    const startWatch=function(){ clearTimeout(_nimgT); _nimgT=setTimeout(function(){ if(img.style.display!=='block'){ cell.classList.add('noimg'); ph.textContent='⚠ no preview'; ph.style.display=''; } },7000); }; // if it can't load, mark it clearly so it's not an ambiguous blank tile
+    img.addEventListener('load',()=>{img.style.display='block';ph.style.display='none';cell.classList.remove('noimg');clearTimeout(_nimgT);if(isVid&&(''+img.src).slice(0,5)==='data:')VTHUMB[m.id]=img.src;});
+    if(VTHUMB[m.id]){img.onerror=()=>{img.style.display='none';ph.style.display='';delete VTHUMB[m.id];lazyView(cell,()=>{thumbInto(img,m.id);startWatch();});};img.src=VTHUMB[m.id];startWatch();} // in-memory thumb is cheap → immediate
+    else if(isVid&&m.driveThumb){lazyView(cell,()=>{img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;startWatch();});} // Google's video thumbnail; deferred until near view
+    else lazyView(cell,()=>{thumbInto(img,m.id);startWatch();}); // defer the IndexedDB/cloud fetch until the cell scrolls near
     cell.appendChild(img);cell.appendChild(ph);
     if(isVid)cell.appendChild(el('span','poolplay','▶'));
     // backbone status — so Sebastian can see what's shared vs still only on this device
@@ -6053,6 +6055,12 @@ function socLibrary(v){
     selAll.textContent=(items.length&&items.every(m=>sel.has(m.id)))?'◻ Unselect all':'✓ Select all';
     selAll.onclick=()=>{ const all=items.every(m=>sel.has(m.id)); items.forEach(m=>{ if(all)sel.delete(m.id); else sel.add(m.id); }); rerenderCal(); };
     foot.appendChild(selAll);
+    // Move ticked photos to a DIFFERENT job (or a new one). On real jobs only — Needs sorting has its own "Add to a job".
+    if(!opts.newGroup){
+      const mj=el('button','btn-set','📍 Move to a job');mj.title='Move the ticked photos to a different job (or create a new one)';
+      mj.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos to move first (none ticked = the whole job).');return;} clearChosen(chosen); openJobPicker(chosen); };
+      foot.appendChild(mj);
+    }
     // (Tag stages one photo at a time using the pills right on each thumbnail — no bulk "Tag all".)
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
