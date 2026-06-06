@@ -5640,6 +5640,11 @@ function socLibrary(v){
       ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
       foot.appendChild(ng);
     }
+    if(opts.moveToContent){
+      const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
+      mv.onclick=()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m._ut=Date.now();}); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); };
+      foot.appendChild(mv);
+    }
     if(typeof isOwner==='function'&&isOwner()){
       const del=el('button','btn-set danger','🗑 Delete');
       del.onclick=async()=>{const pick=sel.size?items.filter(m=>sel.has(m.id)):items.slice();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(sel.size?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;poolDeleteItems(delable.map(m=>m.id));};
@@ -5677,7 +5682,7 @@ function socLibrary(v){
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
-      renderGroupBody(d,items,{allowMarkBA:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
+      renderGroupBody(d,items,{allowMarkBA:true,moveToContent:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
       poolCard.appendChild(d);
     });
     const clusters=clusterByLocation(located,60);
@@ -5692,14 +5697,14 @@ function socLibrary(v){
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=(e)=>{e.preventDefault();e.stopPropagation();renameCluster(c.items,base);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(c.items));
       d.appendChild(sum);
-      renderGroupBody(d,c.items,{allowMarkBA:true});
+      renderGroupBody(d,c.items,{allowMarkBA:true,moveToContent:(POOL_SRC!=='main')});
       poolCard.appendChild(d);
     });
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
       const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', true);
       d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
-      renderGroupBody(d,noloc,{allowMarkBA:true,newGroup:true,perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
+      renderGroupBody(d,noloc,{allowMarkBA:true,newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
     }
     if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
