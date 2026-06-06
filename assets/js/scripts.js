@@ -6122,7 +6122,13 @@ function readyCard(p){
     toast(missing.length?('Posted — but '+missing.length+' photo'+(missing.length>1?'s':'')+' still need to go out separately'):'Posted ✓ — nice! It’s off your list.');
     await purgePostedMedia(post);rerenderCal();
   };
-  foot.appendChild(dlb);foot.appendChild(done);
+  const copyAll=el('button','btn-set','📋 Copy all');copyAll.title='Copy caption + hashtags together (handy for Facebook)';
+  copyAll.onclick=()=>copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags');
+  const bs=el('button','btn-set','🗂 Open Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
+  bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
+  const ig=el('button','btn-set','📷 Instagram');ig.title='Open Instagram to paste + post';
+  ig.onclick=()=>window.open('https://www.instagram.com/','_blank','noopener');
+  foot.appendChild(dlb);foot.appendChild(copyAll);foot.appendChild(bs);foot.appendChild(ig);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
 }
