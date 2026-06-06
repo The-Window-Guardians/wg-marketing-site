@@ -1711,11 +1711,11 @@ function openJobPicker(item){
   $('#cmpX').onclick=closeComposer;
   const b=$('#cmpBody');
   const manualNames=[...new Set(poolAvailable().filter(m=>m.cgroup&&m.id!==item.id).map(m=>m.cgroup))];
-  // CREATE a brand-new group
-  const create=el('button','btn-set primary','📁 Create a new group');create.style.cssText='width:100%;margin-bottom:10px';
-  create.onclick=async()=>{ const name=await uiPrompt('Name the new group (e.g. an address or the job).','',{title:'New group',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; item.cgroup=name; item._ut=Date.now(); commit(); closeComposer(); toast('Created group “'+name+'” — find it in Your content.'); rerenderCal(); };
+  // CREATE a brand-new job
+  const create=el('button','btn-set primary','＋ Create a new job');create.style.cssText='width:100%;margin-bottom:10px';
+  create.onclick=async()=>{ const name=await uiPrompt('Name the new job (e.g. an address or the customer).','',{title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; item.cgroup=name; item._ut=Date.now(); commit(); closeComposer(); toast('Created job “'+name+'” — find it in Your content. Add more photos with “Add to a job”.'); rerenderCal(); };
   b.appendChild(create);
-  // JOIN an existing group you made
+  // JOIN an existing job you made
   manualNames.forEach(function(gname){
     const opt=el('button','jobpick');
     opt.appendChild(el('span','jp-label','📁 '+esc(gname)));
@@ -1790,7 +1790,7 @@ async function renameCluster(items, current){
 }
 /* rename a manual (user-created) group — updates the group name on all its photos */
 async function renameManualGroup(items, current){
-  var name=await uiPrompt('Rename this group.', current, {title:'Rename group', placeholder:'e.g. 123 Maple St', confirmText:'Save'});
+  var name=await uiPrompt('Rename this job.', current, {title:'Rename job', placeholder:'e.g. 123 Maple St', confirmText:'Save'});
   if(!name)return;
   items.forEach(function(m){ m.cgroup=name; m._ut=Date.now(); });
   commit(); if(typeof rerenderCal==='function')rerenderCal();
@@ -2140,8 +2140,23 @@ var PRODUCT_KB={
         'legacy':{name:'Legacy',type:'door',features:['ProVia steel entry door','strong, secure, and budget-friendly','foam-insulated core for efficiency','smooth finish with decorative glass options']},
         'ascent':{name:'Ascent',type:'door',features:['ProVia fiberglass entry door','clean, modern fiberglass build','energy-efficient insulated core','custom glass, finishes & hardware']}
       }
+    },
+    'Andersen':{
+      keys:['andersen'],
+      features:['one of America’s most trusted window brands','Low-E4 insulating glass, Energy Star certified','durable, low-maintenance frames','backed by a strong limited warranty'],
+      doorFeatures:['Andersen patio & entry doors','energy-efficient Low-E glass','smooth, solid operation built to last'],
+      series:{
+        'e-series':{name:'E-Series',features:['Andersen’s premium custom line','aluminum-clad wood with virtually any color and shape','top energy performance with Low-E4 glass','ideal for new construction and big architectural openings']},
+        'e series':{name:'E-Series',features:['Andersen’s premium custom line','aluminum-clad wood with virtually any color and shape','top energy performance with Low-E4 glass','ideal for new construction and big architectural openings']},
+        'a-series':{name:'A-Series',features:['Andersen’s top-performing line','Fibrex-and-wood construction, architecturally accurate','best-in-class energy efficiency','many exterior colors and styles']},
+        'a series':{name:'A-Series',features:['Andersen’s top-performing line','Fibrex-and-wood construction, architecturally accurate','best-in-class energy efficiency','many exterior colors and styles']},
+        '400 series':{name:'400 Series',features:['Andersen’s best-selling wood window','time-tested wood with a low-maintenance exterior','Low-E4 glass, Energy Star certified']},
+        '100 series':{name:'100 Series',features:['Andersen’s Fibrex-framed value line','twice as strong as vinyl and low-maintenance','Low-E glass, Energy Star certified']},
+        '200 series':{name:'200 Series',features:['Andersen’s wood value line','low-maintenance exterior, classic look','Low-E4 glass, Energy Star certified']},
+        'fibrex':{name:'Fibrex',features:['Andersen’s composite material','as strong as it is low-maintenance — won’t rot, fade, or flake','slim frames for more glass and rich, lasting color']}
+      }
     }
-    // more brands go here, e.g. 'Andersen':{keys:['andersen'],features:[...]}
+    // more brands: copy a block above with the brand’s lines + features
   },
   styles:{'double hung':'double-hung','double-hung':'double-hung','casement':'casement','slider':'slider','sliding window':'slider','bay':'bay/bow','bow':'bay/bow','picture window':'picture','awning':'awning','patio door':'patio door','sliding door':'patio door','entry door':'entry door','front door':'entry door','storm door':'storm door','french door':'french door'}
 };
@@ -5578,8 +5593,8 @@ function socLibrary(v){
     foot.appendChild(post);
     if(opts.allowMarkBA&&items.length>=2){const mk=el('button','btn-set','🔀 Mark before/after');mk.onclick=()=>openBaBuilder(items.slice());foot.appendChild(mk);}
     if(opts.newGroup){
-      const ng=el('button','btn-set','📁 New group');
-      ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the group first (or none = all).');return;} const name=await uiPrompt('Name this new group (e.g. an address or the job).', '', {title:'New group',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created group “'+name+'” — find it up in Your content.'); };
+      const ng=el('button','btn-set','＋ New job');
+      ng.onclick=async()=>{ const chosen=sel.size?items.filter(m=>sel.has(m.id)):items.slice(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
       foot.appendChild(ng);
     }
     if(typeof isOwner==='function'&&isOwner()){
@@ -5616,10 +5631,10 @@ function socLibrary(v){
       const d=el('details','jobgroup');applyGroupOpen(d,'mg:'+gname, true);
       const sum=el('summary','jobsum');
       sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+' photo'+(items.length>1?'s':'')));
-      if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename group'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
+      if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
-      renderGroupBody(d,items,{allowMarkBA:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from group');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
+      renderGroupBody(d,items,{allowMarkBA:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
       poolCard.appendChild(d);
     });
     const clusters=clusterByLocation(located,60);
@@ -5640,7 +5655,7 @@ function socLibrary(v){
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
       const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', true);
-      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “📁 New group”, or “Add to a job”.`));
+      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
       renderGroupBody(d,noloc,{allowMarkBA:true,newGroup:true,perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
     }
