@@ -5921,7 +5921,7 @@ function socLibrary(v){
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   let delBtn=null;
-  const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;if(delBtn){delBtn.textContent=POOL_SEL.size?`🗑 Delete ${POOL_SEL.size} forever`:'🗑 Delete forever';delBtn.disabled=!POOL_SEL.size;}};
+  const updateMakeBtn=()=>{makeBtn.textContent=`＋ Make a post from ${POOL_SEL.size} selected`;makeBtn.style.display=POOL_SEL.size?'':'none';if(delBtn){delBtn.textContent=`🗑 Delete ${POOL_SEL.size} forever`;delBtn.style.display=POOL_SEL.size?'':'none';}};
   const buildCell=(m,sel,onToggle)=>{
     sel=sel||POOL_SEL; onToggle=onToggle||updateMakeBtn;
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
@@ -5972,8 +5972,6 @@ function socLibrary(v){
     const grid=el('div','poolgrid');
     items.forEach(m=>{const cell=buildCell(m,sel,()=>{updatePost();updateMakeBtn();});if(opts.perCell)opts.perCell(cell,m);grid.appendChild(cell);}); // toggle refreshes this group AND the shared "Make a post" bar
     body.appendChild(grid);
-    const hint=el('div','muted','Tick ✓ to pick just some (none ticked = all) · you can also tick across other groups, then use “Make a post from … selected” at the bottom · tap a photo to preview');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
-    body.appendChild(hint);
     const foot=el('div','rcactions');
     updatePost();
     post.onclick=()=>{const chosen=pickChosen();if(!chosen.length)return;const p=newPost(wk);p.media=chosen.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));p.type=chosen.length>1?'carousel':(/\.(mp4|mov|m4v|webm)$/i.test(chosen[0].name||'')?'reel':'photo');poolSetStatus(chosen.map(m=>m.id),'used');clearChosen(chosen);commit();openComposer(p,true);};
@@ -6088,15 +6086,12 @@ function socLibrary(v){
     POOL_SEL.clear();
     openComposer(p,true);
   };
-  const baBtn=el('button','btn-set','🔀 Make Before/After job');baBtn.style.cssText='margin:12px 0 0 8px';
-  baBtn.onclick=()=>{const sel=allAvail.filter(m=>POOL_SEL.has(m.id));startBaFromSelection(sel);};
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
-  if(grouped){ const xh=el('div','muted');xh.style.cssText='font-size:12px;margin:14px 0 2px';xh.innerHTML='💡 Combining photos from different jobs into one post? Tick them in any groups above, then tap the button below.';poolCard.appendChild(xh); }
-  poolCard.appendChild(makeBtn); poolCard.appendChild(baBtn); // shared selection bar — now in grouped view too, so you can pull photos from multiple jobs into one post
+  poolCard.appendChild(makeBtn); // cross-group selection bar — hidden until you tick photos in one or more jobs
   poolCard.appendChild(blank);
   if(typeof isOwner==='function'&&isOwner()){
-    delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.textContent='🗑 Delete forever';delBtn.disabled=true;
+    delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.style.display='none';delBtn.textContent='🗑 Delete forever';
     delBtn.onclick=async()=>{
       const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
       const inUse=sel.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
