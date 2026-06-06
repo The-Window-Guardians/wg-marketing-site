@@ -5397,6 +5397,20 @@ function viewSocialGuides(v){
      <h6>The weekly batch (~35 min)</h6>${s.batch.map(x=>`<div class="chk"><span class="b">✓</span><span>${esc(x)}</span></div>`).join('')}
      <h6>Don’t</h6><div class="callout red"><p>${esc(s.ignore)}</p></div>`));
 
+  // How to name/title jobs so the AI writes better posts
+  v.appendChild(socGuide('🏷️','var(--amber-soft)','Name your jobs so the AI nails the post','Product + town + features — the AI reads the title','DO THIS',
+    `<p style="color:var(--ink2)">When you name a job, Claude reads that name and writes the caption from it — and <b>Build my week drafts the best-titled jobs first</b>. The more detail, the sharper the post. Tap the <b>✏️</b> next to any job to rename it.</p>
+     <h6>The order to use</h6>
+     <div class="callout blue"><p><b>Town · Brand + Series · Style / feature · What you did</b></p></div>
+     <h6>Examples</h6>
+     <div class="chk"><span class="b">✓</span><span>Yardley · Okna 800 ProLine double-hung · full-frame replacement</span></div>
+     <div class="chk"><span class="b">✓</span><span>Newtown · ProVia Endure casement · triple-pane, black exterior</span></div>
+     <div class="chk"><span class="b">✓</span><span>Langhorne · Okna Enviro Star bay window · colonial grids + capped trim</span></div>
+     <h6>What to include (most → least important)</h6>
+     ${['Town — the searched name (Langhorne, Yardley, Newtown), not the township','Brand + series — Okna Enviro Star / 800 ProLine / 500 InsulTec, ProVia Endure / Aeris, Andersen 400…','Window or door style — double-hung, casement, bay/bow, slider, picture, patio door, entry door','Glass / energy — triple-pane, Low-E, argon','Color / finish + grids — black exterior, white, colonial grids','Install type — full-frame vs insert / pocket'].map((x,i)=>`<div class="fund"><div class="n">${i+1}</div><div><div class="ft">${esc(x)}</div></div></div>`).join('')}
+     <div class="callout orange" style="margin-top:10px"><p>Only put what’s true for that job — Claude states facts, it won’t invent. It cross-checks your Okna / ProVia / Andersen knowledge base, so the exact series name really pays off.</p></div>
+     <h6>Don’t</h6><div class="callout red"><p>Leave jobs as “Job 1” or just a town with no product — vague titles get skipped first by Build my week and produce generic captions.</p></div>`));
+
   // Ruth kit
   const r=SOCIAL_RUTHKIT;
   v.appendChild(socGuide('🚀','var(--orange-soft)','Ruth’s Execution Kit','Paste-and-post + the same-day Google review engine','FOR RUTH',
