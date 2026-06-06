@@ -790,6 +790,8 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .login-actions{display:flex;gap:10px;margin-top:4px}
 .login-actions .btn-set{flex:1;justify-content:center}
 .login-hint{font-size:11.5px;color:#8a9ab5;text-align:center;margin-top:2px}
+.login-forgot{text-align:center;margin-top:8px}
+.linklike{background:none;border:none;color:var(--orange);font-weight:700;font-size:12.5px;cursor:pointer;text-decoration:underline;padding:4px}
 
 /* ---- Manage users (admin) ---- */
 .usersadmin{display:flex;flex-direction:column;gap:8px;margin-top:6px}

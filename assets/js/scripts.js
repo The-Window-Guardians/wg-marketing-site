@@ -4691,10 +4691,11 @@ function usersAdminCard(){
       <div class="uprogwrap">${progPick(u)}</div>
       <select class="uperm cmp-in">${roleOptsFor(u)}</select>
       <label class="uact"><input type="checkbox" class="uactck" ${u.active!==false?'checked':''}> active</label>
-      ${window.WG_FB_READY?'':'<button class="btn-set upw">Set password</button>'}
+      ${window.WG_FB_READY?'<button class="btn-set upwlink" title="Emails them a link to set their own password — works from any device">✉️ Send password link</button>':'<button class="btn-set upw">Set password</button>'}
       <button class="btn-set danger urem">Remove</button>`;
     row.querySelector('.uname').onchange=e=>{u.name=e.target.value.trim()||u.name;commit();toast('Saved')};
     const em=row.querySelector('.uemail'); if(em)em.onchange=e=>{u.email=e.target.value.trim();commit();toast('Saved')};
+    const pwl=row.querySelector('.upwlink'); if(pwl)pwl.onclick=()=>sendResetEmail(u.email);
     const pg=row.querySelector('.uprog'); if(pg)pg.onchange=e=>{const v=e.target.value;setProgs(u,v);
       const valid={social:['owner','editor','poster'],seo:['owner','editor','contributor'],both:['owner','editor']};
       if((valid[v]||[]).indexOf(u.perm)<0)u.perm='editor'; // keep the role valid for the chosen dashboard
@@ -6097,9 +6098,11 @@ function renderGate(){
       <label class="login-lbl">Password</label>
       <input type="password" id="gatePw" class="login-pw" placeholder="Enter your password" autocomplete="current-password">
       <div class="login-actions"><button class="btn-set" id="gateBack">← Back</button><button class="btn-set primary" id="gateGo">Log in</button></div>
+      ${window.WG_FB_READY?'<div class="login-forgot"><button class="linklike" id="gateForgot">Forgot password? / first time — set it</button></div>':''}
       <div class="login-hint">${window.WG_FB_READY?'🔒 Secure login — your work syncs to the team.':'Prototype login — real security turns on with the backend.'}</div>
     </div>`;
     const pw=$('#gatePw'); if(pw)pw.focus();
+    const fgt=$('#gateForgot'); if(fgt)fgt.onclick=()=>{ if(!u.email){toast('No email on file yet — ask Sebastian to add yours in Team & logins.');return;} sendResetEmail(u.email); };
     const enter=()=>{S.uid=u.id;S.role=PEOPLE[u.id]?u.id:'all';commit();enterApp();};
     const go=async()=>{ const val=($('#gatePw')||{}).value||''; const btn=$('#gateGo');
       if(window.WG_FB_READY){ // LOCKED: the app requires a real Firebase login
@@ -6179,6 +6182,22 @@ function ensurePwBtn(){
   let b=document.getElementById('btnPw');
   if(window.WG_FB_READY&&WG_AUTH.currentUser){ if(!b){b=el('button','tb-btn','🔑 Password');b.id='btnPw';b.title='Change your password';b.onclick=openPwChange;const before=document.getElementById('btnLogout')||document.getElementById('btnReset');bar.insertBefore(b,before||null);} }
   else if(b){b.remove();}
+}
+/* Email a password-setup/reset link to any teammate (client-callable — no admin needed).
+   This is how someone sets their OWN password from any device when they can't sign in. */
+async function sendResetEmail(email){
+  if(!window.WG_FB_READY||!window.WG_AUTH){ toast('Cloud login isn’t set up.'); return; }
+  email=(email||'').trim();
+  if(!email){ toast('No email on file for this person — add their email first, then send the link.'); return; }
+  try{
+    await WG_AUTH.sendPasswordResetEmail(email);
+    toast('✅ Password link sent to '+email+'. Open it, set a password, then come back and log in. (Check spam if it’s not there in a minute.)');
+  }catch(e){ var c=(e&&e.code)||'';
+    if(c==='auth/user-not-found') toast('No cloud login exists for '+email+' yet — use “＋ Add teammate” to create it first, then send the link.');
+    else if(c==='auth/invalid-email') toast('That email looks wrong — fix it in Team & logins first.');
+    else if(c==='auth/too-many-requests') toast('Too many tries — wait a minute and try again.');
+    else toast('Couldn’t send the link: '+((e&&e.message)||c));
+  }
 }
 function openPwChange(){
   if(!window.WG_FB_READY||!WG_AUTH.currentUser){toast('Log in first.');return;}
