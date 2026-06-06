@@ -1644,13 +1644,14 @@ function migrateBeforeAfterToContent(){
   var snapPool=JSON.parse(JSON.stringify(socPool()));
   var snapJobs=JSON.parse(JSON.stringify(socBaJobs()));
   var movedSet={};
-  function moveOne(m){ if(m&&m.folder==='Before & After'){ m.folder=''; m._ut=Date.now(); movedSet[m.id]=1; } }
-  socPool().forEach(moveOne);
-  socBaJobs().forEach(function(j){ jobItems(j).forEach(function(it){ moveOne(socPool().find(function(x){return x.id===it.id;})); }); }); // safety net
+  // Saved Before/After jobs → set each photo's STAGE from its role, drop into main folder (Finalized via stage).
+  socBaJobs().forEach(function(j){ jobItems(j).forEach(function(it){ var m=socPool().find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); movedSet[m.id]=1; }); });
+  // Loose photos in the old "Before & After" folder → move to main; keep any role as stage, else leave raw (untagged).
+  socPool().forEach(function(m){ if(m.folder==='Before & After'){ if((m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); movedSet[m.id]=1; } });
   var moved=Object.keys(movedSet).length;
   var hadJobs=socBaJobs().length; ST.bajobs=[];
   commit(); if(typeof rerenderCal==='function')rerenderCal();
-  toastUndo('Moved '+moved+' Before/After photo'+(moved!==1?'s':'')+' into Content'+(hadJobs?(' · cleared '+hadJobs+' saved job'+(hadJobs>1?'s':'')):''),
+  toastUndo('Moved '+moved+' Before/After photo'+(moved!==1?'s':'')+' → ✅ Finalized'+(hadJobs?(' · cleared '+hadJobs+' old job'+(hadJobs>1?'s':'')):''),
     function(){ ST.pool=snapPool; ST.bajobs=snapJobs; commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Before/After restored'); });
   return moved;
 }
@@ -1680,9 +1681,9 @@ function openContentAudit(){
   if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
   var bf=el('div','cmp-field');bf.style.marginTop='12px';
   if(s.baFolder||s.baJobs){
-    bf.innerHTML='<label>Before / After folder</label><p class="muted">Move your '+s.baFolder+' Before/After photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into your main Content (re-groups by location). Undoable.</p>';
-    var mg=el('button','btn-set','📦 Move Before/After into Content'); mg.onclick=function(){ migrateBeforeAfterToContent(); closeComposer(); }; bf.appendChild(mg);
-  } else { bf.innerHTML='<label>Before / After folder</label><p class="muted">✓ Empty — nothing to migrate.</p>'; }
+    bf.innerHTML='<label>Old Before / After folder</label><p class="muted">Move your '+s.baFolder+' photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into ✅ Finalized — they keep their Before/After stage and stay location-tracked. Undoable.</p>';
+    var mg=el('button','btn-set primary','📦 Move Before/After → Finalized'); mg.onclick=function(){ migrateBeforeAfterToContent(); closeComposer(); }; bf.appendChild(mg);
+  } else { bf.innerHTML='<label>Old Before / After folder</label><p class="muted">✓ Empty — nothing to migrate.</p>'; }
   b.appendChild(bf);
 }
 /* delete ONE photo/video that lives inside a before/after job — pulls it from the job and deletes it (undo-able). If it was the job's last photo, the job goes too. */
@@ -2552,7 +2553,7 @@ async function mediaToB64(id,maxPx){
 /* Collect up to N of a post's photos as base64 for Claude's vision (skips videos). */
 async function postImagesB64(p,limit){
   var media=postMedia(p).filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||''); }).slice(0,limit||4);
-  var out=[]; for(var k=0;k<media.length;k++){ var b=await mediaToB64(media[k].id,640); if(b){ b.role=media[k].role||''; out.push(b); } } // pass the Before/After label so the AI never calls an OLD window the new install
+  var out=[]; for(var k=0;k<media.length;k++){ var pm=(typeof socPool==='function')?(socPool().find(function(x){return x.id===media[k].id;})||{}):{}; var stg=media[k].role||pm.stage||pm.role||''; var b=await mediaToB64(media[k].id,640); if(b){ b.role=(stg==='before'||stg==='after'||stg==='during')?stg:''; out.push(b); } } // pass the stage (Before/During/After) so the AI never calls an OLD/unfinished window the new install
   return out;
 }
 async function aiCaptionLive(p,style){
@@ -2600,8 +2601,8 @@ async function buildMyWeek(){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
   const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
   const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
-  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!usedIds.has(m.id));
-  if(!fresh.length){toast('No fresh photos to draft from — add or sync some content first.');return 0;}
+  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.stage&&!usedIds.has(m.id)); // only ✅ Finalized (tagged) photos — guarantees correct stage so captions are 100% safe
+  if(!fresh.length){toast('No Finalized photos yet — tag some photos 🟩 After (or 🟥/🟨) to finalize them, then try again.');return 0;}
   // candidate "jobs": your hand-made groups first, then GPS location jobs (skip ungrouped no-GPS)
   const groups=[]; const manualMap={};
   fresh.forEach(m=>{ if(m.cgroup)(manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
@@ -5859,30 +5860,38 @@ function socLibrary(v){
 
   // ---- CONTENT POOL: tick pieces → make a post ----
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
-  const isMain=m=>!m.folder||m.folder==='Drive'; // files sitting directly in the synced folder = main content
+  const isMain=m=>(!m.folder||m.folder==='Drive')&&!isVidItem(m); // photos sitting directly in the synced folder
+  const isFinal=m=>isMain(m)&&!!m.stage;   // tagged Before/During/After = Finalized (curated, ready)
+  const isRaw=m=>isMain(m)&&!m.stage;      // untagged = raw Content, still to sort/tag
   const poolAll=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
-  // source folders: Main + each Drive subfolder (e.g. your Before/After folder)
-  const subfolders=[...new Set(poolAll.filter(m=>!isMain(m)).map(m=>m.folder))];
+  // legacy subfolders (Videos, and the old Before & After folder until it's migrated into Finalized)
+  const subfolders=[...new Set(poolAll.filter(m=>m.folder&&m.folder!=='Drive').map(m=>m.folder))];
   const baJobsAll=(typeof socBaJobs==='function')?socBaJobs():[];
-  if(baJobsAll.length&&subfolders.indexOf('Before & After')<0)subfolders.unshift('Before & After'); // saved before/after jobs live here even when every photo is already used inside a job
-  if(POOL_SRC!=='main'&&subfolders.indexOf(POOL_SRC)===-1)POOL_SRC='main';
-  const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
+  if(baJobsAll.length&&subfolders.indexOf('Before & After')<0)subfolders.unshift('Before & After');
+  const finalN=poolAll.filter(isFinal).length;
+  const validSrc={main:1,Finalized:1}; subfolders.forEach(f=>validSrc[f]=1);
+  if(!validSrc[POOL_SRC]||(POOL_SRC==='Finalized'&&!finalN))POOL_SRC='main';
+  const srcItems = POOL_SRC==='main' ? poolAll.filter(isRaw)
+    : POOL_SRC==='Finalized' ? poolAll.filter(isFinal)
+    : poolAll.filter(m=>m.folder===POOL_SRC);
   const avail=srcItems;
   const allAvail=poolAll; // for resolving selections when making a post
-  const grouped = (POOL_SRC!=='Videos'); // group EVERY photo folder (incl. Content) by job location; only Videos stay flat
+  const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='Videos'?'Your videos.':'Grouped by job location.';
-  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub} Tap the ◯ corner to pick for a post.</small></div></div>`;
-  // controls: just the area switcher (Content · Before & After · Videos)
+  const sub = POOL_SRC==='Videos'?'Your videos.':POOL_SRC==='Finalized'?'Tagged & ready — grouped by job location.':'Raw photos to sort. Tag a stage (🟥 Before · 🟨 During · 🟩 After) to finalize one.';
+  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub}</small></div></div>`;
+  // controls: the area switcher (Content · Finalized · Videos · legacy)
   const ctrls=el('div','poolctrls');
-  if(subfolders.length){
+  {
     const srcSel=el('select','cmp-in');
-    const mainN=poolAll.filter(isMain).length;
-    const opts=[['main',`📷 Content (${mainN})`]].concat(subfolders.map(f=>{
+    const rawN=poolAll.filter(isRaw).length;
+    const opts=[['main',`📷 Content (${rawN})`]];
+    if(finalN)opts.push(['Finalized',`✅ Finalized (${finalN})`]);
+    subfolders.forEach(f=>{
       const n=poolAll.filter(m=>m.folder===f).length;
-      if(f==='Before & After'){const j=baJobsAll.length;const parts=[];if(j)parts.push(j+' job'+(j!==1?'s':''));if(n)parts.push(n+' loose');return [f,`🔀 Before & After (${parts.join(' · ')||'0'})`];}
-      return [f,`${f==='Videos'?'🎬':'📁'} ${f} (${n})`];
-    }));
+      if(f==='Before & After'){const j=baJobsAll.length;const parts=[];if(j)parts.push(j+' job'+(j!==1?'s':''));if(n)parts.push(n+' loose');opts.push([f,`🔀 Before & After — old (${parts.join(' · ')||'0'})`]);return;}
+      opts.push([f,`${f==='Videos'?'🎬':'📁'} ${f} (${n})`]);
+    });
     opts.forEach(([v2,label])=>{const o=document.createElement('option');o.value=v2;o.textContent=label;if(POOL_SRC===v2)o.selected=true;srcSel.appendChild(o)});
     srcSel.onchange=()=>{POOL_SEL.clear();POOL_SRC=srcSel.value;rerenderCal()};
     ctrls.appendChild(srcSel);
@@ -5928,6 +5937,16 @@ function socLibrary(v){
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');onToggle();};
     cell.appendChild(ck);
+    // STAGE TAGS — tag a photo Before/During/After → it auto-finalizes (moves to ✅ Finalized). Photos only.
+    if(!isVid){
+      const sb=el('div','stagebar');
+      [['before','🟥','Before'],['during','🟨','During'],['after','🟩','After']].forEach(function(st){
+        const b=el('button','stagebtn'+(m.stage===st[0]?' on':''),st[1]);b.title='Tag as '+st[2]+(m.stage===st[0]?' (tap to remove)':'');
+        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[2]+' → ✅ Finalized'):'Tag removed — back in Content'); };
+        sb.appendChild(b);
+      });
+      cell.appendChild(sb);
+    }
     cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid
     return cell;
   };

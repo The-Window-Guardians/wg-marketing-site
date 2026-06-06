@@ -38,6 +38,7 @@ function buildContent(images, usrText) {
   var content = [];
   images.forEach(function (im, idx) {
     var tag = im.role === 'before' ? ' — labeled BEFORE (this is the OLD / existing window; never describe it as newly installed)'
+            : im.role === 'during' ? ' — labeled DURING (mid-install / work in progress; NOT the finished product)'
             : im.role === 'after'  ? ' — labeled AFTER (this is the NEW, finished product)'
             : '';
     content.push({ type: 'text', text: 'Photo ' + (idx + 1) + tag + ':' });
@@ -118,14 +119,14 @@ export async function onRequestPost(context) {
     const images   = Array.isArray(body.images)
       ? body.images.slice(0, 4)
           .filter(function (im) { return im && typeof im.data === 'string' && im.data.length; })
-          .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000), role: (im.role === 'before' || im.role === 'after') ? im.role : '' }; })
+          .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000), role: (im.role === 'before' || im.role === 'after' || im.role === 'during') ? im.role : '' }; })
       : [];
 
     // Forced per-photo classification — the core safeguard against calling an OLD/unfinished window the new install.
     const VISION_RULE = images.length ?
 ('PHOTO CHECK — do this FIRST, before writing anything:\n' +
 'Classify EACH attached photo as one of: "new_finished" (a brand-new, fully finished window/door — clean new frame, crisp caulk & trim, no tools or debris), "old_before" (an old/existing unit, or anything labeled BEFORE), "in_progress" (mid-install — gaps, tools, missing trim), or "other" (crew, interior, materials, wide exterior, landscaping, etc.).\n' +
-'The BEFORE/AFTER label above each photo is the source of truth when present: BEFORE => old_before, AFTER => new_finished.\n' +
+'The stage label above each photo is the source of truth when present: BEFORE => old_before, DURING => in_progress, AFTER => new_finished.\n' +
 'HARD RULE: you may credit a NEW install or a "finished/new" product ONLY if at least one attached photo is "new_finished". If none are, write a transformation, behind-the-scenes, or teaser caption instead — NEVER describe an old, existing, or unfinished window as the new install.\n' +
 'Set "warn" to a SHORT plain-English heads-up (e.g. "Photo 1 looks like the old/before window — written as a transformation; double-check before posting.") whenever the finished NEW product is NOT clearly shown. If a new finished product is clearly shown, set "warn" to "".\n')
 : '';
