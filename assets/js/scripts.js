@@ -5927,7 +5927,7 @@ function socLibrary(v){
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
     const cell=el('div','poolcell'+(sel.has(m.id)?' sel':''));
     cell.dataset.mid=m.id;
-    cell.dataset.search=((m.name||'')+' '+(m.town||'')+' '+(m.desc||'')+' '+(m.folder||'')).toLowerCase();
+    cell.dataset.search=((m.name||'')+' '+(m.town||'')+' '+(m.desc||'')+' '+(m.folder||'')+' '+(m.cgroup||'')+' '+(m.stage||'')).toLowerCase(); // include job name + stage so search finds them too
     if(POOL_Q&&cell.dataset.search.indexOf(POOL_Q)<0)cell.style.display='none'; // honor an active search after re-render
     const img=el('img','poolimg');
     const ph=el('span','poolph',isVid?'🎬':'🖼️');
