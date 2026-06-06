@@ -1884,8 +1884,21 @@ function renderSavedJobs(container){
     const foot=el('div','rcactions');
     updatePostBtn();
     post.onclick=()=>{const chosen=jobSel.size?its.filter(x=>jobSel.has(x.id)):its;if(!chosen.length)return;post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=chosen.map(x=>({id:x.id,name:x.name,role:x.role||''}));const cb=chosen.filter(x=>x.role==='before').length,ca=chosen.filter(x=>x.role==='after').length;p.type=(cb||ca)?'beforeafter':(chosen.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
-    const del=el('button','btn-set danger','Delete');del.onclick=async()=>{if(await uiConfirm('This removes the saved Before/After job. The photos stay in your content.',{title:'Delete this job?',confirmText:'Delete',danger:true})){delBaJob(j.id);render();toast('Job deleted');}};
-    foot.appendChild(post);foot.appendChild(del);body.appendChild(foot);
+    // Move out of this job → back into your main Content (keeps the photos). Empties → the job disappears.
+    const mvBtn=el('button','btn-set','↩ Move to Content');mvBtn.title='Pull the ticked photos out of this job and back into your main content (none ticked = all)';
+    mvBtn.onclick=()=>{
+      const chosen=jobSel.size?its.filter(x=>jobSel.has(x.id)):its.slice(); if(!chosen.length)return;
+      const ids={}; chosen.forEach(x=>ids[x.id]=1);
+      if(Array.isArray(j.items))j.items=j.items.filter(x=>!ids[x.id]);
+      if(j.before)j.before=j.before.filter(x=>!ids[x.id]);
+      if(j.after)j.after=j.after.filter(x=>!ids[x.id]);
+      socPool().forEach(m=>{ if(ids[m.id]){m.status='available';m.role='';m._ut=Date.now();} });
+      const emptied=!jobItems(j).length;
+      if(emptied)ST.bajobs=socBaJobs().filter(x=>x.id!==j.id); else j._ut=Date.now();
+      commit(); rerenderCal(); toast(chosen.length+' moved to your content'+(emptied?' — job cleared':''));
+    };
+    const del=el('button','btn-set danger','🗑 Delete');del.onclick=async()=>{if(await uiConfirm('This removes the saved before/after job. The photos go back to your content (not deleted).',{title:'Remove this job?',confirmText:'Remove',danger:true})){delBaJob(j.id);rerenderCal();toast('Job removed — photos are back in your content');}};
+    foot.appendChild(post);foot.appendChild(mvBtn);foot.appendChild(del);body.appendChild(foot);
     d.appendChild(body);
     container.appendChild(d);
   });
