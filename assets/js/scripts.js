@@ -5830,7 +5830,7 @@ function socLibrary(v){
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   let delBtn=null;
-  const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;if(delBtn){delBtn.textContent=POOL_SEL.size?`🗑 Delete ${POOL_SEL.size}`:'🗑 Delete';delBtn.disabled=!POOL_SEL.size;}};
+  const updateMakeBtn=()=>{makeBtn.textContent=POOL_SEL.size?`＋ Make a post from ${POOL_SEL.size} selected`:'＋ Make a post — tick content first';makeBtn.disabled=!POOL_SEL.size;if(delBtn){delBtn.textContent=POOL_SEL.size?`🗑 Delete ${POOL_SEL.size} forever`:'🗑 Delete forever';delBtn.disabled=!POOL_SEL.size;}};
   const buildCell=(m,sel,onToggle)=>{
     sel=sel||POOL_SEL; onToggle=onToggle||updateMakeBtn;
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
@@ -5885,7 +5885,7 @@ function socLibrary(v){
       foot.appendChild(mv);
     }
     if(typeof isOwner==='function'&&isOwner()){
-      const del=el('button','btn-set danger','🗑 Delete');
+      const del=el('button','btn-set danger','🗑 Delete forever');
       del.onclick=async()=>{const pick=sel.size?items.filter(m=>sel.has(m.id)):items.slice();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(sel.size?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;poolDeleteItems(delable.map(m=>m.id));};
       foot.appendChild(del);
     }
@@ -5969,7 +5969,7 @@ function socLibrary(v){
   if(!grouped){ poolCard.appendChild(makeBtn); poolCard.appendChild(baBtn); } // flat view (e.g. Videos) keeps the shared selection bar; grouped views post per-group
   poolCard.appendChild(blank);
   if(typeof isOwner==='function'&&isOwner()){
-    delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.textContent='🗑 Delete';delBtn.disabled=true;
+    delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.textContent='🗑 Delete forever';delBtn.disabled=true;
     delBtn.onclick=async()=>{
       const sel=allAvail.filter(m=>POOL_SEL.has(m.id));if(!sel.length)return;
       const inUse=sel.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
