@@ -1648,13 +1648,14 @@ function auditDedupe(){
 function baAutoMerge(){
   if(!ST||(typeof _fbSync!=='undefined'&&_fbSync.applying))return; // don't fight an incoming sync
   var jobs=socBaJobs(), pool=socPool();
+  var isSubfolder=function(f){ return f && f!=='Drive' && f!=='Videos'; }; // any Drive subfolder name (Before & After, customer names, etc.)
   var hasLegacy = jobs.length>0
-    || pool.some(function(m){return m.folder==='Before & After';})
+    || pool.some(function(m){return isSubfolder(m.folder);})
     || pool.some(function(m){return !m.stage&&(m.role==='before'||m.role==='after');});
   if(!hasLegacy)return;
   jobs.forEach(function(j){ jobItems(j).forEach(function(it){ var m=pool.find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); }); });
   pool.forEach(function(m){
-    if(m.folder==='Before & After'){ if((m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); }
+    if(isSubfolder(m.folder)){ if(m.folder==='Before & After'&&(m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); } // every Drive subfolder → main Content (groups by location)
     else if(!m.stage&&(m.role==='before'||m.role==='after')){ m.stage=m.role; m._ut=Date.now(); } // old role-tagged photos → show a stage pill
   });
   ST.bajobs=[];
@@ -2186,7 +2187,7 @@ async function gdSyncNow(interactive){
       const ex=byDrive.get(f.id);
       if(ex){ // already have it — backfill location/folder/time/thumb if missing
         if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'&&ex.lat==null){ex.lat=f.loc.latitude;ex.lng=f.loc.longitude;backfilled++;}
-        if(f.folder&&!ex.folder)ex.folder=f.folder;
+        // NOTE: do NOT re-apply the Drive subfolder name — it would resurrect old folders (e.g. "Before & After") after a merge. Photos organize by location + stage in-app.
         if(f.time&&!ex.taken)ex.taken=f.time;
         if(f.thumb&&!ex.driveThumb){ex.driveThumb=f.thumb;backfilled++;}
         continue;
@@ -2197,7 +2198,8 @@ async function gdSyncNow(interactive){
       let file=new File([blob],f.name,{type:f.mime||blob.type});
       file=await normalizeImage(file);
       const rec=await fileAdd(file,'',S.role,'pool');
-      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:f.folder,addedAt:Date.now()+added};
+      const _isVid=/^video\//.test(f.mime||'')||/\.(mp4|mov|m4v|webm)$/i.test(f.name||'');
+      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:(_isVid?'Videos':''),addedAt:Date.now()+added}; // land in main Content (or Videos) — never a Drive subfolder name
       if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
@@ -6062,7 +6064,7 @@ function socLibrary(v){
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
-      renderGroupBody(d,items,{moveToContent:true,perCell:function(cell,m){const rm=el('button','addtojob','✕ Remove from job');rm.onclick=function(e){e.stopPropagation();delete m.cgroup;m._ut=Date.now();commit();rerenderCal();};cell.appendChild(rm);}});
+      renderGroupBody(d,items,{moveToContent:true}); // tiles match every other job (stage pills only); pull a photo out via tick → Move to Content
       poolCard.appendChild(d);
     });
     const clusters=clusterByLocation(located,60);
