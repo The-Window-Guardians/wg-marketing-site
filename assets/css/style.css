@@ -509,17 +509,13 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .poolcell:hover{border-color:var(--orange)}
 .poolcell.sel{border-color:var(--orange);box-shadow:0 0 0 2px var(--orange) inset}
 .poolcell.sel .poolck{background:var(--orange);border-color:var(--orange);color:#fff}
-.stagebar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:3px;padding:4px;background:#0007;backdrop-filter:blur(2px)}
-.stagepill{flex:1;border:none;border-radius:999px;font-size:9.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;padding:4px 0;cursor:pointer;opacity:.4}
+.stagebar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;padding:5px 0;background:#0006;backdrop-filter:blur(2px)}
+.stagepill{width:20px;height:20px;border-radius:6px;border:none;font-size:11px;font-weight:800;cursor:pointer;color:#fff;opacity:.38;display:grid;place-items:center;line-height:1;padding:0}
 .stagepill.st-before{background:var(--blue,#2f6df6);color:#fff}
 .stagepill.st-during{background:#f2c21d;color:#5a4500}
 .stagepill.st-after{background:var(--orange,#ff7a18);color:#fff}
-.stagepill.on{opacity:1;box-shadow:0 0 0 2px #fff inset}
-.stagepill:hover{opacity:.85}
-.stagebadge{position:absolute;top:7px;left:7px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:3px 9px;color:#fff;box-shadow:0 1px 3px #0005}
-.stagebadge.st-before{background:var(--blue,#2f6df6)}
-.stagebadge.st-during{background:#f2c21d;color:#5a4500}
-.stagebadge.st-after{background:var(--orange,#ff7a18)}
+.stagepill.on{opacity:1;box-shadow:0 0 0 2px #fff,0 0 0 3px #0003}
+.stagepill:hover{opacity:.8}
 .tagall{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .tagall-l{font-size:11px;font-weight:700;color:var(--ink2);margin-right:2px}
 .tagall .stagepill{opacity:1;flex:0 0 auto;padding:4px 10px;font-size:10px}

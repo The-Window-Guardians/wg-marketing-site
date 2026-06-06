@@ -5945,16 +5945,15 @@ function socLibrary(v){
     const ck=el('span','poolck','✓');
     ck.onclick=(e)=>{e.stopPropagation();if(sel.has(m.id))sel.delete(m.id);else sel.add(m.id);cell.classList.toggle('sel');onToggle();};
     cell.appendChild(ck);
-    // STAGE PILLS — tap Before/During/After to tag the photo; the lit pill + corner badge show the stage at a glance.
+    // STAGE TAGS — mini B/D/A buttons; the lit one is the photo's stage. Tap another to fix a mistake.
     if(!isVid){
       const sb=el('div','stagebar');
-      [['before','Before'],['during','During'],['after','After']].forEach(function(st){
-        const b=el('button','stagepill st-'+st[0]+(m.stage===st[0]?' on':''),st[1]);b.title='Tag as '+st[1]+(m.stage===st[0]?' (tap to clear)':'');
-        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[1]):'Tag cleared'); };
+      [['before','B','Before'],['during','D','During'],['after','A','After']].forEach(function(st){
+        const b=el('button','stagepill st-'+st[0]+(m.stage===st[0]?' on':''),st[1]);b.title='Tag '+st[2]+(m.stage===st[0]?' (tap to clear)':'');
+        b.onclick=function(e){e.stopPropagation(); m.stage=(m.stage===st[0])?'':st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast(m.stage?('Tagged '+st[2]):'Tag cleared'); };
         sb.appendChild(b);
       });
       cell.appendChild(sb);
-      if(m.stage){ const lbl={before:'BEFORE',during:'DURING',after:'AFTER'}[m.stage]; cell.appendChild(el('span','stagebadge st-'+m.stage,lbl)); } // visible status pill
     }
     cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid
     return cell;
