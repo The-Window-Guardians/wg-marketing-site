@@ -2503,25 +2503,66 @@ function captionImprove(p){
 // Real AI rewrite — calls the secure /ai-caption backend (Cloudflare Function holding the Anthropic key).
 // Grounds Claude with our own product/trade knowledge so it only weaves in facts we actually know.
 // Returns {options:[...]} on success, or {error,message} so the caller can fall back to captionImprove.
+/* VISION: turn a pool photo into a small base64 JPEG so Claude can actually SEE it.
+   Downscaled to ~maxPx so the upload + token cost stay tiny (~a few hundred tokens/photo).
+   Pulls from the in-memory thumb cache first, then the local blob, then the cloud copy. */
+async function mediaToB64(id,maxPx){
+  maxPx=maxPx||640;
+  try{
+    var src=(typeof VTHUMB!=='undefined'&&VTHUMB[id])?VTHUMB[id]:null, revoke=false;
+    if(!src){ try{ var rec=await fileGet(id); if(rec&&rec.blob){ src=URL.createObjectURL(rec.blob); revoke=true; } }catch(e){} }
+    if(!src){ try{ var c=await cloudFileGet(id); if(c&&c.dataUrl)src=c.dataUrl; }catch(e){} }
+    if(!src)return null;
+    var img=await new Promise(function(res,rej){ var im=new Image(); im.onload=function(){res(im);}; im.onerror=rej; im.src=src; });
+    var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; if(!w||!h){ if(revoke)try{URL.revokeObjectURL(src)}catch(e){} return null; }
+    var sc=Math.min(1,maxPx/Math.max(w,h)), cw=Math.max(1,Math.round(w*sc)), ch=Math.max(1,Math.round(h*sc));
+    var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch);
+    var durl=cv.toDataURL('image/jpeg',0.8);
+    if(revoke)try{URL.revokeObjectURL(src)}catch(e){}
+    return { mediaType:'image/jpeg', data:durl.slice(durl.indexOf(',')+1) };
+  }catch(e){ return null; }
+}
+/* Collect up to N of a post's photos as base64 for Claude's vision (skips videos). */
+async function postImagesB64(p,limit){
+  var media=postMedia(p).filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||''); }).slice(0,limit||4);
+  var out=[]; for(var k=0;k<media.length;k++){ var b=await mediaToB64(media[k].id,640); if(b)out.push(b); }
+  return out;
+}
 async function aiCaptionLive(p,style){
   var text=(p.caption||'').trim();
   var ctx=text+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
+  var images=await postImagesB64(p,4);                 // vision: let Claude see the attached photos
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite')})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),images:images})
   });
   return await r.json();
 }
-// Real AI hashtags — same secure backend, mode:'hashtags'. Returns {options:[...]} or {error,message}.
+// Real AI hashtags — same secure backend, mode:'hashtags'. Vision-aware. Returns {options:[...]} or {error,message}.
 async function aiHashtagsLive(p){
   var ctx=(p.caption||'')+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
+  var images=await postImagesB64(p,3);
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding})
+    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,images:images})
+  });
+  return await r.json();
+}
+/* ONE-TAP FULL POST: Claude looks at the photos and returns caption options + hashtags + category
+   in a single call. Returns {captions:[...],hashtags:'...',category:'...'} or {error,message}. */
+async function aiFullPostLive(p){
+  var text=(p.caption||'').trim();
+  var ctx=text+' '+(p.jobNote||'');
+  var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
+  var images=await postImagesB64(p,4);
+  var r=await fetch('/ai-caption',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,images:images})
   });
   return await r.json();
 }
@@ -6089,8 +6130,9 @@ function openComposer(idOrPost,isNew){
   // category segmented
   const pf=el('div','cmp-field');pf.innerHTML='<label>Category</label>';
   const seg=el('div','seg');
-  SOC_PILLARS.forEach(pl=>{const btn=el('button','seg-b'+(p.pillar===pl.id?' on':''),`${pl.icon} ${pl.t}`);btn.onclick=()=>{p.pillar=pl.id;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on')};seg.appendChild(btn)});
+  SOC_PILLARS.forEach(pl=>{const btn=el('button','seg-b'+(p.pillar===pl.id?' on':''),`${pl.icon} ${pl.t}`);btn.dataset.pid=pl.id;btn.onclick=()=>{p.pillar=pl.id;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on')};seg.appendChild(btn)});
   pf.appendChild(seg);b.appendChild(pf);
+  const setCategory=(id)=>{ if(!id)return; var hit=false; seg.querySelectorAll('.seg-b').forEach(x=>{var on=x.dataset.pid===id;x.classList.toggle('on',on);if(on)hit=true;}); if(hit)p.pillar=id; };
 
   // town (Ruth gets the "how to add the location" steps in her queue + guide)
   const tf=el('div','cmp-field');tf.innerHTML='<label>Town <span class="muted" style="font-weight:600">— auto-filled from the photo location; Ruth tags this as the post location</span></label>';
@@ -6236,8 +6278,31 @@ function openComposer(idOrPost,isNew){
   caRewrite.onclick=()=>runAI('rewrite','🤖 Claude is writing…');
   caElab.onclick=()=>runAI('elaborate','🤖 Claude is elaborating…');
   caFunny.onclick=()=>runAI('funny','🤖 Claude is having fun…');
+  // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
+  const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
+  caFull.onclick=async()=>{
+    const media=postMedia(p);
+    if(!media.length){toast('Add a photo to the post first — this reads your pictures');return;}
+    if(aiBusy)return;
+    caOpts.dataset.open='1';caOpts.dataset.style='full';caOpts.innerHTML='';
+    caOpts.appendChild(el('div','sughdr','🪄 Claude is looking at your photos…'));
+    aiBusy=true;caFull.disabled=true;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=true);
+    let d=null; try{ d=await aiFullPostLive(p); }catch(e){ d={error:'net'}; }
+    aiBusy=false;caFull.disabled=false;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=false);
+    if(caOpts.dataset.open!=='1')return;
+    caOpts.innerHTML='';
+    if(d&&d.captions&&d.captions.length){
+      if(d.hashtags){ ha.value=mergeTags(ha.value,d.hashtags); p.hashtags=ha.value; }
+      if(d.category){ setCategory(d.category); }
+      scheduleDraft();
+      const done=[]; if(d.hashtags)done.push('hashtags'); if(d.category)done.push('category');
+      caOpts.appendChild(el('div','sughdr','Done'+(done.length?(' — '+done.join(' + ')+' filled in'):'')+'. Tap a caption to use it:'));
+      d.captions.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Caption set ✓ — hashtags + category are in')};caOpts.appendChild(o)});
+    } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
+  };
+  const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
   const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(el('span','aicost','~1¢ per tap'));
-  cf.appendChild(caRow);cf.appendChild(caOpts);
+  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit

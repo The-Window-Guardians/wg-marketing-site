@@ -31,6 +31,35 @@ function friendlyApiErr(status, body) {
   return 'AI request failed (' + status + ').';
 }
 
+// Build the Claude message content: image blocks first (vision), then the text prompt.
+function buildContent(images, usrText) {
+  if (!images || !images.length) return usrText;
+  var content = images.map(function (im) {
+    return { type: 'image', source: { type: 'base64', media_type: im.mediaType || 'image/jpeg', data: im.data } };
+  });
+  content.push({ type: 'text', text: usrText });
+  return content;
+}
+
+// Parse the one-tap full-post JSON: { captions:[..], hashtags:"..", category:".." }
+function parseFullPost(text) {
+  if (!text) return null;
+  var obj = null;
+  try { obj = JSON.parse(text); } catch (e) {
+    var m = text.match(/\{[\s\S]*\}/);
+    if (m) { try { obj = JSON.parse(m[0]); } catch (e2) {} }
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  var caps = Array.isArray(obj.captions) ? obj.captions.filter(Boolean).slice(0, 3)
+           : (obj.caption ? [obj.caption] : []);
+  if (!caps.length) return null;
+  var tags = typeof obj.hashtags === 'string' ? obj.hashtags
+           : (Array.isArray(obj.hashtags) ? obj.hashtags.join(' ') : '');
+  var cat = typeof obj.category === 'string' ? obj.category.toLowerCase().trim() : '';
+  if (!{ portfolio: 1, edu: 1, fun: 1, customer: 1 }[cat]) cat = '';
+  return { captions: caps, hashtags: tags, category: cat };
+}
+
 function parseOptions(text) {
   if (!text) return [];
   // 1) clean JSON
@@ -60,9 +89,14 @@ export async function onRequestPost(context) {
     const town     = String(body.town     || '').slice(0, 80);
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
-    const mode     = (body.mode === 'hashtags') ? 'hashtags' : 'caption';
+    const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : 'caption';
     const style    = (body.style === 'elaborate' || body.style === 'funny') ? body.style : 'rewrite';
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+    const images   = Array.isArray(body.images)
+      ? body.images.slice(0, 4)
+          .filter(function (im) { return im && typeof im.data === 'string' && im.data.length; })
+          .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000) }; })
+      : [];
 
     var sys, usr;
     if (mode === 'hashtags') {
@@ -81,6 +115,25 @@ export async function onRequestPost(context) {
 'Product / trade context: ' + (grounding || '(none)') + '\n' +
 'Media type: ' + type + '.\n' +
 'Write 3 hashtag sets now.';
+    } else if (mode === 'fullpost') {
+      sys =
+'You are the social media manager for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
+'You are shown one or more PHOTOS of a real job, plus an optional note from the owner. Look closely at the photos and write a complete, ready-to-post social post.\n' +
+'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
+'Rules:\n' +
+'- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
+'- If a town is given, work it in naturally (local pride).\n' +
+'- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji.\n' +
+'- hashtags: ONE set of 8 to 12 relevant tags — always include #WindowGuardians and a local tag if a town is given; match what the photos actually show.\n' +
+'- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
+'- Return ONLY valid JSON in this exact shape: {"captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
+      usr =
+'Town: ' + (town || '(none)') + '\n' +
+'Owner note (optional): ' + (caption || jobNote || '(none)') + '\n' +
+'Product / trade facts you MAY weave in if they fit (do not force, do not add others): ' + (grounding || '(none)') + '\n' +
+'Media type: ' + type + '.\n' +
+(images.length ? ('There ' + (images.length > 1 ? ('are ' + images.length + ' photos') : 'is 1 photo') + ' attached — look closely and describe the real work.') : '(No photo attached — write from the note.)') + '\n' +
+'Write the full post now as JSON.';
     } else {
       var styleRule =
         style === 'elaborate'
@@ -117,9 +170,9 @@ styleRule + '\n' +
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: 700,
+        max_tokens: (mode === 'fullpost') ? 900 : 700,
         system: sys,
-        messages: [{ role: 'user', content: usr }]
+        messages: [{ role: 'user', content: buildContent(images, usr) }]
       })
     });
 
@@ -131,6 +184,11 @@ styleRule + '\n' +
 
     const data = await r.json();
     const text = (data && data.content && data.content[0] && data.content[0].text) || '';
+    if (mode === 'fullpost') {
+      const fp = parseFullPost(text);
+      if (!fp) return json({ error: 'empty', message: 'AI replied but I couldn’t read it — try again.' });
+      return json(fp);
+    }
     const options = parseOptions(text);
     if (!options.length) return json({ error: 'empty', message: 'AI replied but I couldn’t read it — try again.' });
     return json({ options: options });
