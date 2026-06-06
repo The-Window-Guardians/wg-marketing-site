@@ -5981,16 +5981,7 @@ function socLibrary(v){
     selAll.textContent=(items.length&&items.every(m=>sel.has(m.id)))?'◻ Unselect all':'✓ Select all';
     selAll.onclick=()=>{ const all=items.every(m=>sel.has(m.id)); items.forEach(m=>{ if(all)sel.delete(m.id); else sel.add(m.id); }); rerenderCal(); };
     foot.appendChild(selAll);
-    // Tag the WHOLE group at once → once every photo is tagged the job jumps to the top
-    if(items.some(m=>!isVidItem(m))){
-      const tagWrap=el('div','tagall');tagWrap.appendChild(el('span','tagall-l','Tag all:'));
-      [['before','Before'],['during','During'],['after','After']].forEach(function(st){
-        const tb=el('button','stagepill st-'+st[0],st[1]);
-        tb.onclick=()=>{ items.forEach(m=>{ if(!isVidItem(m)){m.stage=st[0];m._ut=Date.now();} }); commit(); rerenderCal(); toast('Tagged the whole job '+st[1]); };
-        tagWrap.appendChild(tb);
-      });
-      foot.appendChild(tagWrap);
-    }
+    // (Tag stages one photo at a time using the pills right on each thumbnail — no bulk "Tag all".)
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
       ng.onclick=async()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
