@@ -5997,7 +5997,7 @@ function socLibrary(v){
   const allAvail=poolAll; // for resolving selections when making a post
   const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='Videos'?'Your videos.':'Grouped by job location. Tag each photo 🔴 Before · 🟡 During · 🟢 After — tagged jobs rise to the top.';
+  const sub = POOL_SRC==='Videos'?'Your videos.':'📍 = grouped by GPS location · 📁 = a job you named. Tag photos 🔴 Before · 🟡 During · 🟢 After — tagged jobs rise to the top.';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub}</small></div></div>`;
   // controls: the area switcher (Content · Finalized · Videos · legacy)
   const ctrls=el('div','poolctrls');
