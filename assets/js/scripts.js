@@ -5588,6 +5588,12 @@ function socLibrary(v){
   };
   ctrls.appendChild(q);
   poolCard.appendChild(ctrls);
+  // one-tap: move EVERYTHING in this sub-folder into main Content
+  if(POOL_SRC!=='main' && avail.length && typeof isOwner==='function' && isOwner()){
+    const moveAll=el('button','btn-set','↩ Move all '+avail.length+' to Content');moveAll.style.cssText='margin-top:10px';moveAll.title='Move every photo in this folder into your main Content';
+    moveAll.onclick=async()=>{ if(!await uiConfirm('Move all '+avail.length+' photo'+(avail.length>1?'s':'')+' from “'+POOL_SRC+'” into your main Content? They’ll group by job location there.',{title:'Move all to Content?',confirmText:'Move all'}))return; avail.forEach(m=>{m.folder='';delete m.cgroup;m._ut=Date.now();}); POOL_SRC='main'; commit(); rerenderCal(); toast('Moved to your main Content ✓'); };
+    poolCard.appendChild(moveAll);
+  }
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   let delBtn=null;
