@@ -1711,41 +1711,60 @@ async function photoSrcFor(id){
   try{ const rec=await fileGet(id); if(rec&&rec.blob)return URL.createObjectURL(rec.blob); }catch(e){}
   return null;
 }
-function imgAHash(src){
+/* Perceptual fingerprint = dHash (gradient, very discriminating) + aHash (brightness) + aspect ratio.
+   Two photos are only "the same" when BOTH hashes agree AND the shapes match — this is what
+   stops different houses with similar sky/brick from being called duplicates. */
+function imgFingerprint(src){
   return new Promise(function(resolve){
     if(!src)return resolve(null);
     var img=new Image(), done=false;
     var to=setTimeout(function(){ if(!done){done=true;resolve(null);} },8000); // never hang the scan
     img.onload=function(){ if(done)return; done=true; clearTimeout(to);
       try{
-        var c=document.createElement('canvas');c.width=8;c.height=8;var x=c.getContext('2d');
-        x.drawImage(img,0,0,8,8); var d=x.getImageData(0,0,8,8).data;
-        var g=[],sum=0; for(var i=0;i<64;i++){var v=d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114;g.push(v);sum+=v;}
-        var avg=sum/64,bits=''; for(var j=0;j<64;j++)bits+=(g[j]>=avg?'1':'0');
-        resolve(bits);
+        var nw=img.naturalWidth||img.width, nh=img.naturalHeight||img.height;
+        var ar=(nw&&nh)?(nw/nh):1;
+        // dHash: 9x8 grayscale, compare each pixel to its right neighbour → 64 bits of edge/gradient info
+        var c=document.createElement('canvas');c.width=9;c.height=8;var x=c.getContext('2d');
+        x.drawImage(img,0,0,9,8); var d=x.getImageData(0,0,9,8).data;
+        function lum(i){ return d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114; }
+        var dbits=''; for(var r=0;r<8;r++){ for(var col=0;col<8;col++){ var idx=r*9+col; dbits+=(lum(idx)>lum(idx+1))?'1':'0'; } }
+        // aHash: 8x8 grayscale vs the average → 64 bits of overall tone
+        var c2=document.createElement('canvas');c2.width=8;c2.height=8;var x2=c2.getContext('2d');
+        x2.drawImage(img,0,0,8,8); var d2=x2.getImageData(0,0,8,8).data;
+        var g=[],sum=0; for(var i=0;i<64;i++){var v=d2[i*4]*0.299+d2[i*4+1]*0.587+d2[i*4+2]*0.114;g.push(v);sum+=v;}
+        var avg=sum/64,abits=''; for(var j=0;j<64;j++)abits+=(g[j]>=avg?'1':'0');
+        resolve({d:dbits,a:abits,ar:ar});
       }catch(e){resolve(null);}
     };
     img.onerror=function(){ if(done)return; done=true; clearTimeout(to); resolve(null); };
     img.src=src;
   });
 }
+/* Strict "same picture" test: shapes must match, AND both the gradient hash and the tone hash
+   must be very close. Requiring both to agree is what removes the false matches. */
+function isDupFp(x,y){
+  if(!x||!y||!x.d||!y.d)return false;
+  var arA=x.ar||1, arB=y.ar||1;
+  if(Math.abs(arA-arB) > 0.12*Math.max(arA,arB))return false; // different shape (landscape vs portrait) → never a dup
+  return _hamm(x.d,y.d)<=8 && _hamm(x.a,y.a)<=8;              // BOTH gradient + tone must match closely
+}
 async function scanDuplicates(onProgress){
   var items=poolAvailable().filter(function(m){ return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')&&!/^video\//.test(m.type||''); }); // photos only
   var total=items.length, done=0, computed=0;
   for(var i=0;i<items.length;i++){
     var m=items[i];
-    if(!m.phash){ var src=await photoSrcFor(m.id); var h=await imgAHash(src); if(h){m.phash=h;computed++;} }
+    if(!m.fp||!m.fp.d){ var src=await photoSrcFor(m.id); var h=await imgFingerprint(src); if(h){m.fp=h;computed++;} }
     done++; if(onProgress)onProgress(done,total);
     await new Promise(function(r){setTimeout(r,0);}); // one image at a time → low memory even for 100s
   }
   if(computed){ try{commit();}catch(e){} } // persist fingerprints so the next scan is instant
   var groups=[], used={};
   for(var a=0;a<items.length;a++){
-    if(used[items[a].id]||!items[a].phash)continue;
+    if(used[items[a].id]||!items[a].fp)continue;
     var grp=[items[a]]; used[items[a].id]=1;
     for(var b=a+1;b<items.length;b++){
-      if(used[items[b].id]||!items[b].phash)continue;
-      if(_hamm(items[a].phash,items[b].phash)<=5){ grp.push(items[b]); used[items[b].id]=1; } // <=5/64 bits → same picture
+      if(used[items[b].id]||!items[b].fp)continue;
+      if(isDupFp(items[a].fp,items[b].fp)){ grp.push(items[b]); used[items[b].id]=1; } // strict: gradient + tone + shape all agree
     }
     if(grp.length>1)groups.push(grp);
   }
