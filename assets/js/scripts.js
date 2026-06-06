@@ -5984,7 +5984,7 @@ function openComposer(idOrPost,isNew){
       list.forEach(m=>{
         const on=inPost.has(m.id);
         const cell=el('div','medcell'+(on?' sel':''));cell.style.cursor='pointer';
-        const img=el('img','medthumb');
+        const img=el('img','medthumb');img.addEventListener('load',function(){img.style.display='block';}); // <-- without this the thumbnail stays hidden
         if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
         cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
         cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } renderMedia(); }; // toggle; renderMedia keeps the picker open
@@ -6036,7 +6036,7 @@ function openComposer(idOrPost,isNew){
   caFriendly.onclick=()=>restyle(friendlyText,'Write something first','Warmed it up ✓');
   const caShort=el('button','btn-set','✂️ Shorter');caShort.title='Trim filler words';
   caShort.onclick=()=>restyle(shortenText,'Write something first','Trimmed ✓');
-  const caRow=el('div','sugrow');caRow.appendChild(caAI);caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
+  const caRow=el('div','sugrow');caRow.appendChild(caPolish);caRow.appendChild(caFormal);caRow.appendChild(caFriendly);caRow.appendChild(caShort);caRow.appendChild(snippetBar('caption',()=>ca.value,(t)=>{ca.value=t;p.caption=t;}));
   cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
