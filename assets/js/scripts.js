@@ -5825,9 +5825,10 @@ function openComposer(idOrPost,isNew){
   function composerSaveDraft(){ try{ if(p && p.status!=='posted'){ var has=(p.caption||'').trim()||(Array.isArray(p.media)&&p.media.length)||(p.jobNote||'').trim()||(p.hashtags||'').trim(); if(has){ if(!p.status)p.status='draft'; savePost(p); } } }catch(e){} }
   let _draftT=null; function scheduleDraft(){ clearTimeout(_draftT); _draftT=setTimeout(composerSaveDraft,1500); } // debounced while typing (survives navigation/refresh)
   function composerClose(){ clearTimeout(_draftT); composerSaveDraft(); closeComposer(); }
-  // only close on a backdrop click that STARTED on the backdrop — so highlighting text that ends on the dim area doesn't close the post
-  ov.addEventListener('pointerdown',function(e){ ov._downSelf=(e.target===ov); });
-  ov.onclick=e=>{ if(e.target===ov && ov._downSelf)composerClose(); };
+  // The post window NEVER closes from tapping outside — you're typing in here, and an accidental
+  // outside-tap (dismissing the keyboard, ending a text highlight) must not nuke your work.
+  // Only the ✕ closes it (and that auto-saves a draft). Tapping the dim area does nothing.
+  ov.onclick=e=>{ if(e.target===ov)e.stopPropagation(); };
   $('#cmpX').onclick=composerClose;
   const b=$('#cmpBody');
 
