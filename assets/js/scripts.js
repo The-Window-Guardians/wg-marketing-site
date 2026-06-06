@@ -5855,6 +5855,7 @@ function openComposer(idOrPost,isNew){
   // media
   const mf=el('div','cmp-field');mf.innerHTML='<label>Media</label>';
   const media=el('div','mediabox');
+  let pickerOpen=false; // keep the "Add from your content" library open across add/remove taps
   const renderMedia=()=>{
     media.innerHTML='';
     fillMediaRoles(p);                 // inherit Before/After from the job/pool first
@@ -5923,28 +5924,30 @@ function openComposer(idOrPost,isNew){
     if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Drag the ⠿ handle to reorder.'));
     media.appendChild(grid);
     // add from the existing dashboard library (where your uploaded / Drive photos live)
-    const fromBtn=el('button','btn-set','🗂️ Add from your content');fromBtn.style.marginTop='8px';
-    const picker=el('div');picker.style.cssText='display:none;margin-top:8px';
-    fromBtn.onclick=()=>{
-      if(picker.style.display!=='none'){picker.style.display='none';fromBtn.textContent='🗂️ Add from your content';return;}
+    const fromBtn=el('button','btn-set',pickerOpen?'✕ Close library':'🗂️ Add from your content');fromBtn.style.marginTop='8px';
+    const picker=el('div');picker.style.cssText='margin-top:8px;'+(pickerOpen?'':'display:none');
+    const fillPicker=()=>{
       picker.innerHTML='';
-      const used=new Set(postMedia(p).map(x=>x.id));
-      const avail=poolAvailable().filter(m=>!used.has(m.id)).sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
-      if(!avail.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">Nothing in your library yet — upload photos on the Home screen first.</div>'; }
-      else{
-        const g=el('div','medgrid');
-        avail.slice(0,60).forEach(m=>{
-          const cell=el('div','medcell');cell.style.cursor='pointer';
-          const img=el('img','medthumb');
-          if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
-          cell.appendChild(img);cell.appendChild(el('div','medname',esc(m.name||'')));
-          cell.onclick=()=>{ postMedia(p).push({id:m.id,name:m.name}); renderMedia(); toast('Added — tap “Add from your content” again for more'); };
-          g.appendChild(cell);
-        });
-        picker.appendChild(g);
-      }
-      picker.style.display='';fromBtn.textContent='✕ Close library';
+      const inPost=new Set(postMedia(p).map(x=>x.id));
+      const avail=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
+      const postItems=postMedia(p).map(x=>socPool().find(z=>z.id===x.id)||{id:x.id,name:x.name}); // ones already on the post (so you can REMOVE them here too)
+      const list=postItems.concat(avail.filter(m=>!inPost.has(m.id))).slice(0,80);
+      if(!list.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">Nothing in your library yet — upload photos on the Home screen first.</div>'; return; }
+      picker.appendChild(el('div','muted','Tap to add · tap a ✓ one to remove it from the post')).style.cssText='font-size:11.5px;margin:2px 0 6px';
+      const g=el('div','medgrid');
+      list.forEach(m=>{
+        const on=inPost.has(m.id);
+        const cell=el('div','medcell'+(on?' sel':''));cell.style.cursor='pointer';
+        const img=el('img','medthumb');
+        if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
+        cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
+        cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } renderMedia(); }; // toggle; renderMedia keeps the picker open
+        g.appendChild(cell);
+      });
+      picker.appendChild(g);
     };
+    fromBtn.onclick=()=>{ pickerOpen=!pickerOpen; if(pickerOpen){ fillPicker(); picker.style.display=''; fromBtn.textContent='✕ Close library'; } else { picker.style.display='none'; fromBtn.textContent='🗂️ Add from your content'; } };
+    if(pickerOpen)fillPicker();
     media.appendChild(fromBtn);media.appendChild(picker);
     // Before/After posts read backwards if unlabeled — nudge (not a hard block) when tags are missing
     const photos=arr.filter(m=>!/\.(mp4|mov|m4v|webm)$/i.test(m.name||''));
