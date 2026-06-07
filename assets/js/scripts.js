@@ -2272,7 +2272,7 @@ async function gdSyncNow(interactive){
     if(added)toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');
     else if(interactive){ if(list.length===0)toast('Connected to Google, but found 0 photos/videos in that folder. Tap Connect and pick the Google account that OWNS your content folder — and make sure the folder actually has photos in it.'); else toast(backfilled?('Synced — location added to '+backfilled+' photos'):('Drive is in sync — '+list.length+' item'+(list.length>1?'s':'')+' already here.')); }
   }catch(e){if(interactive)toast('Drive sync hit a snag — try again.');}
-  finally{_gdSyncing=false;}
+  finally{_gdSyncing=false; setTimeout(function(){try{cloudThumbBackfill(8);}catch(e){}},1200);} // back up Drive thumbs to the cloud so they never blank again
 }
 /* distance + greedy location clustering (same property ≈ within radius metres) */
 function gdDist(aLat,aLng,bLat,bLng){const R=6371000,toR=d=>d*Math.PI/180;const dLa=toR(bLat-aLat),dLo=toR(bLng-aLng),la1=toR(aLat),la2=toR(bLat);const x=Math.sin(dLa/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
@@ -5800,7 +5800,56 @@ async function driveFetchInto(img,pm,mediaId){
     if(!r.ok)return; const blob=await r.blob(); const url=URL.createObjectURL(blob);
     if(mediaId)VTHUMB[mediaId]=url;                                    // cache so the next render is instant
     img.onload=()=>{img.style.display='block'}; img.onerror=()=>{img.style.display='none'}; img.src=url;
+    if(mediaId)storeCloudThumb(mediaId,blob);                          // PERMANENT FIX: save a small cloud thumb so it never blanks again on any device/session
   }catch(e){}
+}
+/* Downscale a blob to a small JPEG dataURL (grid thumb + decent preview). HEIC won't decode in <img> → returns null. */
+function blobToThumb(blob,px){
+  px=px||560;
+  return new Promise(function(res){
+    try{ var url=URL.createObjectURL(blob); var im=new Image();
+      im.onload=function(){ try{ var w=im.naturalWidth||im.width,h=im.naturalHeight||im.height; if(!w||!h){URL.revokeObjectURL(url);return res(null);} var sc=Math.min(1,px/Math.max(w,h)); var cw=Math.max(1,Math.round(w*sc)),ch=Math.max(1,Math.round(h*sc)); var cv=document.createElement('canvas');cv.width=cw;cv.height=ch;cv.getContext('2d').drawImage(im,0,0,cw,ch); var d=cv.toDataURL('image/jpeg',0.82); URL.revokeObjectURL(url); res(d&&d.length>120?d:null); }catch(e){URL.revokeObjectURL(url);res(null);} };
+      im.onerror=function(){URL.revokeObjectURL(url);res(null);}; im.src=url;
+    }catch(e){res(null);}
+  });
+}
+/* Save a permanent small thumbnail to the shared cloud under the photo's id, so cloudFileGet
+   resolves it on EVERY device/session with no Google Drive token needed. */
+async function storeCloudThumb(mediaId,blob){
+  try{
+    if(!window.WG_FB_READY||!WG_AUTH.currentUser||!mediaId||!blob)return false;
+    if(/^(pf_|hf_)/.test(mediaId))return false;                       // already cloud-native
+    var dataUrl=await blobToThumb(blob,560); if(!dataUrl)return false;
+    await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(mediaId)
+      .set({name:'drive-thumb',type:'image/jpeg',dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),thumbBackfill:true});
+    VTHUMB[mediaId]=dataUrl;
+    var m=(typeof socPool==='function')?socPool().find(function(x){return x.id===mediaId;}):null;
+    if(m&&!m._cloudThumb){ m._cloudThumb=true; m._ut=Date.now(); try{Store.save(S);}catch(e){} }
+    return true;
+  }catch(e){ return false; }
+}
+/* Background backfill: when Drive is connected, fetch a few not-yet-cloud Drive photos and
+   store permanent cloud thumbs. Over a couple of syncs every photo gets backed up → blanks gone for good. */
+let _cloudThumbBF=false;
+async function cloudThumbBackfill(cap){
+  if(_cloudThumbBF||!window.WG_FB_READY||!WG_AUTH.currentUser||typeof gdGetToken!=='function')return;
+  var tok=null; try{ tok=await gdGetToken(false); }catch(e){}
+  if(!tok)return;                                                     // need Drive access to read the bytes once
+  _cloudThumbBF=true; var did=0; cap=cap||8;
+  try{
+    var items=socPool().filter(function(m){ return m&&m.driveId&&!m._cloudThumb&&!/^(pf_|hf_)/.test(m.id||'')&&!(/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')); });
+    for(var i=0;i<items.length&&did<cap;i++){ var m=items[i];
+      try{
+        var ex=await cloudFileGet(m.id); if(ex&&ex.dataUrl){ m._cloudThumb=true; m._ut=Date.now(); continue; } // already there
+        var r=await fetch('https://www.googleapis.com/drive/v3/files/'+m.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}});
+        if(!r.ok)continue; var blob=await r.blob();
+        if(await storeCloudThumb(m.id,blob))did++;
+      }catch(e){}
+    }
+    if(did){ commit(); if(typeof rerenderCal==='function')rerenderCal(); }
+  }catch(e){}
+  _cloudThumbBF=false;
+  if(did) setTimeout(function(){ cloudThumbBackfill(cap); },1500); // keep trickling until all are backed up
 }
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
