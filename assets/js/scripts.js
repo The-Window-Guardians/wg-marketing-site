@@ -1716,12 +1716,13 @@ async function cleanupNoPreview(btn){
   if(btn){btn.disabled=true;}
   const res=await scanBrokenPhotos(function(d,t){ if(btn)btn.textContent='Scanning… '+d+'/'+t; });
   if(btn){btn.disabled=false;btn.textContent=orig;}
-  const broken=res.broken, du=res.driveUnknown;
-  if(!broken.length){ toast(du.length?('No broken photos — but '+du.length+' Drive photo'+(du.length>1?'s':'')+' need Google sign-in to check. Tap “Sync Google Drive,” then re-run.'):'✓ No broken / blank photos found'); return; }
-  const inUse=broken.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
-  const delable=broken.filter(m=>inUse.indexOf(m)<0);
-  if(!delable.length){ toast(broken.length+' blank photo'+(broken.length>1?'s are':' is')+' in a draft — remove there first.'); return; }
-  const ok=await uiConfirm('Found '+delable.length+' photo'+(delable.length>1?'s':'')+' with no preview anywhere (failed uploads / blank tiles)'+(inUse.length?(' — '+inUse.length+' kept because they’re in a draft'):'')+(du.length?(' · '+du.length+' Drive photo'+(du.length>1?'s':'')+' skipped (sign in to Drive to check those)'):'')+'. Remove the '+delable.length+'? Undoable.',{title:'Remove blank photos?',confirmText:'Remove '+delable.length,danger:true});
+  const all=res.broken.concat(res.driveUnknown); // remove EVERY blank, incl. Drive ones the desktop can't reach
+  if(!all.length){ toast('✓ No blank / no-preview photos'); return; }
+  const inUse=all.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));
+  const delable=all.filter(m=>inUse.indexOf(m)<0);
+  if(!delable.length){ toast(all.length+' blank photo'+(all.length>1?'s are':' is')+' in a draft — remove there first.'); return; }
+  const drvNote = res.driveUnknown.length ? (' '+res.driveUnknown.length+' are Google Drive photos that would LOAD if you tap “Sync Google Drive” first — cancel to do that. (Removing them here never deletes the Drive copies.)') : '';
+  const ok=await uiConfirm('Found '+delable.length+' blank photo'+(delable.length>1?'s':'')+' (no preview on this device).'+drvNote+(inUse.length?(' '+inUse.length+' in a draft are kept.'):'')+' Remove the '+delable.length+'? Undoable.',{title:'Remove blank photos?',confirmText:'Remove '+delable.length,danger:true});
   if(!ok)return;
   poolDeleteItems(delable.map(m=>m.id));
   closeComposer();
