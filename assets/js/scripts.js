@@ -6236,7 +6236,10 @@ function socLibrary(v){
   // ---- CONTENT POOL: tick pieces → make a post ----
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
   const isMain=m=>(!m.folder||m.folder==='Drive')&&!isVidItem(m); // photos sitting directly in the synced folder
-  const poolAll=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
+  // hide any photo already sitting in a draft/approved post (however it got there — generator OR a manual add),
+  // so it never double-shows in its job folder. Remove it from the post and it reappears here.
+  const _inDraftPost=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>x&&x.id&&_inDraftPost.add(x.id)); });
+  const poolAll=poolAvailable().filter(m=>!_inDraftPost.has(m.id)).slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)); // newest added first
   // legacy subfolders (Videos, and the old Before & After folder until it's migrated)
   const subfolders=[...new Set(poolAll.filter(m=>m.folder&&m.folder!=='Drive').map(m=>m.folder))];
   const baJobsAll=(typeof socBaJobs==='function')?socBaJobs():[];
