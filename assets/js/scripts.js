@@ -5699,10 +5699,13 @@ async function openMediaPreview(mediaId,name,list){
     var mid=list[i].id; var nm=list[i].name||((socPool().find(z=>z.id===mid)||{}).name)||'';
     wireDelete();
     cap.textContent=(list.length>1?((i+1)+' / '+list.length+(nm?'  ·  '+nm:'')):(nm||''));
-    // hold the box size while the next photo loads so the corner controls (✕ / 🗑 / ‹ ›) don't jump and flash
+    // hide the corner controls (🗑 / ‹ ›) WHILE loading so they don't flash before the image fills the box
+    var _showDel = delBtn && delBtn.style.display!=='none';
+    if(delBtn)delBtn.style.display='none'; if(prevBtn)prevBtn.style.display='none'; if(nextBtn)nextBtn.style.display='none';
+    // hold the box size while the next photo loads so nothing jumps
     var keepH=body.offsetHeight, keepW=body.offsetWidth;
     if(keepH>60){ body.style.minHeight=keepH+'px'; body.style.minWidth=keepW+'px'; }
-    var relax=function(){ body.style.minHeight=''; body.style.minWidth=''; };
+    var relax=function(){ body.style.minHeight=''; body.style.minWidth=''; if(delBtn&&_showDel)delBtn.style.display=''; if(prevBtn)prevBtn.style.display=''; if(nextBtn)nextBtn.style.display=''; }; // image is in → reveal controls
     if(_mprevUrl){try{URL.revokeObjectURL(_mprevUrl)}catch(e){}_mprevUrl=null;}
     body.innerHTML='<div class="muted" style="padding:30px">Loading…</div>';
     try{
