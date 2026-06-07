@@ -6262,19 +6262,31 @@ function socLibrary(v){
     // STAGE TAGS — untagged: 3 mini B/D/A squares to pick. Tagged: ONE full-name pill that cycles when tapped (to fix a mistake).
     if(!isVid){
       const sb=el('div','stagebar');
-      if(!m.stage){
-        [['before','B','Before'],['during','D','During'],['after','A','After']].forEach(function(st){
-          const b=el('button','stagepill st-'+st[0],st[1]);b.title='Tag '+st[2];
-          b.onclick=function(e){e.stopPropagation(); m.stage=st[0]; m._ut=Date.now(); commit(); rerenderCal(); toast('Tagged '+st[2]); };
-          sb.appendChild(b);
-        });
-      } else {
-        const order=['before','during','after'], names={before:'BEFORE',during:'DURING',after:'AFTER'};
-        sb.classList.add('one');
-        const p=el('button','stagefull st-'+m.stage,names[m.stage]);p.title='Tap to change the stage';
-        p.onclick=function(e){e.stopPropagation(); var i=order.indexOf(m.stage); m.stage=order[(i+1)%order.length]; m._ut=Date.now(); commit(); rerenderCal(); toast('Now '+names[m.stage]); };
-        sb.appendChild(p);
-      }
+      // Refresh ONLY this thumbnail's pill (no full re-render) so the group stays open and the page never jumps while you tag the rest.
+      const refreshGroupDone=function(){
+        try{ var d=cell.closest('details.jobgroup'); if(!d)return;
+          var photoCells=Array.prototype.filter.call(d.querySelectorAll('.poolcell'),function(c){return c.querySelector('.stagebar');});
+          var allTagged=photoCells.length>0 && photoCells.every(function(c){return c.querySelector('.stagefull');});
+          d.classList.toggle('done',allTagged);
+        }catch(e){}
+      };
+      const paintStage=function(){
+        sb.innerHTML=''; sb.classList.remove('one');
+        if(!m.stage){
+          [['before','B','Before'],['during','D','During'],['after','A','After']].forEach(function(st){
+            const b=el('button','stagepill st-'+st[0],st[1]);b.title='Tag '+st[2];
+            b.onclick=function(e){e.stopPropagation(); m.stage=st[0]; m._ut=Date.now(); commit(); paintStage(); refreshGroupDone(); toast('Tagged '+st[2]); };
+            sb.appendChild(b);
+          });
+        } else {
+          const order=['before','during','after'], names={before:'BEFORE',during:'DURING',after:'AFTER'};
+          sb.classList.add('one');
+          const p=el('button','stagefull st-'+m.stage,names[m.stage]);p.title='Tap to change the stage';
+          p.onclick=function(e){e.stopPropagation(); var i=order.indexOf(m.stage); m.stage=order[(i+1)%order.length]; m._ut=Date.now(); commit(); paintStage(); refreshGroupDone(); toast('Now '+names[m.stage]); };
+          sb.appendChild(p);
+        }
+      };
+      paintStage();
       cell.appendChild(sb);
     }
     cell.onclick=()=>{ var g=cell.closest('.poolgrid'); var ids=g?Array.prototype.map.call(g.querySelectorAll('.poolcell[data-mid]'),function(c){return c.dataset.mid;}):[m.id]; openMediaPreview(m.id,m.name,ids); }; // swipe through this grid
