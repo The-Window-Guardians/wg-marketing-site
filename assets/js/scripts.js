@@ -6915,6 +6915,8 @@ function setViewAs(roleVal){
 function enterApp(){
   const gate=$('#gate');if(gate)gate.classList.add('hidden');
   const app=$('#app');if(app)app.style.display='block';
+  // On a fresh load, never leave an owner stuck "viewing as" a poster (Ruth) — snap back to your own dashboard.
+  try{ if(S.uid && !amPoster()){ var vr=userById(S.role); if(vr && vr.perm==='poster'){ S.role=S.uid; commit(); } } }catch(e){}
   const sel=$('#roleSel');
   if(sel){
     if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown
