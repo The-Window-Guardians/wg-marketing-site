@@ -25,7 +25,32 @@ const KNOWLEDGE =
 '• SIDING: vinyl (low cost & upkeep), insulated vinyl (adds R-value/comfort), fiber cement like James Hardie (fire-resistant, long warranty, painted finish), engineered wood. Payoffs: protects the home, big curb-appeal & resale boost, less energy loss.\n' +
 '• ROOFING: architectural/dimensional asphalt shingles (thicker, longer-lasting) vs basic 3-tab. The hidden stuff that prevents leaks & adds life: proper attic ventilation, ice-and-water shield, drip edge, and flashing done right.\n' +
 '• QUALITY CUES homeowners should look for in ANY install: clean caulk lines, proper flashing & insulation around the opening, level/plumb fit, full job-site cleanup, and BOTH a manufacturer warranty AND a labor warranty. Window Guardians also offers free in-home estimates and financing.\n' +
+'• HOME-STYLE FIT (Bucks County): colonials & farmhouses love double-hung with grids; mid-century & ranch homes suit sliders and big picture windows; casements shine over a kitchen sink and for max airflow; bays/bows add light and a sitting nook to a flat façade.\n' +
+'• GLASS PACKAGES: a good double-pane Low-E + argon is the everyday sweet spot; triple-pane with dual Low-E is the premium comfort & quiet upgrade for busy roads or very cold rooms; obscure/privacy glass for baths; tempered (safety) glass near doors, floors and tubs.\n' +
+'• READING THE LABEL: a U-factor around 0.30 or lower = strong insulation; SHGC tuned to exposure (lower on hot south/west faces); ENERGY STAR for the Northern climate zone is the bar to beat here in PA.\n' +
+'• WHERE PREMIUM REALLY LIVES (the install): full-frame vs pocket/insert installs, a proper sill pan & flashing, low-expansion foam in the gaps, exterior trim capped/wrapped in coil stock, and a dead-level, square, weather-tight set. Cheap installs skip these — it is exactly why a "new" window can still draft or leak.\n' +
+'• VALUE FRAMING: replacement windows & doors are consistently among the best resale ROI in remodeling; energy savings + comfort + curb appeal + quiet compound over the years; manufacturer + labor warranties and financing make it a low-risk upgrade.\n' +
 'TEACHING STYLE: when it adds value, fold in ONE genuinely useful nugget — a quick tip, a "did you know," a question worth considering (food for thought), or what to look for — drawn from the knowledge above. Natural and friendly, never a lecture or a spec dump, never fear-mongering. If a feature was NOT seen/stated for this job, frame it as general guidance ("Low-E glass is worth asking about…"), not as a claim about this job.\n';
+
+// ── BRAND VOICE / PERSONA ───────────────────────────────────────────────────
+// What makes Window Guardians sound different from every other window company.
+// Always present; the TONE control below decides how far toward "bold" to push.
+const PERSONA =
+'WINDOW GUARDIANS BRAND VOICE — this is what makes us different from every other window company:\n' +
+'We do NOT sound like a contractor. We sound like the wittiest, most confident neighbor on the block who also happens to be obsessed with craftsmanship. Every other company posts "Another beautiful install — call today!" — we never do that. Our posts make people stop scrolling, smirk, and remember the name.\n' +
+'HOW WE WRITE:\n' +
+'- Open with a HOOK that breaks the pattern — a twist, a confession, a personified jab at old windows. NEVER open with "We installed…".\n' +
+'- Clever and witty with a little bite; dry sarcasm is welcome. Premium, never corny, never crude.\n' +
+'- Short and punchy. Confidence over hype. Say less, hit harder.\n' +
+'- Recurring villains we tease (NEVER the customer): old windows & doors acting like they have a personality and bad manners; the years-long "I\'ll get to it next year" procrastination; the quiet neighbor-envy a great-looking house creates.\n' +
+'- Even the boldest post stays grounded — the real craftsmanship and product are the backbone under the joke.\n' +
+'BE BRAVE: a safe, forgettable, corporate-sounding post is a FAILURE. The only thing worse than a joke that swings and misses is a caption so boring no one finishes it. Take the swing. The hard guardrails below are the ONLY limits — everything inside them is fair game, so commit fully and surprise people.\n' +
+'HARD GUARDRAILS (never break, even as a joke):\n' +
+'- Never mention or joke about politics or religion.\n' +
+'- Never use profanity or crude/vulgar humor — clever, not dirty.\n' +
+'- Never name, mock, or compare against competitors.\n' +
+'- Never use fear-mongering or scare tactics ("your home is unsafe!"). Tease the inconvenience, never threaten.\n' +
+'- Never insult the homeowner. The joke is always the OLD windows or the situation, with the reader in on it.\n';
 
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
@@ -143,8 +168,10 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
-    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice') ? body.style : 'rewrite';
+    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold') ? body.style : 'rewrite';
     const brain    = String(body.brain    || '').slice(0, 7000); // the owner's distilled company facts (from brochures/site)
+    const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
+    const bold     = (body.bold === true || style === 'bold');   // push the witty/edgy persona for this post
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
     // ── INGEST: read a brochure (text already pulled from a PDF) or a website URL,
@@ -162,25 +189,33 @@ export async function onRequestPost(context) {
           return json({ error: 'fetch', message: 'Couldn’t reach that website. Check the link, or use the brochure PDF instead.' });
         }
       }
-      raw = raw.slice(0, 14000);
+      raw = raw.slice(0, 22000);
       if (raw.replace(/\s/g, '').length < 40)
         return json({ error: 'empty', message: 'Not enough readable text found' + (srcUrl ? ' — that may be a JavaScript-heavy site. Try the brochure PDF instead.' : ' in that file.') });
       const dsys =
-'You distill source material into a TIGHT fact sheet that a window/door/siding/roofing company (Window Guardians, Langhorne, Bucks County PA) will use when writing social media posts.\n' +
-'Pull ONLY concrete, reusable facts: product lines/series and their real names, frame & glass materials, notable features WITH the homeowner benefit of each, energy ratings (Low-E, U-factor, ENERGY STAR), warranty terms, financing, service area, and any brand voice or taglines.\n' +
-'Rules: keep only what the source actually states — never invent a number, brand, or claim. No marketing fluff. Short bullet lines. 160 words MAX. If the source is thin, return only what is really there.\n' +
-'Return ONLY valid JSON: {"name":"short source label","brief":"- fact\\n- fact\\n- fact"}';
+'You are a product-knowledge analyst building a DEEP, expert fact sheet on this window/door/siding/roofing product or brand, for Window Guardians (Langhorne, Bucks County PA) to use when writing social posts and answering homeowners. Become a genuine expert on this source — be thorough, not stingy.\n' +
+'Extract EVERY concrete, reusable fact, grouped under clear headers. Capture, wherever the source states them:\n' +
+'• Exact PRODUCT LINE / SERIES / MODEL names (real names, not generic).\n' +
+'• Construction & MATERIALS: frame type & chambers, weld/joinery, reinforcement, sash/balance hardware, weatherstripping, cores.\n' +
+'• GLASS & PERFORMANCE: glass-package names, pane count, Low-E type(s), gas fill, spacer type, and any NUMBERS — U-factor, SHGC, VT, air infiltration, STC/sound, ENERGY STAR zones, DP/structural ratings.\n' +
+'• FEATURES each paired with the homeowner BENEFIT (so a writer can turn a spec into a selling point).\n' +
+'• Options: colors/finishes, grille/grid styles, hardware, sizes/configurations.\n' +
+'• WARRANTY specifics (what is covered, length, transferability, glass breakage), certifications, awards, made-in.\n' +
+'• Ideal use-cases / what makes this product premium or distinctive vs. ordinary alternatives (no competitor names).\n' +
+'• Any brand voice, taglines, financing, or service notes.\n' +
+'Rules: keep ONLY what the source actually states — never invent a number, brand, claim, or rating. Skip pure fluff, but DO capture the meaningful detail; depth is the goal. Organize as short bullet lines under headers. Up to ~380 words. If the source is thin, return only what is really there.\n' +
+'Return ONLY valid JSON: {"name":"short source label","brief":"HEADER\\n- fact\\n- fact"}';
       const dusr = 'Source label: ' + (srcName || srcUrl || 'brochure') + '\n\nSource text:\n' + raw;
       const dr = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: model, max_tokens: 700, system: dsys, messages: [{ role: 'user', content: dusr }] })
+        body: JSON.stringify({ model: model, max_tokens: 1600, system: dsys, messages: [{ role: 'user', content: dusr }] })
       });
       if (!dr.ok) { var de = ''; try { de = await dr.text(); } catch (e) {} return json({ error: 'api', status: dr.status, message: friendlyApiErr(dr.status, de) }); }
       const dd = await dr.json();
       const dtext = (dd && dd.content && dd.content[0] && dd.content[0].text) || '';
       const dobj = extractObj(dtext) || {};
-      const brief = String(dobj.brief || dtext || '').slice(0, 1600).trim();
+      const brief = String(dobj.brief || dtext || '').slice(0, 3600).trim();
       if (!brief) return json({ error: 'empty', message: 'AI read it but couldn’t summarize — try again.' });
       return json({ brief: brief, name: String(dobj.name || srcName || srcUrl || 'Source').slice(0, 120) });
     }
@@ -196,6 +231,7 @@ export async function onRequestPost(context) {
 'Classify EACH attached photo as one of: "new_finished" (a brand-new, fully finished window/door — clean new frame, crisp caulk & trim, no tools or debris), "old_before" (an old/existing unit, or anything labeled BEFORE), "in_progress" (mid-install — gaps, tools, missing trim), or "other" (crew, interior, materials, wide exterior, landscaping, etc.).\n' +
 'The stage label above each photo is the source of truth when present: BEFORE => old_before, DURING => in_progress, AFTER => new_finished.\n' +
 'HARD RULE: you may credit a NEW install or a "finished/new" product ONLY if at least one attached photo is "new_finished". If none are, write a transformation, behind-the-scenes, or teaser caption instead — NEVER describe an old, existing, or unfinished window as the new install.\n' +
+'BEFORE-ONLY RULE: if EVERY photo is "old_before" (only before/old shots, no after, no during, no finished), set "warn" to "Before-only photos — needs an After or During shot before posting." and write only a teaser ("transformation coming…"). A before photo is fine alongside an after or a during shot, never on its own.\n' +
 'Set "warn" to a SHORT plain-English heads-up (e.g. "Photo 1 looks like the old/before window — written as a transformation; double-check before posting.") whenever the finished NEW product is NOT clearly shown. If a new finished product is clearly shown, set "warn" to "".\n')
 : '';
 
@@ -205,6 +241,17 @@ export async function onRequestPost(context) {
 brain + '\n' +
 '(Still: do not attach a specific feature to THIS job unless it was seen in the photo or stated in the notes — when unsure, speak generally.)\n')
 : '';
+
+    // The owner's voice notes + swipe file (examples they love) — style fuel, learn by example.
+    const VOICE_BLOCK = voice ?
+('OWNER’S VOICE & SWIPE FILE — brand-voice rules, angles, local flavor, offers, and example posts the owner LOVES. Match this energy, structure and attitude. Treat example posts as STYLE references — never copy them word-for-word, write fresh lines in the same spirit:\n' +
+voice + '\n')
+: '';
+
+    // TONE control — about 45% of generated posts come in bold; the rest stay warm/proud.
+    const TONE = bold
+      ? 'TONE: BOLD & a little UNHINGED — this is the post people screenshot and text to a friend. Think Liquid Death / Old Spice energy: absurd, unexpected, gleefully dramatic, a hook that makes people do a double-take. Personify the old windows, invent a tiny over-the-top scenario, commit to a ridiculous bit — go further than feels comfortable. Do NOT hedge, do NOT sound like a company, do NOT play it safe; a tame post is a failure. BUT land the plane: every wild swing still ties back to the real craftsmanship/product by the end — chaos with a point, not chaos for its own sake. That balance (unhinged + actually about great windows) is the whole game. Stay 100% inside the hard guardrails — that is the ONE rule; everything inside them is fair game. Short, punchy, fearless. Make at least 2 of the 3 options swing hard; one may be a touch more grounded.\n'
+      : 'TONE: keep the warm, proud, confident voice with a light witty touch — clean and on-brand. Still never the boring "We installed…" opener; give it a little spark.\n';
 
     var sys, usr;
     if (mode === 'hashtags') {
@@ -227,15 +274,16 @@ brain + '\n' +
       sys =
 'You are the social media manager for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 'You are shown one or more PHOTOS of a real job, plus an optional note from the owner. Look closely at the photos and write a complete, ready-to-post social post.\n' +
-'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
-'You are also a genuine exterior-remodeling expert. Where it fits, give the homeowner real value — a tip, education, or food for thought.\n' +
+PERSONA +
 KNOWLEDGE +
 BRAIN_BLOCK +
+VOICE_BLOCK +
+TONE +
 'Rules:\n' +
 VISION_RULE +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
-'- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle: one shows off the work, one teaches something useful (a tip / did-you-know / what-to-look-for from the product knowledge), one is warmer or invites a question. Education must be general guidance unless the feature was actually seen or stated.\n' +
+'- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle — but ALL in the brand voice with a pattern-breaking hook (never the boring "We installed…" opener). Follow the TONE above for how bold to go. Lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy) when they fit.\n' +
 '- hashtags: ONE set of 8 to 12 relevant tags — always include #WindowGuardians and a local tag if a town is given; match what the photos actually show.\n' +
 '- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
 '- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
@@ -254,13 +302,16 @@ VISION_RULE +
           ? '- MODE: FUNNY. Write a light, playful, genuinely funny caption (a wink, a relatable joke about old drafty windows, etc.) — still on-brand and tasteful, not corny or unprofessional. 1 to 3 short sentences.'
         : style === 'advice'
           ? '- MODE: ADVICE / EDUCATE. Write a helpful, expert caption that teaches the homeowner something real and useful — a tip, a "did you know," what to look for, or food for thought — drawn from the product knowledge above. Lead with the value, tie it to the post, end with a soft invitation to ask or learn more. 2 to 4 sentences. General guidance only unless a feature was actually seen/stated; never fabricate job specifics.'
+        : style === 'bold'
+          ? '- MODE: BOLD. Full witty/edgy brand voice — a scroll-stopping head-turner. Open with a pattern-breaking hook, lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy), dry sarcasm welcome. Clever, never crude; confident, never corny. 1 to 3 punchy sentences, all inside the hard guardrails.'
           : '- MODE: REWRITE. Produce a clean, polished, ready-to-post caption. Keep it tight: 1 to 3 short sentences.';
       sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
-'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use.\n' +
+PERSONA +
 'You are also a genuine exterior-remodeling expert who can teach, guide, and give homeowners food for thought when it adds value.\n' +
 KNOWLEDGE +
 BRAIN_BLOCK +
+VOICE_BLOCK +
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 VISION_RULE +

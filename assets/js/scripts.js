@@ -2644,9 +2644,14 @@ async function postImagesB64(p,limit){
 /* ===== AI COMPANY BRAIN — owner feeds brochures (PDF) + websites; we distill each to a
    fact sheet and ride it along on every AI call so captions name real products/features. ===== */
 function brainSrcList(){ return (ST&&Array.isArray(ST.brainSrc))?ST.brainSrc:[]; }
-function brainText(){ try{ return brainSrcList().map(function(s){ return (s&&s.brief)?((s.name?(s.name+':\n'):'')+s.brief):''; }).filter(Boolean).join('\n\n').slice(0,6000); }catch(e){ return ''; } }
-function brainAdd(kind,name,brief){
-  var s={id:'br_'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:kind||'note',name:(name||'').slice(0,120),brief:(brief||'').slice(0,1700),_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()};
+var VOICE_CATS={voice:1,swipe:1,angle:1,local:1,offer:1}; // categories that feed the VOICE/style channel (everything else = product facts)
+function brainCat(s){ return (s&&s.cat)||((s&&(s.kind==='pdf'||s.kind==='url'))?'product':'product'); } // legacy items = product
+// Product-fact channel: brochures/sites + product notes (what the AI states as true about WG products)
+function brainText(){ try{ return brainSrcList().filter(function(s){ return s&&s.brief&&!VOICE_CATS[brainCat(s)]; }).map(function(s){ return (s.name?(s.name+':\n'):'')+s.brief; }).join('\n\n').slice(0,8000); }catch(e){ return ''; } }
+// Voice/style channel: brand rules, swipe file, angles, local flavor, offers
+function voiceText(){ try{ return brainSrcList().filter(function(s){ return s&&s.brief&&VOICE_CATS[brainCat(s)]; }).map(function(s){ return (s.name?(s.name+':\n'):'')+s.brief; }).join('\n\n').slice(0,6000); }catch(e){ return ''; } }
+function brainAdd(kind,name,brief,cat){
+  var s={id:'br_'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:kind||'note',cat:cat||'product',name:(name||'').slice(0,120),brief:(brief||'').slice(0,3600),_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()};
   brainSrcList().unshift(s); commit(); return s;
 }
 function brainRemove(id){ var a=brainSrcList(); var i=a.findIndex(function(s){return s&&s.id===id;}); if(i>=0){ a.splice(i,1); commit(); } }
@@ -2682,7 +2687,7 @@ async function aiCaptionLive(p,style){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),images:images})
   });
   return await r.json();
 }
@@ -2694,13 +2699,13 @@ async function aiHashtagsLive(p){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),images:images})
+    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),images:images})
   });
   return await r.json();
 }
 /* ONE-TAP FULL POST: Claude looks at the photos and returns caption options + hashtags + category
    in a single call. Returns {captions:[...],hashtags:'...',category:'...'} or {error,message}. */
-async function aiFullPostLive(p){
+async function aiFullPostLive(p,bold){
   var text=(p.caption||'').trim();
   var ctx=text+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
@@ -2708,7 +2713,7 @@ async function aiFullPostLive(p){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),images:images})
+    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),bold:!!bold,images:images})
   });
   return await r.json();
 }
@@ -2740,12 +2745,20 @@ async function buildMyWeek(count){
   if(!ok)return 0;
   toast('🪄 Building '+target+' post'+(target>1?'s':'')+'… give it a few seconds');
   const cw=currentWeek(); const wk=cw?cw.id:1;
-  let made=0, warned=0;
+  let made=0, warned=0, skippedBefore=0;
   for(let gi=0; gi<groups.length && made<target; gi++){
     const g=groups[gi];
-    const pics=orderByStage(g.items).slice(0,3); // up to 3 photos per post, Before→After order
+    let pics=orderByStage(g.items).slice(0,3); // up to 3 photos per post, Before→After order
+    // NEVER post a before-only set. A 'before' is fine WITH an after/during, but not on its own.
+    const stageOf=m=>(m.stage||m.role||'');
+    if(pics.length && pics.every(m=>stageOf(m)==='before')){
+      const others=g.items.filter(m=>stageOf(m)==='after'||stageOf(m)==='during'); // try to rescue with an after/during from the same job
+      if(others.length){ pics=orderByStage([others[0]].concat(g.items.filter(m=>stageOf(m)==='before'))).slice(0,3); }
+      else { skippedBefore++; continue; } // no after/during anywhere in the job → skip, don't draft a before-only post
+    }
+    const bold=Math.random()<0.45; // ~45% of generated posts come in the bold/witty voice
     const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:(g.title||''),media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))}; // feed the job TITLE to the AI as context
-    let d=null; try{ d=await aiFullPostLive(temp); }catch(e){ d=null; }
+    let d=null; try{ d=await aiFullPostLive(temp,bold); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
       const np=newPost(wk);
       np.media=pics.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
@@ -2755,13 +2768,14 @@ async function buildMyWeek(count){
       np.caption=d.captions[0];
       np.hashtags=d.hashtags||'';
       if(d.category)np.pillar=d.category;
-      np.aiDrafted=true;
+      np.aiDrafted=true; if(bold)np.aiBold=true;
       if(d.warn){np.aiWarn=d.warn;warned++;}   // flag drafts where the photos may be old/before/in-progress
       savePost(np);
       poolSetStatus(pics.map(m=>m.id),'used');
       made++;
     }
   }
+  if(skippedBefore&&!made)toast('Skipped '+skippedBefore+' job'+(skippedBefore>1?'s':'')+' with only Before photos — add an After (or During) shot, then try again.');
   commit(); if(typeof rerenderCal==='function')rerenderCal();
   toast(made?('✨ Drafted '+made+' post'+(made>1?'s':'')+(warned?(' · ⚠️ '+warned+' need'+(warned>1?'':'s')+' a photo double-check'):'')+' — review them in “Your posts”'):'Couldn’t draft right now — check the AI is set up, then try again.');
   return made;
@@ -2949,6 +2963,13 @@ let S=Store.load()||freshState();
     if(!Array.isArray(sl.pool))sl.pool=[];
     if(!Array.isArray(sl.bajobs))sl.bajobs=[];
     if(!Array.isArray(sl.brainSrc))sl.brainSrc=[];   // AI "company brain": distilled facts from brochures/websites
+    if(id==='social' && !sl._voiceSeeded){           // one-time: seed the brand-voice swipe file + rules so the witty/edgy AI has examples
+      sl._voiceSeeded=true; var _t=Date.now(), _n=0; var _seed=function(cat,name,brief){ sl.brainSrc.push({id:'br_seed'+(_n++)+'_'+_t.toString(36),kind:'note',cat:cat,name:name,brief:brief,_ut:_t,_ct:_t,addedAt:_t}); };
+      _seed('voice','Brand voice rules','- Clever & witty, premium, confident. Push the envelope ~40-50% of posts; rest stay warm/proud.\n- Bold posts can get a little UNHINGED (Liquid Death / Old Spice energy) but always land back on the real craftsmanship.\n- Sarcasm welcome. Pattern-break the opener — never "We installed…".\n- NEVER: politics/religion, profanity/crude, naming or knocking competitors, fear-mongering. Never insult the homeowner — the joke is the OLD windows or the situation.');
+      _seed('angle','Our villains / go-to angles','- Old, ugly, drafty windows & doors acting like they have a personality and bad manners.\n- The years-long "I’ll get to it next year" procrastination.\n- Quiet neighbor-envy: a great-looking house quietly outshining the block.\n- Energy bills escaping through old windows.');
+      _seed('swipe','Swipe file — posts we love (style, do not copy verbatim)',
+        'A. Old windows with a personality\n- Your windows have been letting strangers (cold air, street noise, that one neighbor’s leaf blower) walk right in. No invitation. No manners. Let’s change the locks.\n- Breaking up with your old windows isn’t dramatic. They started it — every single draft was a red flag.\n- Your 1990s windows aren’t "vintage." They’re just tired. Let them retire with dignity.\n\nB. Procrastination, roasted\n- "We’ll do the windows next year." — you, every year, since a different president was in office.\n- The window’s been on your list so long it’s basically a family member at this point.\n\nC. Neighbor envy\n- New windows: because nothing motivates the whole block to "look into it" like one house suddenly looking that good.\n- We don’t start neighborhood rivalries. We just install the windows that accidentally do.\n- Your house is about to become the reason three neighbors Google us this week.\n\nE. Energy bills\n- Funding your local power company through your drafty windows is very generous. They say thank you. We’d rather you keep the money.\n- Your heat is escaping faster than guests at a timeshare presentation. Seal the exits.\n\nF. Confident premium flex\n- We don’t do "good enough." Good enough is what you currently have, and look how that’s going.\n- Anyone can put a window in a hole. We make it look like the house was born with it.\n- Measured twice. Installed once. Admired daily.\n\nH. Pattern-interrupt hooks\n- "Plot twist: the draft was coming from inside the house."\n- "POV: your energy bill just felt a cold breeze of fear."\n- "Things your old windows are great at: nothing. Here’s the fix."\n\nI. One-liners\n- Windows so clean the birds filed a complaint.\n- Drafts are for fantasy football. Not your living room.\n- Old window: gone. Regret: also gone.\n\nJ. Seasonal\n- Winter’s coming, and your windows are not on the guest list this year.\n- Spring cleaning idea: replace the thing you’ve been cleaning around for a decade.');
+    }
     // drop any base64 video thumbs an earlier build wrote into the pool — they bloat localStorage (now cached in-memory via VTHUMB)
     if(Array.isArray(sl.pool))sl.pool.forEach(m=>{if(m&&typeof m.thumb==='string'&&m.thumb.slice(0,5)==='data:')delete m.thumb;});
   });
@@ -5317,35 +5338,54 @@ function aiBrainCard(){
     card.appendChild(pdfRow);
     card.appendChild(status);
 
-    // ── What the AI knows (sources list) ────────────
+    // ── What the AI knows (two lists: products + voice/style) ────────────
+    const CATICON={voice:'🗣️',swipe:'✨',angle:'🎯',local:'📍',offer:'🏷️',product:'📝'};
+    const iconFor=(s)=> s.kind==='pdf'?'📄':s.kind==='url'?'🌐':(CATICON[brainCat(s)]||'📝');
     const list=el('div',''); list.style.marginTop='6px';
     const srcs=brainSrcList();
-    if(!srcs.length){
-      const empty=el('div',''); empty.style.cssText='background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px;font-size:13px;color:var(--ink2)';
-      empty.innerHTML='Nothing added yet. The AI is using general window/door knowledge. Add a brochure or your website to make it speak about <b>your</b> products.';
-      list.appendChild(empty);
-    } else {
+    const products=srcs.filter(s=>!VOICE_CATS[brainCat(s)]);
+    const voices=srcs.filter(s=>VOICE_CATS[brainCat(s)]);
+    const renderGroup=(title,items)=>{
+      const wrap=el('div',''); wrap.style.marginTop='12px';
       const hdr=el('div',''); hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px';
-      hdr.appendChild(el('b','',`What the AI knows (${srcs.length} source${srcs.length>1?'s':''})`)).style.fontSize='13px';
-      // one-click expand/collapse ALL the fact sheets
+      hdr.appendChild(el('b','',`${title} (${items.length})`)).style.fontSize='13px';
       const allBtn=el('button','linklike','Expand all'); allBtn.style.fontSize='12px';
-      allBtn.onclick=()=>{ const ds=list.querySelectorAll('details.brainsrc'); const anyClosed=Array.prototype.some.call(ds,d=>!d.open); ds.forEach(d=>d.open=anyClosed); allBtn.textContent=anyClosed?'Collapse all':'Expand all'; };
-      hdr.appendChild(allBtn); list.appendChild(hdr);
-      srcs.forEach(s=>{
-        const d=el('details','brainsrc'); // collapsed by default — click the header to read the fact sheet
+      allBtn.onclick=()=>{ const ds=wrap.querySelectorAll('details.brainsrc'); const anyClosed=Array.prototype.some.call(ds,d=>!d.open); ds.forEach(d=>d.open=anyClosed); allBtn.textContent=anyClosed?'Collapse all':'Expand all'; };
+      if(items.length)hdr.appendChild(allBtn); wrap.appendChild(hdr);
+      items.forEach(s=>{
+        const d=el('details','brainsrc'); // collapsed by default — click the header to read it
         d.style.cssText='border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px';
         const sum=el('summary',''); sum.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;list-style:none';
-        sum.appendChild(el('span','',`${KIND[s.kind]||'📝'} <b>${esc(s.name||'Source')}</b>`));
+        sum.appendChild(el('span','',`${iconFor(s)} <b>${esc(s.name||'Source')}</b>`));
         const del=el('button','btn-set danger','🗑 Remove'); del.style.cssText='padding:4px 10px;font-size:12.5px';
         del.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); brainRemove(s.id); draw(); };
         sum.appendChild(del); d.appendChild(sum);
         const pre=el('div','',esc(s.brief||''));
         pre.style.cssText='white-space:pre-wrap;font-size:12.5px;color:var(--ink2);margin-top:8px;line-height:1.45';
-        d.appendChild(pre);
-        list.appendChild(d);
+        d.appendChild(pre); wrap.appendChild(d);
       });
+      return wrap;
+    };
+    if(!srcs.length){
+      const empty=el('div',''); empty.style.cssText='background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px;font-size:13px;color:var(--ink2)';
+      empty.innerHTML='Nothing added yet. The AI is using general window/door knowledge. Add a brochure or website above to teach it <b>your</b> products, and add voice notes below to shape its personality.';
+      list.appendChild(empty);
+    } else {
+      if(products.length)list.appendChild(renderGroup('🧠 Products the AI knows',products));
+      if(voices.length)list.appendChild(renderGroup('🎤 Voice & style',voices));
     }
     card.appendChild(list);
+
+    // ── Add a voice / style note (saveable, grows over time) ─────────────
+    const noteWrap=el('div',''); noteWrap.style.cssText='margin-top:16px;border-top:1px solid var(--line);padding-top:12px';
+    noteWrap.appendChild(el('div','',`<b style="font-size:13px">✍️ Add a voice / style note</b> <span class="muted" style="font-size:12px">— teach the AI your personality; add more anytime</span>`));
+    const catSel=el('select'); [['swipe','✨ Swipe example (a post you love)'],['voice','🗣️ Brand voice rule'],['angle','🎯 Villain / angle'],['local','📍 Local flavor'],['offer','🏷️ Offer / promo'],['product','📝 Product fact (manual)']].forEach(o=>{const op=document.createElement('option');op.value=o[0];op.textContent=o[1];catSel.appendChild(op);});
+    catSel.style.cssText='padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin:8px 0;display:block';
+    const ta=el('textarea'); ta.rows=3; ta.placeholder='Type a post you love, a voice rule, an angle, a local detail, or an offer…'; ta.style.cssText='width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;box-sizing:border-box;font-family:inherit';
+    const saveBtn=el('button','btn-set primary','＋ Save note'); saveBtn.style.marginTop='8px';
+    saveBtn.onclick=()=>{ const txt=(ta.value||'').trim(); if(!txt){setStatus('Type something to save first.','err');return;} const cat=catSel.value; const nm=({swipe:'Swipe example',voice:'Voice rule',angle:'Angle',local:'Local flavor',offer:'Offer',product:'Product note'})[cat]||'Note'; brainAdd('note',nm,txt,cat); ta.value=''; setStatus('✅ Saved — the AI will use this.','ok'); draw(); };
+    noteWrap.appendChild(catSel); noteWrap.appendChild(ta); noteWrap.appendChild(saveBtn);
+    card.appendChild(noteWrap);
   };
   draw();
   return card;
@@ -6713,6 +6753,7 @@ function openComposer(idOrPost,isNew){
   const caElab=el('button','btn-set ai-draft','🤖 AI elaborate');caElab.title='Expands it with more detail and a bit of story — no made-up facts. ~1¢';
   const caFunny=el('button','btn-set ai-draft','🤖 AI funny');caFunny.title='A light, playful, funny take — still on-brand. ~1¢';
   const caAdvice=el('button','btn-set ai-draft','💡 AI advice');caAdvice.title='An expert, educational take — a tip, "did you know," or food for thought for the homeowner. ~1¢';
+  const caBold=el('button','btn-set ai-draft','🔥 AI bold');caBold.title='Witty, edgy, scroll-stopping take in the Window Guardians voice — clever, never crude. ~1¢';
   let aiBusy=false;
   const runAI=async(style,workingMsg)=>{
     if(aiBusy)return;
@@ -6720,9 +6761,9 @@ function openComposer(idOrPost,isNew){
     p.caption=ca.value; // use the latest text
     caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
-    aiBusy=true;[caRewrite,caElab,caFunny,caAdvice].forEach(x=>x.disabled=true);
+    aiBusy=true;[caRewrite,caElab,caFunny,caAdvice,caBold].forEach(x=>x.disabled=true);
     let d=null; try{ d=await aiCaptionLive(p,style); }catch(e){ d={error:'net'}; }
-    aiBusy=false;[caRewrite,caElab,caFunny,caAdvice].forEach(x=>x.disabled=false);
+    aiBusy=false;[caRewrite,caElab,caFunny,caAdvice,caBold].forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
@@ -6735,6 +6776,7 @@ function openComposer(idOrPost,isNew){
   caElab.onclick=()=>runAI('elaborate','🤖 Claude is elaborating…');
   caFunny.onclick=()=>runAI('funny','🤖 Claude is having fun…');
   caAdvice.onclick=()=>runAI('advice','💡 Claude is sharing expert advice…');
+  caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…');
   // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
   const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
   caFull.onclick=async()=>{
@@ -6759,7 +6801,7 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
-  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(el('span','aicost','~1¢ per tap'));
+  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(el('span','aicost','~1¢ per tap'));
   cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
