@@ -5325,18 +5325,24 @@ function aiBrainCard(){
       empty.innerHTML='Nothing added yet. The AI is using general window/door knowledge. Add a brochure or your website to make it speak about <b>your</b> products.';
       list.appendChild(empty);
     } else {
-      list.appendChild(el('div','',`<b style="font-size:13px">What the AI knows (${srcs.length} source${srcs.length>1?'s':''})</b>`));
+      const hdr=el('div',''); hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px';
+      hdr.appendChild(el('b','',`What the AI knows (${srcs.length} source${srcs.length>1?'s':''})`)).style.fontSize='13px';
+      // one-click expand/collapse ALL the fact sheets
+      const allBtn=el('button','linklike','Expand all'); allBtn.style.fontSize='12px';
+      allBtn.onclick=()=>{ const ds=list.querySelectorAll('details.brainsrc'); const anyClosed=Array.prototype.some.call(ds,d=>!d.open); ds.forEach(d=>d.open=anyClosed); allBtn.textContent=anyClosed?'Collapse all':'Expand all'; };
+      hdr.appendChild(allBtn); list.appendChild(hdr);
       srcs.forEach(s=>{
-        const row=el('div',''); row.style.cssText='border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px';
-        const head=el('div',''); head.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px';
-        head.appendChild(el('span','',`${KIND[s.kind]||'📝'} <b>${esc(s.name||'Source')}</b>`));
+        const d=el('details','brainsrc'); // collapsed by default — click the header to read the fact sheet
+        d.style.cssText='border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px';
+        const sum=el('summary',''); sum.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;list-style:none';
+        sum.appendChild(el('span','',`${KIND[s.kind]||'📝'} <b>${esc(s.name||'Source')}</b>`));
         const del=el('button','btn-set danger','🗑 Remove'); del.style.cssText='padding:4px 10px;font-size:12.5px';
-        del.onclick=()=>{ brainRemove(s.id); draw(); };
-        head.appendChild(del); row.appendChild(head);
-        const pre=el('div','',esc((s.brief||'').slice(0,600)+((s.brief||'').length>600?'…':'')));
-        pre.style.cssText='white-space:pre-wrap;font-size:12.5px;color:var(--ink2);margin-top:6px;line-height:1.45';
-        row.appendChild(pre);
-        list.appendChild(row);
+        del.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); brainRemove(s.id); draw(); };
+        sum.appendChild(del); d.appendChild(sum);
+        const pre=el('div','',esc(s.brief||''));
+        pre.style.cssText='white-space:pre-wrap;font-size:12.5px;color:var(--ink2);margin-top:8px;line-height:1.45';
+        d.appendChild(pre);
+        list.appendChild(d);
       });
     }
     card.appendChild(list);
