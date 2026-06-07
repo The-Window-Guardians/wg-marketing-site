@@ -2641,6 +2641,39 @@ async function postImagesB64(p,limit){
   var out=[]; for(var k=0;k<media.length;k++){ var pm=(typeof socPool==='function')?(socPool().find(function(x){return x.id===media[k].id;})||{}):{}; var stg=media[k].role||pm.stage||pm.role||''; var b=await mediaToB64(media[k].id,640); if(b){ b.role=(stg==='before'||stg==='after'||stg==='during')?stg:''; out.push(b); } } // pass the stage (Before/During/After) so the AI never calls an OLD/unfinished window the new install
   return out;
 }
+/* ===== AI COMPANY BRAIN — owner feeds brochures (PDF) + websites; we distill each to a
+   fact sheet and ride it along on every AI call so captions name real products/features. ===== */
+function brainSrcList(){ return (ST&&Array.isArray(ST.brainSrc))?ST.brainSrc:[]; }
+function brainText(){ try{ return brainSrcList().map(function(s){ return (s&&s.brief)?((s.name?(s.name+':\n'):'')+s.brief):''; }).filter(Boolean).join('\n\n').slice(0,6000); }catch(e){ return ''; } }
+function brainAdd(kind,name,brief){
+  var s={id:'br_'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:kind||'note',name:(name||'').slice(0,120),brief:(brief||'').slice(0,1700),_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()};
+  brainSrcList().unshift(s); commit(); return s;
+}
+function brainRemove(id){ var a=brainSrcList(); var i=a.findIndex(function(s){return s&&s.id===id;}); if(i>=0){ a.splice(i,1); commit(); } }
+// Pull readable text out of a PDF in the browser (no upload, no typing). Loads pdf.js on first use.
+function loadPdfJs(){
+  if(window.pdfjsLib&&window.pdfjsLib.getDocument)return Promise.resolve(window.pdfjsLib);
+  return new Promise(function(res,rej){
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=function(){ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} res(window.pdfjsLib); };
+    s.onerror=function(){ rej(new Error('Couldn’t load the PDF reader — check your connection.')); };
+    document.head.appendChild(s);
+  });
+}
+async function pdfToText(file){
+  var lib=await loadPdfJs();
+  var buf=await file.arrayBuffer();
+  var pdf=await lib.getDocument({data:buf}).promise;
+  var n=Math.min(pdf.numPages||1,40), parts=[];
+  for(var i=1;i<=n;i++){ try{ var pg=await pdf.getPage(i); var tc=await pg.getTextContent(); parts.push(tc.items.map(function(it){return it.str;}).join(' ')); }catch(e){} }
+  return parts.join('\n').replace(/[ \t]+/g,' ').trim();
+}
+// Send a source (website URL, or text pulled from a PDF) to the backend → distilled fact sheet.
+async function brainIngest(payload){
+  var r=await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({mode:'ingest'},payload))});
+  return await r.json();
+}
 async function aiCaptionLive(p,style){
   var text=(p.caption||'').trim();
   var ctx=text+' '+(p.jobNote||'');
@@ -2649,7 +2682,7 @@ async function aiCaptionLive(p,style){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),images:images})
   });
   return await r.json();
 }
@@ -2661,7 +2694,7 @@ async function aiHashtagsLive(p){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,images:images})
+    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),images:images})
   });
   return await r.json();
 }
@@ -2675,7 +2708,7 @@ async function aiFullPostLive(p){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,images:images})
+    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),images:images})
   });
   return await r.json();
 }
@@ -2878,7 +2911,7 @@ function freshSlice(prog){
   const tasks={};
   prog.weeks.forEach(w=>prog.order.forEach(r=>{ if(w.roles[r]) tasks[w.id+'.'+r]={steps:{},roll:false,note:''} }));
   const kpis={}; prog.kpis.forEach(k=>kpis[k.id]=0);
-  return {tasks,kpis,deliv:{},posts:[],pool:[],bajobs:[]};
+  return {tasks,kpis,deliv:{},posts:[],pool:[],bajobs:[],brainSrc:[]};
 }
 function freshState(){
   const prog={}; Object.keys(PROGRAMS).forEach(id=>prog[id]=freshSlice(PROGRAMS[id]));
@@ -2910,6 +2943,7 @@ let S=Store.load()||freshState();
     if(!Array.isArray(sl.posts))sl.posts=[];
     if(!Array.isArray(sl.pool))sl.pool=[];
     if(!Array.isArray(sl.bajobs))sl.bajobs=[];
+    if(!Array.isArray(sl.brainSrc))sl.brainSrc=[];   // AI "company brain": distilled facts from brochures/websites
     // drop any base64 video thumbs an earlier build wrote into the pool — they bloat localStorage (now cached in-memory via VTHUMB)
     if(Array.isArray(sl.pool))sl.pool.forEach(m=>{if(m&&typeof m.thumb==='string'&&m.thumb.slice(0,5)==='data:')delete m.thumb;});
   });
@@ -2959,7 +2993,7 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia){
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets','hashGroups'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets','hashGroups','brainSrc'];
 /* Stamp a permanent creation time on every mergeable record so deletes/merges are reliable
    for base36 ids too. Cheap; runs in commit() before each save, so a record always carries
    _ct before it can ever reach the shared doc. */
@@ -5220,8 +5254,95 @@ function storageHealthCard(){
     +'<p class="muted" style="font-size:12px;margin:8px 0 0">'+note+'<br>Photos &amp; videos don’t count — they’re stored separately.</p>';
   return c;
 }
+/* AI Company Brain card — owner feeds brochures (PDF) + websites; each is distilled to a fact
+   sheet the AI uses in every caption. No typing required. */
+function aiBrainCard(){
+  const card=el('div','card pad'); card.style.marginBottom='16px';
+  const KIND={pdf:'📄',url:'🌐',note:'📝'};
+  let busy=false;
+  const draw=()=>{
+    card.innerHTML='';
+    card.appendChild(el('div','sec-title',`<div class="chip" style="background:var(--blue-soft)">🧠</div><div><h3>Train the AI — Company brain</h3><small>Feed it your brochures &amp; websites; it writes accurate, expert posts</small></div>`));
+    const intro=el('p','',`Add your window/door <b>brochures (PDF)</b> and your <b>website</b>. The AI reads each one, boils it down to a short fact sheet, and uses it in every caption — so it can name your real product lines, features, warranty and financing. You don’t type anything.`);
+    intro.style.cssText='color:var(--ink2);font-size:13.5px;margin:2px 0 12px'; card.appendChild(intro);
+
+    // ── Add a website ───────────────────────────────
+    const urlRow=el('div',''); urlRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px';
+    const urlIn=el('input'); urlIn.type='url'; urlIn.placeholder='Paste a website link (yours or a manufacturer’s)…';
+    urlIn.style.cssText='flex:1;min-width:200px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px';
+    const urlBtn=el('button','btn-set primary','🌐 Add website');
+    const status=el('div',''); status.style.cssText='font-size:13px;color:var(--ink2);margin:4px 0 10px;min-height:0';
+    const setStatus=(msg,kind)=>{ status.textContent=msg||''; status.style.color=kind==='err'?'var(--red)':kind==='ok'?'var(--green)':'var(--ink2)'; };
+    const lock=(on)=>{ busy=on; urlBtn.disabled=on; pdfBtn.disabled=on; };
+    urlBtn.onclick=async()=>{
+      const u=(urlIn.value||'').trim(); if(!u){setStatus('Paste a link first.','err');return;}
+      if(!/^https?:\/\//i.test(u)){setStatus('Link should start with http:// or https://','err');return;}
+      if(busy)return; lock(true); setStatus('🌐 Reading the page and distilling it… (a few seconds)');
+      let d=null; try{ d=await brainIngest({url:u,sourceName:u.replace(/^https?:\/\//,'').slice(0,60)}); }catch(e){ d={error:'net',message:'Network error.'}; }
+      lock(false);
+      if(d&&d.brief){ brainAdd('url',d.name||u,d.brief); urlIn.value=''; setStatus('✅ Added — the AI now knows this.','ok'); draw(); }
+      else { setStatus('⚠️ '+((d&&d.message)||'Couldn’t read that page. Try the brochure PDF instead.'),'err'); }
+    };
+    urlRow.appendChild(urlIn); urlRow.appendChild(urlBtn); card.appendChild(urlRow);
+
+    // ── Upload brochures (PDF) ──────────────────────
+    const pdfRow=el('div',''); pdfRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:2px';
+    const pdfIn=el('input'); pdfIn.type='file'; pdfIn.accept='application/pdf,.pdf'; pdfIn.multiple=true; pdfIn.style.display='none';
+    const pdfBtn=el('button','btn-set','📄 Upload brochures (PDF)');
+    pdfBtn.onclick=()=>{ if(!busy)pdfIn.click(); };
+    pdfIn.onchange=async()=>{
+      const files=Array.prototype.slice.call(pdfIn.files||[]); pdfIn.value='';
+      if(!files.length)return; if(busy)return; lock(true);
+      let added=0;
+      for(let i=0;i<files.length;i++){ const f=files[i];
+        setStatus('📄 Reading “'+f.name+'” ('+(i+1)+' of '+files.length+')…');
+        try{
+          const txt=await pdfToText(f);
+          if(!txt||txt.replace(/\s/g,'').length<40){ setStatus('⚠️ “'+f.name+'” had no readable text (it may be a scanned image). Skipped.','err'); continue; }
+          const d=await brainIngest({rawText:txt,sourceName:f.name.replace(/\.pdf$/i,'').slice(0,80)});
+          if(d&&d.brief){ brainAdd('pdf',d.name||f.name,d.brief); added++; }
+          else { setStatus('⚠️ '+((d&&d.message)||('Couldn’t summarize “'+f.name+'”.')),'err'); }
+        }catch(e){ setStatus('⚠️ Couldn’t read “'+f.name+'”. '+((e&&e.message)||''),'err'); }
+      }
+      lock(false);
+      if(added){ setStatus('✅ Added '+added+' brochure'+(added>1?'s':'')+' — the AI now knows '+(added>1?'them':'it')+'.','ok'); draw(); }
+    };
+    pdfRow.appendChild(pdfBtn); pdfRow.appendChild(pdfIn);
+    pdfRow.appendChild(el('span','aicost','PDFs read on this device · websites + summaries ~1¢ each'));
+    card.appendChild(pdfRow);
+    card.appendChild(status);
+
+    // ── What the AI knows (sources list) ────────────
+    const list=el('div',''); list.style.marginTop='6px';
+    const srcs=brainSrcList();
+    if(!srcs.length){
+      const empty=el('div',''); empty.style.cssText='background:var(--bg2,#f6f7f9);border-radius:10px;padding:12px;font-size:13px;color:var(--ink2)';
+      empty.innerHTML='Nothing added yet. The AI is using general window/door knowledge. Add a brochure or your website to make it speak about <b>your</b> products.';
+      list.appendChild(empty);
+    } else {
+      list.appendChild(el('div','',`<b style="font-size:13px">What the AI knows (${srcs.length} source${srcs.length>1?'s':''})</b>`));
+      srcs.forEach(s=>{
+        const row=el('div',''); row.style.cssText='border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px';
+        const head=el('div',''); head.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px';
+        head.appendChild(el('span','',`${KIND[s.kind]||'📝'} <b>${esc(s.name||'Source')}</b>`));
+        const del=el('button','btn-set danger','🗑 Remove'); del.style.cssText='padding:4px 10px;font-size:12.5px';
+        del.onclick=()=>{ brainRemove(s.id); draw(); };
+        head.appendChild(del); row.appendChild(head);
+        const pre=el('div','',esc((s.brief||'').slice(0,600)+((s.brief||'').length>600?'…':'')));
+        pre.style.cssText='white-space:pre-wrap;font-size:12.5px;color:var(--ink2);margin-top:6px;line-height:1.45';
+        row.appendChild(pre);
+        list.appendChild(row);
+      });
+    }
+    card.appendChild(list);
+  };
+  draw();
+  return card;
+}
+
 function viewSettings(v){
   v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, storage, your data backup, and team logins.</p>`));
+  if(isOwner())v.appendChild(aiBrainCard());
 
   const proj=el('div','card pad');proj.style.marginBottom='16px';
   proj.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📋</div><div><h3>This project</h3><small>Project 1 of your Marketing OS</small></div></div>

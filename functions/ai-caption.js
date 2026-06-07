@@ -64,6 +64,19 @@ function buildContent(images, usrText) {
   return content;
 }
 
+// Strip a web page down to readable text (drop scripts, styles, tags, entities).
+function htmlToText(html) {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&#\d+;/g, ' ').replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Pull a JSON object out of the model text (clean, or buried in prose).
 function extractObj(text) {
   if (!text) return null;
@@ -129,9 +142,48 @@ export async function onRequestPost(context) {
     const town     = String(body.town     || '').slice(0, 80);
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
-    const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : 'caption';
+    const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
     const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice') ? body.style : 'rewrite';
+    const brain    = String(body.brain    || '').slice(0, 7000); // the owner's distilled company facts (from brochures/site)
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+
+    // ── INGEST: read a brochure (text already pulled from a PDF) or a website URL,
+    //    then have Claude distill it into a tight, reusable fact sheet for the brain.
+    if (mode === 'ingest') {
+      const srcName = String(body.sourceName || '').slice(0, 120);
+      const srcUrl  = String(body.url || '').slice(0, 500);
+      var raw = String(body.rawText || '').slice(0, 60000);
+      if (srcUrl && !raw) {
+        try {
+          const pr = await fetch(srcUrl, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; WindowGuardiansBot/1.0)', 'accept': 'text/html' } });
+          if (!pr.ok) return json({ error: 'fetch', message: 'Couldn’t read that page (' + pr.status + '). If it’s a manufacturer site, try their brochure PDF instead.' });
+          raw = htmlToText(await pr.text());
+        } catch (e) {
+          return json({ error: 'fetch', message: 'Couldn’t reach that website. Check the link, or use the brochure PDF instead.' });
+        }
+      }
+      raw = raw.slice(0, 14000);
+      if (raw.replace(/\s/g, '').length < 40)
+        return json({ error: 'empty', message: 'Not enough readable text found' + (srcUrl ? ' — that may be a JavaScript-heavy site. Try the brochure PDF instead.' : ' in that file.') });
+      const dsys =
+'You distill source material into a TIGHT fact sheet that a window/door/siding/roofing company (Window Guardians, Langhorne, Bucks County PA) will use when writing social media posts.\n' +
+'Pull ONLY concrete, reusable facts: product lines/series and their real names, frame & glass materials, notable features WITH the homeowner benefit of each, energy ratings (Low-E, U-factor, ENERGY STAR), warranty terms, financing, service area, and any brand voice or taglines.\n' +
+'Rules: keep only what the source actually states — never invent a number, brand, or claim. No marketing fluff. Short bullet lines. 160 words MAX. If the source is thin, return only what is really there.\n' +
+'Return ONLY valid JSON: {"name":"short source label","brief":"- fact\\n- fact\\n- fact"}';
+      const dusr = 'Source label: ' + (srcName || srcUrl || 'brochure') + '\n\nSource text:\n' + raw;
+      const dr = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: model, max_tokens: 700, system: dsys, messages: [{ role: 'user', content: dusr }] })
+      });
+      if (!dr.ok) { var de = ''; try { de = await dr.text(); } catch (e) {} return json({ error: 'api', status: dr.status, message: friendlyApiErr(dr.status, de) }); }
+      const dd = await dr.json();
+      const dtext = (dd && dd.content && dd.content[0] && dd.content[0].text) || '';
+      const dobj = extractObj(dtext) || {};
+      const brief = String(dobj.brief || dtext || '').slice(0, 1600).trim();
+      if (!brief) return json({ error: 'empty', message: 'AI read it but couldn’t summarize — try again.' });
+      return json({ brief: brief, name: String(dobj.name || srcName || srcUrl || 'Source').slice(0, 120) });
+    }
     const images   = Array.isArray(body.images)
       ? body.images.slice(0, 4)
           .filter(function (im) { return im && typeof im.data === 'string' && im.data.length; })
@@ -145,6 +197,13 @@ export async function onRequestPost(context) {
 'The stage label above each photo is the source of truth when present: BEFORE => old_before, DURING => in_progress, AFTER => new_finished.\n' +
 'HARD RULE: you may credit a NEW install or a "finished/new" product ONLY if at least one attached photo is "new_finished". If none are, write a transformation, behind-the-scenes, or teaser caption instead — NEVER describe an old, existing, or unfinished window as the new install.\n' +
 'Set "warn" to a SHORT plain-English heads-up (e.g. "Photo 1 looks like the old/before window — written as a transformation; double-check before posting.") whenever the finished NEW product is NOT clearly shown. If a new finished product is clearly shown, set "warn" to "".\n')
+: '';
+
+    // The owner's distilled company facts (from their brochures & website) — verified true for THIS company.
+    const BRAIN_BLOCK = brain ?
+('VERIFIED WINDOW GUARDIANS FACTS — pulled from the company’s own brochures & website, so you MAY state these confidently as true for Window Guardians (use the real product/line names, features, warranty, financing, service area where they fit):\n' +
+brain + '\n' +
+'(Still: do not attach a specific feature to THIS job unless it was seen in the photo or stated in the notes — when unsure, speak generally.)\n')
 : '';
 
     var sys, usr;
@@ -171,6 +230,7 @@ export async function onRequestPost(context) {
 'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
 'You are also a genuine exterior-remodeling expert. Where it fits, give the homeowner real value — a tip, education, or food for thought.\n' +
 KNOWLEDGE +
+BRAIN_BLOCK +
 'Rules:\n' +
 VISION_RULE +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
@@ -200,6 +260,7 @@ VISION_RULE +
 'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use.\n' +
 'You are also a genuine exterior-remodeling expert who can teach, guide, and give homeowners food for thought when it adds value.\n' +
 KNOWLEDGE +
+BRAIN_BLOCK +
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 VISION_RULE +
