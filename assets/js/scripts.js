@@ -6290,8 +6290,8 @@ function readyCard(p){
   card.innerHTML=`<div class="rcimg"><img alt="" style="display:none"><span class="pcph">${pl.icon}</span><span class="pctype">${ty.icon} ${esc(ty.t)}</span></div>
     <div class="rcbody">
       <div class="pcmeta"><span class="pchip">${pl.icon} ${esc(pl.t)}</span><span class="muted" style="font-size:12px">${esc(ty.t)}${p.date?' · '+esc(p.date)+(p.time?' '+esc(p.time):''):''}</span></div>
-      <div class="rcfield"><label>Caption</label><div class="rctext">${esc(p.caption||'—')}</div><button class="copybtn" data-copy="cap">Copy</button></div>
-      <div class="rcfield"><label>Hashtags</label><div class="rctext">${esc(p.hashtags||'—')}</div><button class="copybtn" data-copy="tags">Copy</button></div>
+      <div class="rcfield"><label>Caption</label><div class="rctext">${esc(p.caption||'—')}</div></div>
+      <div class="rcfield"><label>Hashtags</label><div class="rctext">${esc(p.hashtags||'—')}</div></div>
       <div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}</b> — on Instagram/Facebook tap <b>Add location</b> and choose “${esc(p.town||'your town')}, PA”. Google &amp; Nextdoor are already local.</div>
       <div class="rcnote">📋 ${esc(p.ruthNote||aiRuthNote(p))}</div>
     </div>`;
@@ -6307,18 +6307,20 @@ function readyCard(p){
     mm.forEach((m,i)=>{const t=el('div','rcthumb'+(m.role?(' '+m.role):'')+(m.failedToPublish?' missing':''));const im=document.createElement('img');im.style.display='none';im.addEventListener('load',()=>im.style.display='block');if(VTHUMB[m.id])im.src=VTHUMB[m.id];else thumbInto(im,m.id);t.appendChild(im);t.appendChild(el('span','rcnum',String(i+1)));if(m.role)t.appendChild(el('span','rcrolebadge '+m.role,m.role==='before'?'BEFORE':m.role==='during'?'DURING':'AFTER'));if(m.failedToPublish)t.appendChild(el('span','rcmiss',m.skipReason==='video'?'▶ video':'⚠ missing'));t.onclick=()=>openMediaPreview(m.id,m.name);strip.appendChild(t);});
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
-  card.querySelector('[data-copy="cap"]').onclick=()=>copyOut(p.caption,'Caption');
-  card.querySelector('[data-copy="tags"]').onclick=()=>copyOut(p.hashtags,'Hashtags');
   const foot=el('div','rcactions');
   const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
   dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0,vid=0;
+    // browsers block rapid-fire downloads (and cancel a URL revoked too soon) — so trigger each one,
+    // append to the DOM, revoke later, and wait between each so ALL the photos actually save.
+    const trigger=(href,name)=>{const a=document.createElement('a');a.href=href;a.download=name||'photo';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();}catch(e){}},1000);};
+    const gap=()=>new Promise(r=>setTimeout(r,600));
     for(const m of arr){
       const isVid=m.skipReason==='video'||/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
       const rec=await fileGet(m.id);
-      if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);const a=document.createElement('a');a.href=u;a.download=rec.name||m.name||(isVid?'video':'media');a.click();URL.revokeObjectURL(u);got++;continue;}
+      if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);trigger(u,rec.name||m.name||(isVid?'video':'media'));setTimeout(function(){try{URL.revokeObjectURL(u)}catch(e){}},15000);got++;await gap();continue;}
       if(isVid){vid++;continue;} // video can't live in the cloud — never tell Ruth to "re-share" it
       const c=await cloudFileGet(m.id);
-      if(c&&c.dataUrl){const a=document.createElement('a');a.href=c.dataUrl;a.download=c.name||m.name||'photo.webp';a.click();got++;}else{miss++;}
+      if(c&&c.dataUrl){trigger(c.dataUrl,c.name||m.name||'photo.webp');got++;await gap();}else{miss++;}
     }
     const msg=[];
     if(got)msg.push('Downloaded '+got);
@@ -6340,13 +6342,13 @@ function readyCard(p){
     toast(missing.length?('Posted — but '+missing.length+' photo'+(missing.length>1?'s':'')+' still need to go out separately'):'Posted ✓ — nice! It’s off your list.');
     await purgePostedMedia(post);rerenderCal();
   };
-  const copyAll=el('button','btn-set','📋 Copy all');copyAll.title='Copy caption + hashtags together (handy for Facebook)';
+  const copyAll=el('button','btn-set primary','📋 Copy caption + hashtags');copyAll.title='Copies the caption and hashtags together, ready to paste';
   copyAll.onclick=()=>copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags');
   const bs=el('button','btn-set','🗂 Open Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
   bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
   const ig=el('button','btn-set','📷 Instagram');ig.title='Open Instagram to paste + post';
   ig.onclick=()=>window.open('https://www.instagram.com/','_blank','noopener');
-  foot.appendChild(dlb);foot.appendChild(copyAll);foot.appendChild(bs);foot.appendChild(ig);foot.appendChild(done);
+  foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(bs);foot.appendChild(ig);foot.appendChild(done);
   card.querySelector('.rcbody').appendChild(foot);
   return card;
 }
