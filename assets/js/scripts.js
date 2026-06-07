@@ -2157,7 +2157,7 @@ function renderSavedJobs(container){
 const GDRIVE_CLIENT_ID='922689253691-f58pv9jg0194es7ve9avc0di1ssan4i6.apps.googleusercontent.com';
 const GDRIVE_FOLDER_ID='1hRescZ95VEr_mVPm8AkRAsq-gqDdoIFq';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.readonly';
-let _gdToken=null,_gdExp=0,_gdClient=null,_gdTimer=null,_gdSyncing=false,_gdListErr=0;
+let _gdToken=null,_gdExp=0,_gdClient=null,_gdTimer=null,_gdSyncing=false,_gdListErr=0,_gdTokenRendered=false;
 function loadGsi(){
   if(window.google&&google.accounts&&google.accounts.oauth2)return Promise.resolve(true);
   return new Promise(res=>{
@@ -2265,6 +2265,7 @@ async function gdSyncNow(interactive){
       pool.push(item);byDrive.set(f.id,item);added++; // register immediately so nothing else this pass re-adds the same file
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
+    else if(gdTokenValid() && (interactive || !_gdTokenRendered)){ _gdTokenRendered=true; render(); } // got Drive access → redraw so blank Drive thumbnails can finally load with the token
     if(added)toast(added+' new piece'+(added>1?'s':'')+' synced from Drive');
     else if(interactive){ if(list.length===0)toast('Connected to Google, but found 0 photos/videos in that folder. Tap Connect and pick the Google account that OWNS your content folder — and make sure the folder actually has photos in it.'); else toast(backfilled?('Synced — location added to '+backfilled+' photos'):('Drive is in sync — '+list.length+' item'+(list.length>1?'s':'')+' already here.')); }
   }catch(e){if(interactive)toast('Drive sync hit a snag — try again.');}
