@@ -2056,9 +2056,10 @@ function clusterBaseName(items, idx){
 /* rename a location group — stores a custom name on its photos (clear it to go back to auto) */
 async function renameCluster(items, current){
   var name=await uiPrompt('Name this job (e.g. an address). Leave blank to go back to the auto name.', current, {title:'Rename job', placeholder:'e.g. 123 Maple St', confirmText:'Save'});
-  items.forEach(function(m){ if(name)m.cname=name; else delete m.cname; m._ut=Date.now(); });
+  // naming a location job turns it into a named (📁) job that sorts to the top — the GPS stays on the photos
+  items.forEach(function(m){ if(name){m.cgroup=name;delete m.cname;} else {delete m.cgroup;delete m.cname;} m._ut=Date.now(); });
   commit(); if(typeof rerenderCal==='function')rerenderCal();
-  toast(name?'Renamed':'Back to the auto name');
+  toast(name?'Renamed → now a 📁 named job at the top':'Back to the auto location name');
 }
 /* rename a manual (user-created) group — updates the group name on all its photos */
 async function renameManualGroup(items, current){
@@ -2679,7 +2680,7 @@ async function aiFullPostLive(p){
 /* "Build my week" — owner taps it; Claude looks at the newest GROUPED photos and drafts a few
    complete posts (caption + hashtags + category) for review. Nothing posts automatically; each
    lands in "Your posts" as a draft. Each photo set used is marked 'used' so a re-run won't repeat. */
-async function buildMyWeek(){
+async function buildMyWeek(count){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
   const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
   const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
@@ -2696,7 +2697,7 @@ async function buildMyWeek(){
   const richness=function(g){ var t=(g.title||'').trim(); var words=t?t.split(/\s+/).length:0; var prod=productLine(t)?3:0; return words+prod; };
   groups.sort(function(a,b){ return richness(b)-richness(a); });
   const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
-  const target=Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
+  const target=(typeof count==='number'&&count>0) ? Math.min(count, groups.length) : Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
   const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
   if(!ok)return 0;
   toast('🪄 Building '+target+' post'+(target>1?'s':'')+'… give it a few seconds');
@@ -5983,6 +5984,17 @@ function socLibrary(v){
     const gd=el('button','btn-set','🟢 Connect Google Drive');gd.style.cssText='margin-top:4px;font-size:12.5px;padding:6px 10px';
     gd.onclick=()=>gdConnect();
     add.appendChild(gd);
+  }
+  // ✨ AI post generation — Claude drafts posts from your tagged photos. Right under Add content.
+  if(typeof isOwner==='function'&&isOwner()){
+    const aiHint=el('div','muted','✨ Or let Claude draft posts from your tagged photos:');aiHint.style.cssText='font-size:12px;margin-top:16px';
+    add.appendChild(aiHint);
+    const aiRow=el('div');aiRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:6px';
+    const g1=el('button','btn-set primary','✨ Generate 1 post');g1.title='Claude drafts 1 post from your best-titled job (~2¢)';
+    g1.onclick=async()=>{const o=g1.textContent;g1.disabled=true;g1.textContent='🪄 Working…';try{await buildMyWeek(1);}catch(e){}g1.disabled=false;g1.textContent=o;};
+    const g3=el('button','btn-set primary','✨ Generate 3 posts');g3.title='Claude drafts 3 posts from your best-titled jobs (~6¢)';
+    g3.onclick=async()=>{const o=g3.textContent;g3.disabled=true;g3.textContent='🪄 Working…';try{await buildMyWeek(3);}catch(e){}g3.disabled=false;g3.textContent=o;};
+    aiRow.appendChild(g1);aiRow.appendChild(g3);add.appendChild(aiRow);
   }
   v.appendChild(add);
   gdAutoResume();
