@@ -11,6 +11,22 @@
 
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
+// ── PRODUCT BRAIN ──────────────────────────────────────────────────────────
+// GENERAL, true industry knowledge the AI can teach homeowners from (guidance,
+// tips, food for thought). This is NOT a fact sheet about the job in the photo —
+// it must never claim a specific job HAS a feature unless that feature was seen
+// in the photo or stated in the owner's notes. Use it to add real value.
+const KNOWLEDGE =
+'WINDOW GUARDIANS PRODUCT KNOWLEDGE (general & true industry-wide — teach from this, never fabricate job specifics):\n' +
+'• WINDOWS — styles: double-hung (both sashes tilt in for easy cleaning), casement (cranks out, tightest seal, great over a sink), sliders, bay/bow (adds space & light), picture/fixed. Frames: vinyl (low-maintenance, energy-efficient, most popular), fiberglass (strongest, paintable), wood-clad (warm inside, low-maintenance outside).\n' +
+'• GLASS & EFFICIENCY: double- or triple-pane; Low-E coatings reflect heat (cooler summers, warmer winters); argon/krypton gas fill insulates; warm-edge spacers cut condensation. Look for the ENERGY STAR + NFRC label — U-factor = insulation (lower is better), SHGC = solar heat gain. What homeowners actually feel: lower energy bills, fewer drafts, less street noise, no more foggy or stuck sashes, UV protection for floors & furniture.\n' +
+'• ENTRY DOORS: fiberglass (dent- & rot-proof, insulated core, can mimic real wood), steel (security, budget-friendly), wood (classic, more upkeep). Features worth knowing: multi-point locks, quality weatherstripping, insulated cores, decorative/privacy glass, sidelights & transoms. Payoffs: curb appeal, security, a draft-free entry.\n' +
+'• PATIO DOORS: sliding (space-saving) vs French/hinged (wide opening, classic look); ask about Low-E glass and smooth, secure hardware.\n' +
+'• SIDING: vinyl (low cost & upkeep), insulated vinyl (adds R-value/comfort), fiber cement like James Hardie (fire-resistant, long warranty, painted finish), engineered wood. Payoffs: protects the home, big curb-appeal & resale boost, less energy loss.\n' +
+'• ROOFING: architectural/dimensional asphalt shingles (thicker, longer-lasting) vs basic 3-tab. The hidden stuff that prevents leaks & adds life: proper attic ventilation, ice-and-water shield, drip edge, and flashing done right.\n' +
+'• QUALITY CUES homeowners should look for in ANY install: clean caulk lines, proper flashing & insulation around the opening, level/plumb fit, full job-site cleanup, and BOTH a manufacturer warranty AND a labor warranty. Window Guardians also offers free in-home estimates and financing.\n' +
+'TEACHING STYLE: when it adds value, fold in ONE genuinely useful nugget — a quick tip, a "did you know," a question worth considering (food for thought), or what to look for — drawn from the knowledge above. Natural and friendly, never a lecture or a spec dump, never fear-mongering. If a feature was NOT seen/stated for this job, frame it as general guidance ("Low-E glass is worth asking about…"), not as a claim about this job.\n';
+
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
     status: status || 200,
@@ -114,7 +130,7 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : 'caption';
-    const style    = (body.style === 'elaborate' || body.style === 'funny') ? body.style : 'rewrite';
+    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice') ? body.style : 'rewrite';
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
     const images   = Array.isArray(body.images)
       ? body.images.slice(0, 4)
@@ -153,11 +169,13 @@ export async function onRequestPost(context) {
 'You are the social media manager for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 'You are shown one or more PHOTOS of a real job, plus an optional note from the owner. Look closely at the photos and write a complete, ready-to-post social post.\n' +
 'Voice: warm, confident, proud of the craftsmanship — plain English a homeowner uses, never salesy, hypey, or buzzwordy.\n' +
+'You are also a genuine exterior-remodeling expert. Where it fits, give the homeowner real value — a tip, education, or food for thought.\n' +
+KNOWLEDGE +
 'Rules:\n' +
 VISION_RULE +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
-'- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji.\n' +
+'- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle: one shows off the work, one teaches something useful (a tip / did-you-know / what-to-look-for from the product knowledge), one is warmer or invites a question. Education must be general guidance unless the feature was actually seen or stated.\n' +
 '- hashtags: ONE set of 8 to 12 relevant tags — always include #WindowGuardians and a local tag if a town is given; match what the photos actually show.\n' +
 '- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
 '- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
@@ -174,10 +192,14 @@ VISION_RULE +
           ? '- MODE: ELABORATE. Expand into a fuller caption — add a little story, context, and benefit to the homeowner. 2 to 4 sentences. Still 100% truthful: do not invent any fact.'
         : style === 'funny'
           ? '- MODE: FUNNY. Write a light, playful, genuinely funny caption (a wink, a relatable joke about old drafty windows, etc.) — still on-brand and tasteful, not corny or unprofessional. 1 to 3 short sentences.'
+        : style === 'advice'
+          ? '- MODE: ADVICE / EDUCATE. Write a helpful, expert caption that teaches the homeowner something real and useful — a tip, a "did you know," what to look for, or food for thought — drawn from the product knowledge above. Lead with the value, tie it to the post, end with a soft invitation to ask or learn more. 2 to 4 sentences. General guidance only unless a feature was actually seen/stated; never fabricate job specifics.'
           : '- MODE: REWRITE. Produce a clean, polished, ready-to-post caption. Keep it tight: 1 to 3 short sentences.';
       sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 'Voice: warm, confident, proud of the craftsmanship — never salesy, hypey, or full of buzzwords. Plain English a real homeowner would use.\n' +
+'You are also a genuine exterior-remodeling expert who can teach, guide, and give homeowners food for thought when it adds value.\n' +
+KNOWLEDGE +
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 VISION_RULE +
