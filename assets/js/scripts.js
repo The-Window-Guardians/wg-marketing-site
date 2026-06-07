@@ -1662,12 +1662,14 @@ function baAutoMerge(){
   var isSubfolder=function(f){ return f && f!=='Drive' && f!=='Videos'; }; // any Drive subfolder name (Before & After, customer names, etc.)
   var hasLegacy = jobs.length>0
     || pool.some(function(m){return isSubfolder(m.folder);})
-    || pool.some(function(m){return !m.stage&&(m.role==='before'||m.role==='after');});
+    || pool.some(function(m){return !m.stage&&(m.role==='before'||m.role==='after');})
+    || pool.some(function(m){return m.cname&&!m.cgroup;}); // old renamed location jobs → upgrade to named (📁) jobs
   if(!hasLegacy)return;
   jobs.forEach(function(j){ jobItems(j).forEach(function(it){ var m=pool.find(function(x){return x.id===it.id;}); if(!m)return; if(it.role==='before'||it.role==='after')m.stage=it.role; else if(!m.stage)m.stage='after'; m.folder=''; m._ut=Date.now(); }); });
   pool.forEach(function(m){
     if(isSubfolder(m.folder)){ if(m.folder==='Before & After'&&(m.role==='before'||m.role==='after')&&!m.stage)m.stage=m.role; m.folder=''; m._ut=Date.now(); } // every Drive subfolder → main Content (groups by location)
     else if(!m.stage&&(m.role==='before'||m.role==='after')){ m.stage=m.role; m._ut=Date.now(); } // old role-tagged photos → show a stage pill
+    if(m.cname&&!m.cgroup){ m.cgroup=m.cname; delete m.cname; m._ut=Date.now(); } // a job you renamed earlier → make it a named (📁) job at the top
   });
   ST.bajobs=[];
   try{commit();}catch(e){}
