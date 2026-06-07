@@ -6642,30 +6642,48 @@ function openComposer(idOrPost,isNew){
     drop.appendChild(inp);grid.appendChild(drop);
     if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Drag the ⠿ handle to reorder.'));
     media.appendChild(grid);
-    // add from the existing dashboard library (where your uploaded / Drive photos live)
-    const fromBtn=el('button','btn-set',pickerOpen?'✕ Close library':'🗂️ Add from your content');fromBtn.style.marginTop='8px';
+    // Add more existing photos. If this post came from a JOB, scope to that job's OTHER photos
+    // (quick + on-topic) — with a small fallback to browse all content if you need a different job.
+    const _pool=socPool();
+    const _mine=postMedia(p).map(x=>_pool.find(z=>z.id===x.id)).filter(Boolean);
+    const _cg=(_mine.find(m=>m&&m.cgroup)||{}).cgroup||'';
+    const _cn=(_mine.find(m=>m&&m.cname)||{}).cname||'';
+    const jobKey=_cg||_cn||((p.jobNote||'').trim());
+    const jobName=_cg||_cn||(p.jobNote||'');
+    const inJob=(m)=> _cg?(m.cgroup===_cg) : _cn?(m.cname===_cn) : jobKey?((m.cgroup||m.cname||'')===jobKey) : false;
+    const scoped=!!jobKey; let scopedNow=scoped;          // start scoped to this job when we have one
+    const labelFor=(open)=> open?'✕ Close':(scoped?('➕ Add from this job'+(jobName?(' — '+jobName):'')):'🗂️ Add from your content');
+    const fromBtn=el('button','btn-set',labelFor(pickerOpen));fromBtn.style.marginTop='8px';
     const picker=el('div');picker.style.cssText='margin-top:8px;'+(pickerOpen?'':'display:none');
     const fillPicker=()=>{
       picker.innerHTML='';
       const inPost=new Set(postMedia(p).map(x=>x.id));
-      const avail=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
+      let avail=poolAvailable().slice().sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));
+      if(scopedNow)avail=avail.filter(inJob);
       const postItems=postMedia(p).map(x=>socPool().find(z=>z.id===x.id)||{id:x.id,name:x.name}); // ones already on the post (so you can REMOVE them here too)
       const list=postItems.concat(avail.filter(m=>!inPost.has(m.id))).slice(0,80);
-      if(!list.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">Nothing in your library yet — upload photos on the Home screen first.</div>'; return; }
-      picker.appendChild(el('div','muted','Tap to add · tap a ✓ one to remove it from the post')).style.cssText='font-size:11.5px;margin:2px 0 6px';
-      const g=el('div','medgrid');
-      list.forEach(m=>{
-        const on=inPost.has(m.id);
-        const cell=el('div','medcell'+(on?' sel':''));cell.style.cursor='pointer';
-        const img=el('img','medthumb');img.addEventListener('load',function(){img.style.display='block';}); // <-- without this the thumbnail stays hidden
-        if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
-        cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
-        cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } renderMedia(); }; // toggle; renderMedia keeps the picker open
-        g.appendChild(cell);
-      });
-      picker.appendChild(g);
+      if(!list.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">'+(scopedNow?'No other photos left in this job.':'Nothing in your library yet — upload photos on the Home screen first.')+'</div>'; }
+      else {
+        picker.appendChild(el('div','muted',scopedNow?('From this job · tap to add · tap a ✓ one to remove'):'Tap to add · tap a ✓ one to remove it from the post')).style.cssText='font-size:11.5px;margin:2px 0 6px';
+        const g=el('div','medgrid');
+        list.forEach(m=>{
+          const on=inPost.has(m.id);
+          const cell=el('div','medcell'+(on?' sel':''));cell.style.cursor='pointer';
+          const img=el('img','medthumb');img.addEventListener('load',function(){img.style.display='block';}); // <-- without this the thumbnail stays hidden
+          if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
+          cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
+          cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } renderMedia(); }; // toggle; renderMedia keeps the picker open
+          g.appendChild(cell);
+        });
+        picker.appendChild(g);
+      }
+      if(scoped){ // small fallback so you can still pull a photo from a different job when you need to
+        const tog=el('button','linklike',scopedNow?'Show all my content instead':'◂ Back to just this job');tog.style.cssText='margin-top:8px;font-size:12px';
+        tog.onclick=()=>{ scopedNow=!scopedNow; fillPicker(); };
+        picker.appendChild(tog);
+      }
     };
-    fromBtn.onclick=()=>{ pickerOpen=!pickerOpen; if(pickerOpen){ fillPicker(); picker.style.display=''; fromBtn.textContent='✕ Close library'; } else { picker.style.display='none'; fromBtn.textContent='🗂️ Add from your content'; } };
+    fromBtn.onclick=()=>{ pickerOpen=!pickerOpen; if(pickerOpen){ scopedNow=scoped; fillPicker(); picker.style.display=''; } else { picker.style.display='none'; } fromBtn.textContent=labelFor(pickerOpen); };
     if(pickerOpen)fillPicker();
     media.appendChild(fromBtn);media.appendChild(picker);
     // Before/After posts read backwards if unlabeled — nudge (not a hard block) when tags are missing
