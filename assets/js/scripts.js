@@ -2686,15 +2686,13 @@ async function buildMyWeek(count){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
   const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
   const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
-  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.stage&&!usedIds.has(m.id)); // only TAGGED photos — guarantees correct stage so captions are 100% safe
-  if(!fresh.length){toast('No tagged photos yet — tag photos 🔵 Before / 🟡 During / 🟠 After, then try again.');return 0;}
-  // candidate "jobs": your hand-made groups first, then GPS location jobs (skip ungrouped no-GPS)
+  // ONLY named (yellow 📁) jobs are "free game" for the AI — a job you titled is one you've vetted.
+  const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.cgroup&&!usedIds.has(m.id));
+  if(!fresh.length){toast('No named jobs yet — rename a job (it turns yellow 📁) to make it free-game for the AI, then try again.');return 0;}
   const groups=[]; const manualMap={};
-  fresh.forEach(m=>{ if(m.cgroup)(manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
-  Object.keys(manualMap).forEach(k=>groups.push({title:k,town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]})); // manual job name = its title
-  const located=fresh.filter(m=>!m.cgroup&&hasLoc(m));
-  clusterByLocation(located,60).forEach(function(c){ var ti=(c.items.find(m=>m&&m.cname)||{}).cname||(c.items.find(m=>m&&m.town)||{}).town||''; groups.push({title:ti,town:(c.items.find(m=>m.town)||{}).town||'',items:c.items}); });
-  if(!groups.length){toast('Your fresh photos aren’t in a job yet — add them to a job (or give them a location), then try again.');return 0;}
+  fresh.forEach(m=>{ (manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
+  Object.keys(manualMap).forEach(k=>groups.push({title:k,town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]})); // the job's name = its title (feeds the AI)
+  if(!groups.length){toast('No named jobs yet — rename a job to make it free-game for the AI.');return 0;}
   // The AI should pick the richest-described jobs first — a fuller title (product + town + features) = more to work with = a better post.
   const richness=function(g){ var t=(g.title||'').trim(); var words=t?t.split(/\s+/).length:0; var prod=productLine(t)?3:0; return words+prod; };
   groups.sort(function(a,b){ return richness(b)-richness(a); });
