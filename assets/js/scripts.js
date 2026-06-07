@@ -2728,7 +2728,12 @@ async function buildMyWeek(count){
   if(!groups.length){toast('No named jobs yet — rename a job to make it free-game for the AI.');return 0;}
   // The AI should pick the richest-described jobs first — a fuller title (product + town + features) = more to work with = a better post.
   const richness=function(g){ var t=(g.title||'').trim(); var words=t?t.split(/\s+/).length:0; var prod=productLine(t)?3:0; return words+prod; };
-  groups.sort(function(a,b){ return richness(b)-richness(a); });
+  // ...but DON'T repeat a job back-to-back. Jobs used by your most recent posts get pushed to the bottom,
+  // so each new draft rotates to a different job before circling back to one already covered.
+  const recent=socPosts().slice().sort(function(a,b){ return ((b._ct||_tsFromId(b.id)||0))-((a._ct||_tsFromId(a.id)||0)); })
+                          .map(function(p){ return (p.jobNote||'').toLowerCase().trim(); }).filter(Boolean);
+  const recentRank=function(title){ var i=recent.indexOf((title||'').toLowerCase().trim()); return i<0?0:(recent.length-i); }; // 0 = never posted (goes first); higher = used more recently (goes last)
+  groups.sort(function(a,b){ var ra=recentRank(a.title), rb=recentRank(b.title); if(ra!==rb)return ra-rb; return richness(b)-richness(a); });
   const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
   const target=(typeof count==='number'&&count>0) ? Math.min(count, groups.length) : Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
   const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
