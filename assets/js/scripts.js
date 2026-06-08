@@ -6876,6 +6876,43 @@ async function gatherPostFiles(arr){
   }
   return {files:files, miss:miss, vid:vid};
 }
+/* Tiny dependency-free ZIP writer (STORE method — images are already compressed).
+   Bundling all photos into ONE file is the only reliable desktop download: a single
+   download never triggers Chrome's "allow multiple downloads?" block that was eating
+   every photo after the first. */
+function _crc32(u8){
+  var t=_crc32.t; if(!t){ t=_crc32.t=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; } }
+  var crc=0xFFFFFFFF; for(var i=0;i<u8.length;i++)crc=(crc>>>8)^t[(crc^u8[i])&0xFF]; return (crc^0xFFFFFFFF)>>>0;
+}
+async function buildZip(entries){ // entries: [{name, blob}]
+  var enc=new TextEncoder(); var parts=[]; var central=[]; var offset=0;
+  for(var i=0;i<entries.length;i++){
+    var nameBytes=enc.encode(entries[i].name);
+    var data=new Uint8Array(await entries[i].blob.arrayBuffer());
+    var crc=_crc32(data);
+    var lh=new Uint8Array(30+nameBytes.length); var dv=new DataView(lh.buffer);
+    dv.setUint32(0,0x04034b50,true); dv.setUint16(4,20,true); dv.setUint16(6,0,true); dv.setUint16(8,0,true);
+    dv.setUint16(10,0,true); dv.setUint16(12,0,true); dv.setUint32(14,crc,true);
+    dv.setUint32(18,data.length,true); dv.setUint32(22,data.length,true);
+    dv.setUint16(26,nameBytes.length,true); dv.setUint16(28,0,true); lh.set(nameBytes,30);
+    parts.push(lh); parts.push(data);
+    var ch=new Uint8Array(46+nameBytes.length); var cv=new DataView(ch.buffer);
+    cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,0,true);
+    cv.setUint16(10,0,true); cv.setUint16(12,0,true); cv.setUint16(14,0,true); cv.setUint32(16,crc,true);
+    cv.setUint32(20,data.length,true); cv.setUint32(24,data.length,true); cv.setUint16(28,nameBytes.length,true);
+    cv.setUint16(30,0,true); cv.setUint16(32,0,true); cv.setUint16(34,0,true); cv.setUint16(36,0,true);
+    cv.setUint32(38,0,true); cv.setUint32(42,offset,true); ch.set(nameBytes,46);
+    central.push(ch); offset+=lh.length+data.length;
+  }
+  var cdSize=0; central.forEach(function(c){cdSize+=c.length;}); var cdOffset=offset;
+  central.forEach(function(c){parts.push(c);});
+  var eo=new Uint8Array(22); var ev=new DataView(eo.buffer);
+  ev.setUint32(0,0x06054b50,true); ev.setUint16(4,0,true); ev.setUint16(6,0,true);
+  ev.setUint16(8,entries.length,true); ev.setUint16(10,entries.length,true);
+  ev.setUint32(12,cdSize,true); ev.setUint32(16,cdOffset,true); ev.setUint16(20,0,true);
+  parts.push(eo);
+  return new Blob(parts,{type:'application/zip'});
+}
 function readyCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
   const card=el('div','readycard');
@@ -6914,26 +6951,33 @@ function readyCard(p){
     const files=res.files||[], miss=res.miss||0, vid=res.vid||0;
     if(!files.length){
       toast(vid&&!miss ? 'This post only has a video — send it by text or AirDrop. Video can’t sync through the app.'
-                       : 'These photos haven’t synced to this device yet. Pull down to refresh the page, wait about 10 seconds, then tap Save / share again.');
+                       : 'These photos haven’t synced to this device yet. Refresh the page, wait about 10 seconds, then tap Save / share again.');
       return;
     }
-    // PHONE (the normal case): one native share sheet with every photo → Save to Photos, or send straight into Instagram / Facebook.
-    if(navigator.canShare && navigator.canShare({files})){
+    const tail=()=>{ const t=[]; if(vid)t.push(vid+' video — send by text/AirDrop'); if(miss)t.push(miss+' not synced yet — refresh & retry'); return t; };
+    const dlOne=(blob,name)=>{const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name||'photo';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();URL.revokeObjectURL(u);}catch(e){}},20000);};
+    // PHONE / tablet: native share sheet sends every photo at once → Save to Photos, or straight into Instagram / Facebook.
+    let coarse=false; try{ coarse=!!(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches); }catch(e){}
+    if(coarse && navigator.canShare && navigator.canShare({files})){
       try{
         await navigator.share({files:files, title:'Window Guardians'});
-        const t=['Sent '+files.length+' photo'+(files.length>1?'s':'')+' to your share sheet'];
-        if(vid)t.push(vid+' video — send by text/AirDrop');
-        if(miss)t.push(miss+' not synced yet — refresh & retry');
-        toast(t.join(' · ')); return;
-      }catch(e){ if(e&&e.name==='AbortError')return; } // Ruth closed the share sheet → stop
+        toast(['Sent '+files.length+' photo'+(files.length>1?'s':'')+' to your share sheet'].concat(tail()).join(' · ')); return;
+      }catch(e){ if(e&&e.name==='AbortError')return; } // closed the share sheet → stop
     }
-    // DESKTOP fallback: download each file. If the browser asks to allow multiple downloads, tap Allow.
-    const trigger=(href,name)=>{const a=document.createElement('a');a.href=href;a.download=name||'photo';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();}catch(e){}},1000);};
-    for(const f of files){ const u=URL.createObjectURL(f); trigger(u,f.name); setTimeout(function(){try{URL.revokeObjectURL(u)}catch(e){}},15000); await new Promise(r=>setTimeout(r,600)); }
-    const t=['Saving '+files.length+' photo'+(files.length>1?'s':'')+' — if your browser asks, tap “Allow”'];
-    if(vid)t.push(vid+' video — send by text/AirDrop');
-    if(miss)t.push(miss+' not synced yet — refresh & retry');
-    toast(t.join(' · '));
+    // DESKTOP: one photo → download it; many → bundle into a single .zip so the browser never blocks "multiple downloads".
+    if(files.length===1){ dlOne(files[0],files[0].name); toast(['Downloaded the photo'].concat(tail()).join(' · ')); return; }
+    var zname='WG_post_photos.zip';
+    try{ var tw=((typeof effectiveTown==='function'?effectiveTown(p):'')||p.town||'').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,''); zname='WG_'+(tw||'post')+'_'+files.length+'photos.zip'; }catch(e){}
+    dlb.disabled=true; dlb.textContent='Zipping '+files.length+' photos…';
+    try{
+      var entries=files.map(function(f,i){ return {name:(i+1<10?'0':'')+(i+1)+'_'+f.name, blob:f}; }); // numbered = posts in order + unique names
+      var zip=await buildZip(entries); dlOne(zip,zname);
+      toast(['Downloaded a zip of '+files.length+' photos — open it (double-click) to get them all'].concat(tail()).join(' · '));
+    }catch(e){
+      for(const f of files){ dlOne(f,f.name); await new Promise(r=>setTimeout(r,700)); } // last resort
+      toast(['Saving '+files.length+' photos — if the browser asks, tap “Allow”'].concat(tail()).join(' · '));
+    }
+    dlb.disabled=false; dlb.textContent=_lbl;
   };
   const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{
     const post=postById(p.id); if(!post)return;
@@ -6964,7 +7008,7 @@ function readyCard(p){
   rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app → '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost — do it every time.)';
   foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs);foot.appendChild(done);
   const dlhint=el('div','muted');dlhint.style.cssText='font-size:12px;margin:6px 2px 0;line-height:1.4';
-  dlhint.innerHTML='💡 <b>Save / share</b> sends every photo at once — pick <b>Save to Photos</b> (or share straight to Instagram/Facebook). If it says some photos “aren’t synced yet,” pull down to <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
+  dlhint.innerHTML='💡 <b>Save / share</b> grabs every photo at once. On your <b>computer</b> it downloads one <b>.zip</b> — double-click it to open all the photos. On your <b>phone</b> it opens the share sheet (Save to Photos, or send to Instagram/Facebook). If it says photos “aren’t synced yet,” <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
   const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);rb.appendChild(dlhint);
   return card;
 }
