@@ -6823,12 +6823,19 @@ function readyCard(p){
   };
   const copyAll=el('button','btn-set primary','📋 Copy caption + hashtags');copyAll.title='Copies the caption and hashtags together, ready to paste';
   copyAll.onclick=()=>copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags');
-  const bs=el('button','btn-set','🗂 Open Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
-  bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
   const ig=el('button','btn-set','📷 Instagram');ig.title='Open Instagram to paste + post';
   ig.onclick=()=>window.open('https://www.instagram.com/','_blank','noopener');
-  foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(bs);foot.appendChild(ig);foot.appendChild(done);
-  card.querySelector('.rcbody').appendChild(foot);
+  const fb=el('button','btn-set','📘 Facebook');fb.title='Open Facebook to paste + post';
+  fb.onclick=()=>window.open('https://www.facebook.com/','_blank','noopener');
+  const bs=el('button','btn-set','🗂 Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
+  bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
+  // 📍 Location reminder — the one thing she must do by hand for the native pin
+  const locTown=((typeof effectiveTown==='function'?effectiveTown(p):'')||p.town||'').trim();
+  const rem=el('div','rcremind');
+  rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
+  rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app → '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost — do it every time.)';
+  foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs);foot.appendChild(done);
+  const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);
   return card;
 }
 function bumpPostsKpi(){ // keep the "Posts published" KPI in step with posted count
