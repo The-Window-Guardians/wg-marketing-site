@@ -7084,10 +7084,7 @@ function openComposer(idOrPost,isNew){
   const caBoldMild=el('button','btn-set ai-draft','🙂 Bold: Mild');caBoldMild.title='Clever with a light wink. ~1¢';
   const caBold=el('button','btn-set ai-draft','🔥 Bold');caBold.title='Witty, edgy, scroll-stopping. ~1¢';
   const caBoldMax=el('button','btn-set ai-draft','💥 Bold: MAX');caBoldMax.title='Completely unhinged head-turner (still clean). ~1¢';
-  // Fresh vs. my words
-  let useMyWords=false;
-  const caUse=el('button','btn-set','✍️ Fresh ideas');caUse.title='Fresh ideas (ignore my text) ↔ Use my words (build on my caption)';
-  caUse.onclick=()=>{ useMyWords=!useMyWords; caUse.textContent=useMyWords?'✍️ Using my words':'✍️ Fresh ideas'; caUse.classList.toggle('on',useMyWords); toast(useMyWords?'AI will build on your caption':'AI will invent fresh ideas'); };
+  // AUTO: empty caption box = fresh idea; if you've typed a caption, the AI builds on YOUR words. (No toggle.)
   let aiBusy=false;
   const ALLB=[caBest,caTeach,caProduct,caBoldMild,caBold,caBoldMax];
   const runAI=async(style,workingMsg,edge)=>{
@@ -7095,10 +7092,11 @@ function openComposer(idOrPost,isNew){
     const key=style+(style==='bold'?(':'+(edge==null?1:edge)):'');
     if(caOpts.dataset.open==='1'&&caOpts.dataset.style===key){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
     p.caption=ca.value; // use the latest text
+    const useDraft=!!((ca.value||'').trim()); // typed a caption → build on it; empty → fresh idea
     caOpts.dataset.open='1';caOpts.dataset.style=key;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
     aiBusy=true;ALLB.forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords,(style==='bold'?(edge==null?1:edge):1)); }catch(e){ d={error:'net'}; }
+    let d=null; try{ d=await aiCaptionLive(p,style,useDraft,(style==='bold'?(edge==null?1:edge):1)); }catch(e){ d={error:'net'}; }
     aiBusy=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
@@ -7116,7 +7114,7 @@ function openComposer(idOrPost,isNew){
   caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL send…',2);
   const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caTeach);caRow.appendChild(caProduct);caRow.appendChild(el('span','aicost','~1¢ · 3 options each'));
   const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Bold:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
-  const dialRow=el('div','sugrow');dialRow.style.marginTop='6px';dialRow.appendChild(caUse);
+  const dialRow=el('div','');dialRow.style.cssText='font-size:11.5px;color:var(--ink2);margin-top:7px';dialRow.textContent='💡 Empty caption = fresh ideas. Type a caption = the AI builds on your words.';
   cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
