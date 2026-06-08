@@ -169,7 +169,7 @@ function parseFullPost(text) {
   var tags = typeof obj.hashtags === 'string' ? obj.hashtags
            : (Array.isArray(obj.hashtags) ? obj.hashtags.join(' ') : '');
   var cat = typeof obj.category === 'string' ? obj.category.toLowerCase().trim() : '';
-  if (!{ portfolio: 1, edu: 1, fun: 1, customer: 1 }[cat]) cat = '';
+  if (!{ portfolio: 1, edu: 1, fun: 1, crew: 1, customer: 1 }[cat]) cat = '';
   return { captions: caps, hashtags: tags, category: cat, warn: normWarn(obj), photos: normPhotos(obj) };
 }
 
@@ -395,7 +395,7 @@ VISION_RULE +
 '- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle — but ALL in the brand voice with a pattern-breaking hook (never the boring "We installed…" opener). Follow the TONE above for how bold to go. Lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy) when they fit.\n' +
 ANGLE_CREDIT +
 '- hashtags: ONE set of ~13-15 by this FIXED FORMULA: #WindowGuardians (brand) + 3-5 LOCATION tags (the town + #BucksCountyPA + #LanghornePA + a nearby Bucks town) + (ONLY if the caption names a specific product) the BRAND in exactly 2 ways (brand alone + brand-with-type, e.g. #Okna #OknaWindows or #ProVia #ProViaDoors) PLUS the series as its own standalone tag if named (e.g. #700Series) — brand/series names only, NO feature tags + the rest (~50-60%) the most POPULAR high-traffic home-improvement tags (#HomeImprovement #HomeRenovation #CurbAppeal #ReplacementWindows #BeforeAndAfter #HomeMakeover #NewWindows #DreamHome). No feature hashtags. Keep it simple and volume-focused.\n' +
-'- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
+'- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / lighter / day-in-the-life), "crew" (the team / installers at work / who they are), "customer" (reviews / happy homeowners / thank-yous).\n' +
 '- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
       usr =
 'Town: ' + (town || '(none)') + '\n' +

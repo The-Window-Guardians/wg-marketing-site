@@ -1102,7 +1102,8 @@ const SOC_TOWNS=['Langhorne','Newtown','Yardley','Lower Makefield','Richboro','H
 const SOC_PILLARS=[
   {id:'portfolio',icon:'🛠️',t:'Portfolio',d:'The work itself — before/after, clean installs, craftsmanship, the towns you serve.'},
   {id:'edu',icon:'🎓',t:'Education',d:'Quick tips + what homeowners should know before replacing windows or doors.'},
-  {id:'fun',icon:'🎉',t:'Entertainment',d:'Lighter, scroll-stopping content — behind-the-scenes, the crew, day-in-the-life.'},
+  {id:'fun',icon:'🎉',t:'Entertainment',d:'Lighter, scroll-stopping content — behind-the-scenes, day-in-the-life.'},
+  {id:'crew',icon:'👷',t:'Crew',d:'The team — your installers at work, who they are, the people behind the work.'},
   {id:'customer',icon:'⭐',t:'Customer',d:'Reviews, happy homeowners, testimonials, thank-yous.'}
 ];
 /* Ruth's posting tips — practical, platform-aware, kept short */
