@@ -216,8 +216,13 @@ export async function onRequestPost(context) {
     if (mode === 'ingest') {
       const srcName = String(body.sourceName || '').slice(0, 120);
       const srcUrl  = String(body.url || '').slice(0, 500);
+      // page-render images — used when a brochure is image-based / scanned (no selectable text). Claude reads them with vision.
+      var ingImgs = Array.isArray(body.images)
+        ? body.images.slice(0, 6).filter(function (im) { return im && typeof im.data === 'string' && im.data.length; })
+            .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000) }; })
+        : [];
       var raw = String(body.rawText || '').slice(0, 60000);
-      if (srcUrl && !raw) {
+      if (srcUrl && !raw && !ingImgs.length) {
         try {
           const pr = await fetch(srcUrl, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; WindowGuardiansBot/1.0)', 'accept': 'text/html' } });
           if (!pr.ok) return json({ error: 'fetch', message: 'Couldn’t read that page (' + pr.status + '). If it’s a manufacturer site, try their brochure PDF instead.' });
@@ -227,7 +232,7 @@ export async function onRequestPost(context) {
         }
       }
       raw = raw.slice(0, 45000); // generous per-call window; the client chunks big brochures so every page still gets read
-      if (raw.replace(/\s/g, '').length < 40)
+      if (!ingImgs.length && raw.replace(/\s/g, '').length < 40)
         return json({ error: 'empty', message: 'Not enough readable text found' + (srcUrl ? ' — that may be a JavaScript-heavy site. Try the brochure PDF instead.' : ' in that file.') });
       const dsys =
 'You are a product-knowledge analyst building a DEEP, expert fact sheet on this window/door/siding/roofing product or brand, for Window Guardians (Langhorne, Bucks County PA) to use when writing social posts and answering homeowners. Become a genuine expert on this source — be thorough, not stingy.\n' +
@@ -242,11 +247,17 @@ export async function onRequestPost(context) {
 '• Any brand voice, taglines, financing, or service notes.\n' +
 'Rules: keep ONLY what the source actually states — never invent a number, brand, claim, or rating. Skip pure fluff, but DO capture the meaningful detail; depth is the goal. Organize as short bullet lines under headers. Up to ~380 words. If the source is thin, return only what is really there.\n' +
 'Return ONLY valid JSON: {"name":"short source label","brief":"HEADER\\n- fact\\n- fact"}';
-      const dusr = 'Source label: ' + (srcName || srcUrl || 'brochure') + '\n\nSource text:\n' + raw;
+      var dcontent;
+      if (ingImgs.length) { // image-based / scanned brochure → Claude reads the page pictures with vision
+        dcontent = [{ type: 'text', text: 'These are page images from a brochure that had NO selectable text. Read EVERY word in the images carefully — headers, spec tables, fine print, captions — and extract the fact sheet per the rules. Source label: ' + (srcName || 'brochure') }];
+        ingImgs.forEach(function (im) { dcontent.push({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } }); });
+      } else {
+        dcontent = 'Source label: ' + (srcName || srcUrl || 'brochure') + '\n\nSource text:\n' + raw;
+      }
       const dr = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: model, max_tokens: 3000, system: dsys, messages: [{ role: 'user', content: dusr }] })
+        body: JSON.stringify({ model: model, max_tokens: 3000, system: dsys, messages: [{ role: 'user', content: dcontent }] })
       });
       if (!dr.ok) { var de = ''; try { de = await dr.text(); } catch (e) {} return json({ error: 'api', status: dr.status, message: friendlyApiErr(dr.status, de) }); }
       const dd = await dr.json();

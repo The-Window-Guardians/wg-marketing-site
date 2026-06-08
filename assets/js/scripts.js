@@ -2678,6 +2678,19 @@ async function pdfToText(file){
   for(var i=1;i<=n;i++){ try{ var pg=await pdf.getPage(i); var tc=await pg.getTextContent(); parts.push(tc.items.map(function(it){return it.str;}).join(' ')); }catch(e){} }
   return parts.join('\n').replace(/[ \t]+/g,' ').trim();
 }
+// Render PDF pages to JPEGs — for image-based / scanned brochures with no text layer (Claude reads them via vision).
+async function pdfPagesToImages(file,maxPages,px){
+  var lib=await loadPdfJs(); var buf=await file.arrayBuffer(); var pdf=await lib.getDocument({data:buf}).promise;
+  var n=Math.min(pdf.numPages||1, maxPages||16), out=[];
+  for(var i=1;i<=n;i++){ try{
+    var pg=await pdf.getPage(i); var vp=pg.getViewport({scale:1});
+    var scale=Math.min(2.2,(px||1500)/Math.max(vp.width,vp.height||1)); var v2=pg.getViewport({scale:scale});
+    var cv=document.createElement('canvas'); cv.width=Math.ceil(v2.width); cv.height=Math.ceil(v2.height);
+    await pg.render({canvasContext:cv.getContext('2d'),viewport:v2}).promise;
+    var d=cv.toDataURL('image/jpeg',0.78); out.push(d.slice(d.indexOf(',')+1));
+  }catch(e){} }
+  return out;
+}
 // Send a source (website URL, or text pulled from a PDF) to the backend → distilled fact sheet.
 async function brainIngest(payload){
   var r=await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({mode:'ingest'},payload))});
@@ -2692,7 +2705,13 @@ async function brainCrawlSite(startUrl,onProgress,maxPages){
   while(queue.length && pages.length<maxPages){
     var u=queue.shift(); if(!u||visited[u])continue; visited[u]=1;
     if(onProgress)onProgress(pages.length+1, Math.min(maxPages, pages.length+queue.length+1));
-    var r=null; try{ r=await (await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'fetchpage',url:u})})).json(); }catch(e){ continue; }
+    var r=null; try{
+      var ctl=('AbortController' in window)?new AbortController():null;
+      var to=ctl?setTimeout(function(){try{ctl.abort();}catch(e){}},15000):null; // don't let one slow page hang the whole crawl
+      var resp=await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'fetchpage',url:u}),signal:ctl?ctl.signal:undefined});
+      if(to)clearTimeout(to);
+      r=await resp.json();
+    }catch(e){ continue; }
     if(!r)continue;
     if(r.text && r.text.replace(/\s/g,'').length>80)pages.push(r.text);
     var links=(r.links||[]).filter(function(l){return !visited[l];});
@@ -5345,19 +5364,21 @@ function aiBrainCard(){
       if(!/^https?:\/\/.+\..+/.test(u)){setStatus('That doesn’t look like a web address.','err');return;}
       if(busy)return; lock(true);
       const host=u.replace(/^https?:\/\//,'').replace(/\/.*/,'');
-      setStatus('🌐 Crawling '+host+' — reading every page I can find… (this can take a while)');
-      let pages=[]; try{ pages=await brainCrawlSite(u,function(n,tot){ setStatus('🌐 Crawling '+host+' — page '+n+' of ~'+tot+'…'); },40); }catch(e){}
-      if(!pages.length){ lock(false); setStatus('⚠️ Couldn’t read that site (it may block bots or be JavaScript-only). Try the brochure PDF instead.','err'); return; }
-      const chunks=chunkText(pages.join('\n\n'),12000);   // digest the WHOLE crawl, nothing skipped
-      const parts=[];
-      for(let ci=0;ci<chunks.length;ci++){
-        setStatus('🧠 Digesting '+host+' ('+pages.length+' pages) — part '+(ci+1)+' of '+chunks.length+'…');
-        const d=await brainIngest({rawText:chunks[ci],sourceName:host+(chunks.length>1?(' — part '+(ci+1)):'')});
-        if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
-      }
-      lock(false);
-      if(parts.length){ brainAdd('url',host,parts.join('\n\n')); urlIn.value=''; setStatus('✅ Crawled '+pages.length+' page'+(pages.length>1?'s':'')+' — the AI now knows this whole site.','ok'); draw(); }
-      else setStatus('⚠️ Read the site but couldn’t summarize it — try again.','err');
+      try{
+        setStatus('🌐 Crawling '+host+' — reading every page I can find… (can take a minute)');
+        let pages=[]; try{ pages=await brainCrawlSite(u,function(n,tot){ setStatus('🌐 Crawling '+host+' — page '+n+' of ~'+tot+'…'); },40); }catch(e){ pages=[]; }
+        if(!pages.length){ setStatus('⚠️ Couldn’t read that site (it may block bots or be JavaScript-only). Try the brochure PDF instead.','err'); return; }
+        const chunks=chunkText(pages.join('\n\n'),12000);   // digest the WHOLE crawl, nothing skipped
+        const parts=[];
+        for(let ci=0;ci<chunks.length;ci++){
+          setStatus('🧠 Digesting '+host+' ('+pages.length+' pages) — part '+(ci+1)+' of '+chunks.length+'…');
+          const d=await brainIngest({rawText:chunks[ci],sourceName:host+(chunks.length>1?(' — part '+(ci+1)):'')});
+          if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
+        }
+        if(parts.length){ brainAdd('url',host,parts.join('\n\n')); urlIn.value=''; setStatus('✅ Crawled '+pages.length+' page'+(pages.length>1?'s':'')+' — the AI now knows this whole site.','ok'); draw(); }
+        else setStatus('⚠️ Read the site but couldn’t summarize it — try again.','err');
+      }catch(e){ setStatus('⚠️ '+((e&&e.message)||'Something went wrong')+' — try again.','err'); }
+      finally{ lock(false); }
     };
     urlRow.appendChild(urlIn); urlRow.appendChild(urlBtn); card.appendChild(urlRow);
 
@@ -5369,26 +5390,39 @@ function aiBrainCard(){
     pdfIn.onchange=async()=>{
       const files=Array.prototype.slice.call(pdfIn.files||[]); pdfIn.value='';
       if(!files.length)return; if(busy)return; lock(true);
-      let added=0;
-      for(let i=0;i<files.length;i++){ const f=files[i];
-        const fname=f.name.replace(/\.pdf$/i,'').slice(0,80);
-        setStatus('📄 Reading every page of “'+f.name+'”…');
-        try{
-          const txt=await pdfToText(f);
-          if(!txt||txt.replace(/\s/g,'').length<40){ setStatus('⚠️ “'+f.name+'” had no readable text (it may be a scanned image). Skipped.','err'); continue; }
-          const chunks=chunkText(txt,12000);            // read the WHOLE brochure, in passes — nothing skipped
-          const parts=[];
-          for(let ci=0;ci<chunks.length;ci++){
-            setStatus('📄 Digesting every word of “'+f.name+'” — part '+(ci+1)+' of '+chunks.length+'…'+(chunks.length>1?' (this can take a bit)':''));
-            const d=await brainIngest({rawText:chunks[ci],sourceName:fname+(chunks.length>1?(' — part '+(ci+1)+'/'+chunks.length):'')});
-            if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
-          }
-          if(parts.length){ brainAdd('pdf',fname,parts.join('\n\n')); added++; }
-          else { setStatus('⚠️ '+('Couldn’t summarize “'+f.name+'”.'),'err'); }
-        }catch(e){ setStatus('⚠️ Couldn’t read “'+f.name+'”. '+((e&&e.message)||''),'err'); }
-      }
-      lock(false);
-      if(added){ setStatus('✅ Added '+added+' brochure'+(added>1?'s':'')+' — the AI now knows '+(added>1?'them':'it')+'.','ok'); draw(); }
+      let added=0, failed=[];
+      try{
+        for(let i=0;i<files.length;i++){ const f=files[i];
+          const fname=f.name.replace(/\.pdf$/i,'').slice(0,80); const tag=' ('+(i+1)+'/'+files.length+')';
+          setStatus('📄 Reading “'+f.name+'”'+tag+'…');
+          try{
+            const txt=await pdfToText(f);
+            const parts=[];
+            if(txt && txt.replace(/\s/g,'').length>=40){            // TEXT brochure → chunked text digest
+              const chunks=chunkText(txt,12000);
+              for(let ci=0;ci<chunks.length;ci++){
+                setStatus('📄 Digesting “'+f.name+'”'+tag+' — part '+(ci+1)+' of '+chunks.length+'…');
+                const d=await brainIngest({rawText:chunks[ci],sourceName:fname+(chunks.length>1?(' — part '+(ci+1)):'')});
+                if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
+              }
+            } else {                                                // IMAGE/scanned brochure → render pages, read with vision
+              setStatus('🖼️ “'+f.name+'”'+tag+' has no text layer — reading the pages as images…');
+              const imgs=await pdfPagesToImages(f,16,1500);
+              if(!imgs.length){ failed.push(f.name); setStatus('⚠️ Couldn’t read “'+f.name+'” (scanned + unreadable). Skipped.','err'); continue; }
+              for(let b=0;b<imgs.length;b+=4){ const last=Math.min(b+4,imgs.length);
+                setStatus('🖼️ Reading “'+f.name+'”'+tag+' — pages '+(b+1)+'–'+last+' of '+imgs.length+'…');
+                const batch=imgs.slice(b,last).map(function(dd){return {mediaType:'image/jpeg',data:dd};});
+                const d=await brainIngest({images:batch,sourceName:fname+(imgs.length>4?(' — pages '+(b+1)+'-'+last):'')});
+                if(d&&d.brief)parts.push(imgs.length>4?('— Pages '+(b+1)+'-'+last+' —\n'+d.brief):d.brief);
+              }
+            }
+            if(parts.length){ brainAdd('pdf',fname,parts.join('\n\n')); added++; }
+            else { failed.push(f.name); setStatus('⚠️ Couldn’t summarize “'+f.name+'”.','err'); }
+          }catch(e){ failed.push(f.name); setStatus('⚠️ Couldn’t read “'+f.name+'”. '+((e&&e.message)||''),'err'); }
+        }
+      } finally { lock(false); }
+      if(added){ setStatus('✅ Added '+added+' brochure'+(added>1?'s':'')+(failed.length?(' · ⚠️ '+failed.length+' failed: '+failed.join(', ')):'')+'.','ok'); draw(); }
+      else if(failed.length){ setStatus('⚠️ None added — failed: '+failed.join(', ')+'. Try one at a time.','err'); }
     };
     pdfRow.appendChild(pdfBtn); pdfRow.appendChild(pdfIn);
     pdfRow.appendChild(el('span','aicost','PDFs read on this device · websites + summaries ~1¢ each'));
