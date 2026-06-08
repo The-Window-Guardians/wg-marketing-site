@@ -1161,6 +1161,22 @@ function postMedia(p){
   return p.media;
 }
 function savePost(p){p._ut=Date.now();const arr=socPosts();const i=arr.findIndex(x=>x.id===p.id);if(i>=0)arr[i]=p;else arr.push(p);ST.posts=arr;commit()}
+/* Send an approved post to GoHighLevel via its inbound webhook. Fires the caption + hashtags + context;
+   Ruth finishes (attaches the photo from the Post Pack) in GHL Social Planner. text/plain + no-cors so the
+   browser can post to the webhook with no CORS preflight. */
+function ghlWebhookUrl(){ return (ST&&typeof ST.ghlWebhook==='string')?ST.ghlWebhook.trim():''; }
+async function sendToGhl(p){
+  var url=ghlWebhookUrl();
+  if(!url){ toast('Add your GoHighLevel webhook URL in Settings → Posting first.'); return false; }
+  var text=((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim();
+  var payload={ source:'WG Marketing OS', type:'social_post', postId:p.id, town:(typeof effectiveTown==='function'?effectiveTown(p):'')||'', category:p.pillar||'', caption:p.caption||'', hashtags:p.hashtags||'', text:text, photoCount:(postMedia(p)||[]).length, sentAt:Date.now() };
+  try{
+    await fetch(url,{method:'POST',mode:'no-cors',headers:{'content-type':'text/plain'},body:JSON.stringify(payload)});
+    p.sentToGhl=Date.now(); savePost(p);
+    toast('📤 Sent to GoHighLevel ✓ — finish it in GHL Social Planner (attach the photo from the Post Pack).');
+    return true;
+  }catch(e){ toast('Couldn’t reach GoHighLevel — double-check the webhook URL in Settings.'); return false; }
+}
 /* Backfill Before/After labels on a post's photos (sim #4). Drive-imported photos don't
    carry a role, so inherit it from the source job (p.fromJob) or the pool item itself.
    Only fills MISSING roles — never overwrites a label Sebastian set by hand. */
@@ -5550,9 +5566,26 @@ function aiBrainCard(){
   return card;
 }
 
+/* Settings card: paste your GoHighLevel inbound-webhook URL so approved posts can be pushed to GHL. */
+function ghlCard(){
+  const card=el('div','card pad');card.style.marginBottom='16px';
+  card.appendChild(el('div','sec-title',`<div class="chip" style="background:var(--blue-soft)">📤</div><div><h3>Post to GoHighLevel</h3><small>Push approved posts to your GHL Social Planner</small></div>`));
+  const p=el('p','',`Paste your GoHighLevel <b>inbound-webhook URL</b> here. Then on any approved post you’ll get a <b>“📤 Send to GoHighLevel”</b> button that fires the caption + hashtags + details into your GHL workflow. (In GHL: create a Workflow → trigger “Inbound Webhook” → copy its URL.)`);
+  p.style.cssText='color:var(--ink2);font-size:13.5px;margin:2px 0 10px';card.appendChild(p);
+  const row=el('div','');row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center';
+  const inp=el('input');inp.type='url';inp.placeholder='https://services.leadconnectorhq.com/hooks/...';inp.value=ghlWebhookUrl();
+  inp.style.cssText='flex:1;min-width:220px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px';
+  const save=el('button','btn-set primary','Save');
+  const st=el('div','');st.style.cssText='font-size:12.5px;margin-top:6px;color:var(--ink2)';
+  save.onclick=()=>{ var u=(inp.value||'').trim(); if(u&&!/^https?:\/\//i.test(u)){st.textContent='URL should start with https://';st.style.color='var(--red)';return;} if(!ST)return; ST.ghlWebhook=u; commit(); st.textContent=u?'✅ Saved — “Send to GoHighLevel” is now on your approved posts.':'Cleared.'; st.style.color='var(--green)'; };
+  row.appendChild(inp);row.appendChild(save);card.appendChild(row);card.appendChild(st);
+  return card;
+}
+
 function viewSettings(v){
   v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, storage, your data backup, and team logins.</p>`));
   if(isOwner())v.appendChild(aiBrainCard());
+  if(isOwner())v.appendChild(ghlCard());
 
   const proj=el('div','card pad');proj.style.marginBottom='16px';
   proj.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📋</div><div><h3>This project</h3><small>Project 1 of your Marketing OS</small></div></div>
@@ -7117,7 +7150,15 @@ function openComposer(idOrPost,isNew){
       toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
     } else toast('Approved → posting queue ✓');
   };
-  foot.appendChild(save);foot.appendChild(appr);b.appendChild(foot);
+  foot.appendChild(save);foot.appendChild(appr);
+  // 📤 Send to GoHighLevel — owner, once a webhook URL is set in Settings
+  if(typeof isOwner==='function'&&isOwner()&&ghlWebhookUrl()){
+    const ghl=el('button','btn-set','📤 '+(p.sentToGhl?'Re-send to GoHighLevel':'Send to GoHighLevel'));
+    ghl.title='Push this post (caption + hashtags + details) into your GoHighLevel Social Planner';
+    ghl.onclick=async()=>{ ghl.disabled=true; await sendToGhl(p); ghl.disabled=false; ghl.textContent='📤 Re-send to GoHighLevel'; };
+    foot.appendChild(ghl);
+  }
+  b.appendChild(foot);
 }
 function closeComposer(){const o=$('#cmpOv');if(o)o.remove();
   // flush any remote update that arrived while the composer was open (deferred in onSnapshot)
