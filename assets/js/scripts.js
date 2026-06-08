@@ -6248,7 +6248,7 @@ function postCard(p){
       <div class="pctown">📍 ${esc(p.town||'—')}${p.date?` · ${esc(p.date)}${p.time?' '+esc(p.time):''}`:''}</div>
       <div class="pccap">${cap?esc(cap.slice(0,90))+(cap.length>90?'…':''):'<span class=\"muted\">No caption yet</span>'}</div>
       ${p.aiWarn?`<div class="pcwarn" title="${esc(p.aiWarn)}">⚠️ check photos</div>`:''}
-      <div class="pcfoot"><span class="pcplats">${plats||'—'}</span><span class="pcgap">${postReady(p)?'<span class=\"rdy\">✓ ready</span>':postGaps(p).length+' to add'}</span></div>
+      ${p.status==='draft'?`<div class="pcfoot"><span class="pcgap">${postReady(p)?'<span class=\"rdy\">✓ ready to approve</span>':'<span class=\"muted\">'+postGaps(p).length+' to add before approving</span>'}</span></div>`:''}
     </div>`;
   thumbInto(card.querySelector('img'),mm[0]&&mm[0].id);
   card.style.position='relative';
