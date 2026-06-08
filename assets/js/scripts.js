@@ -6696,9 +6696,15 @@ function socLibrary(v){
   if(!active.length){
     postsCard.innerHTML+=`<p class="muted">No posts yet. Tick some content above and tap “Make a post”.</p>`;
   }else{
-    const grid=el('div','library');
-    drafts.concat(queued).forEach(p=>grid.appendChild(postCard(p)));
-    postsCard.appendChild(grid);
+    const section=(title,sub,arr)=>{ // a labeled sub-section so drafts and approved are clearly separated
+      const h=el('div','postsec-h'); h.style.cssText='display:flex;align-items:baseline;gap:8px;margin:14px 0 6px';
+      h.appendChild(el('b','',title)).style.fontSize='13.5px';
+      h.appendChild(el('span','muted',sub)).style.fontSize='12px';
+      postsCard.appendChild(h);
+      const grid=el('div','library'); arr.forEach(p=>grid.appendChild(postCard(p))); postsCard.appendChild(grid);
+    };
+    if(drafts.length)section('📝 Drafts','— still being worked on; not in the queue yet',drafts);
+    if(queued.length)section('✅ Approved · in the queue','— ready for Ruth to post',queued);
   }
   // ✨ Build my week — owner taps it; Claude drafts a few posts from the newest photos to review (added AFTER innerHTML+= so the handler survives)
   if(typeof isOwner==='function'&&isOwner()){
