@@ -2056,6 +2056,17 @@ function openJobPicker(item){
    city). Cached, throttled (~1 req/sec), and fails quietly — if it can't reach the service the
    job just stays "Job N". ---- */
 var _geoCache={}, _geoBusy=false, GEO_VERSION=2; // bump to re-geocode everything with the better provider
+/* ZIP → the town people actually say (beats the geocoder, which often returns the TOWNSHIP).
+   Covers Window Guardians' Bucks County service area + nearby. Tell me to adjust any mapping. */
+var ZIP_TOWN={
+  '18901':'Doylestown','18902':'Doylestown','18914':'Chalfont','18925':'Furlong','18929':'Jamison','18936':'Penndel',
+  '18938':'New Hope','18940':'Newtown','18944':'Perkasie','18951':'Quakertown','18954':'Richboro','18955':'Spinnerstown',
+  '18960':'Sellersville','18964':'Souderton','18966':'Holland','18969':'Telford','18974':'Warminster','18976':'Warrington','18977':'Washington Crossing',
+  '19006':'Huntingdon Valley','19007':'Bristol','19020':'Bensalem','19021':'Croydon','19030':'Fairless Hills','19040':'Hatboro',
+  '19047':'Langhorne','19053':'Feasterville','19054':'Levittown','19055':'Levittown','19056':'Levittown','19057':'Levittown',
+  '19067':'Yardley','19090':'Willow Grove'
+};
+function townFromZip(z){ z=String(z||'').trim().slice(0,5); return ZIP_TOWN[z]||''; }
 async function reverseGeocode(lat,lng){
   if(typeof lat!=='number'||typeof lng!=='number')return null;
   var key=lat.toFixed(4)+','+lng.toFixed(4);
@@ -2069,6 +2080,7 @@ async function reverseGeocode(lat,lng){
     var town=a.town||a.borough||a.village||a.hamlet||a.municipality||a.city_district||a.suburb||a.neighbourhood||a.city||a.county||'';
     town=String(town).replace(/\s+(borough|township|city|town|cdp)$/i,'').trim(); // "Langhorne Borough" -> "Langhorne"
     var zip=a.postcode||'';
+    var zt=townFromZip(zip); if(zt)town=zt;   // ZIP wins — gives the town people actually say, not the township
     var out=town?{town:town,zip:zip}:null;
     _geoCache[key]=out; return out;
   }catch(e){ _geoCache[key]=null; return null; }
@@ -2351,6 +2363,13 @@ function absorbIntoNamedJobs(){
     });
     if(changed)commit();
     return changed;
+  }catch(e){ return false; }
+}
+// Instantly correct any photo's town from its ZIP (no network) — turns townships into the real town name.
+function fixTownsFromZip(){
+  try{ if(typeof _fbSync==='object'&&_fbSync&&_fbSync.applying)return false; var changed=false;
+    socPool().forEach(function(m){ if(!m||!m.zip)return; var zt=townFromZip(m.zip); if(zt && m.town!==zt){ m.town=zt; m._ut=Date.now(); changed=true; } });
+    if(changed)commit(); return changed;
   }catch(e){ return false; }
 }
 function gdStartPolling(){if(_gdTimer)return;_gdTimer=setInterval(()=>{if(!document.hidden)gdSyncNow(false);},60000);}
@@ -6629,6 +6648,7 @@ function socLibrary(v){
       poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
     }
   }else if(grouped){
+    fixTownsFromZip();     // ZIP → real town name (not the township)
     absorbIntoNamedJobs(); // new GPS photos auto-join a named job at the same address
     // accordion: exactly ONE group opens on first load (the rest collapse) → short scroll
     let firstOpen=true; const defOpen=function(){ if(firstOpen){ firstOpen=false; return true; } return false; };
