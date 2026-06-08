@@ -173,6 +173,7 @@ export async function onRequestPost(context) {
     const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold' || body.style === 'boldmax') ? body.style : 'rewrite';
     const brain    = String(body.brain    || '').slice(0, 7000); // the owner's distilled company facts (from brochures/site)
     const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
+    const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
     const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
@@ -250,6 +251,11 @@ brain + '\n' +
 voice + '\n')
 : '';
 
+    // Per-post director's note — the owner's specific steer for THIS post. High priority.
+    const NOTE_BLOCK = note ?
+('OWNER’S DIRECTION FOR THIS SPECIFIC POST — follow it closely. It steers the angle, facts to emphasize, audience, or ask. It overrides default angle choices, but NEVER the hard guardrails:\n"' + note + '"\n')
+: '';
+
     // TONE control — about 45% of generated posts come in bold; the rest stay warm/proud.
     const TONE = bold
       ? 'TONE: BOLD & a little UNHINGED — this is the post people screenshot and text to a friend. Think Liquid Death / Old Spice energy: absurd, unexpected, gleefully dramatic, a hook that makes people do a double-take. Personify the old windows, invent a tiny over-the-top scenario, commit to a ridiculous bit — go further than feels comfortable. Do NOT hedge, do NOT sound like a company, do NOT play it safe; a tame post is a failure. BUT land the plane: every wild swing still ties back to the real craftsmanship/product by the end — chaos with a point, not chaos for its own sake. That balance (unhinged + actually about great windows) is the whole game. Stay 100% inside the hard guardrails — that is the ONE rule; everything inside them is fair game. Short, punchy, fearless. Make at least 2 of the 3 options swing hard; one may be a touch more grounded.\n'
@@ -280,6 +286,7 @@ PERSONA +
 KNOWLEDGE +
 BRAIN_BLOCK +
 VOICE_BLOCK +
+NOTE_BLOCK +
 TONE +
 'Rules:\n' +
 VISION_RULE +
@@ -316,6 +323,7 @@ PERSONA +
 KNOWLEDGE +
 BRAIN_BLOCK +
 VOICE_BLOCK +
+NOTE_BLOCK +
 'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
 'Rules:\n' +
 VISION_RULE +

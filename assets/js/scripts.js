@@ -2695,7 +2695,7 @@ async function aiCaptionLive(p,style){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),images:images})
   });
   return await r.json();
 }
@@ -2721,7 +2721,7 @@ async function aiFullPostLive(p,bold){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),bold:!!bold,images:images})
+    body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),note:(p.aiNote||''),bold:!!bold,images:images})
   });
   return await r.json();
 }
@@ -6830,6 +6830,13 @@ function openComposer(idOrPost,isNew){
     }
   };
   renderMedia();mf.appendChild(media);b.appendChild(mf);
+
+  // 🎯 Note to AI — a director's note that steers EVERY AI button for this post (angle, facts to push, audience, ask).
+  const nf=el('div','cmp-field');
+  nf.innerHTML='<label>🎯 Note to AI <span class="muted" style="font-weight:600">— optional. Tell Claude what to emphasize or do, e.g. “focus on energy savings,” “make it about curb appeal,” “mention the lifetime warranty,” “speak to first-time buyers.” Applies to every button below.</span></label>';
+  const na=el('textarea','cmp-in');na.rows=2;na.value=p.aiNote||'';na.placeholder='e.g. lean on the arched foyer window · push the no-paint AZEK trim · keep it short';
+  na.oninput=()=>{ p.aiNote=na.value; scheduleDraft(); };
+  nf.appendChild(na);b.appendChild(nf);
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
