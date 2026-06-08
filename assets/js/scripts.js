@@ -1165,15 +1165,27 @@ function savePost(p){p._ut=Date.now();const arr=socPosts();const i=arr.findIndex
    Ruth finishes (attaches the photo from the Post Pack) in GHL Social Planner. text/plain + no-cors so the
    browser can post to the webhook with no CORS preflight. */
 function ghlWebhookUrl(){ return (ST&&typeof ST.ghlWebhook==='string')?ST.ghlWebhook.trim():''; }
+// Publish ONE post photo to public R2 storage → returns a fetchable URL (for GHL/Facebook). null if hosting isn't set up.
+async function publishImagePublic(id){
+  try{
+    var b=await mediaToB64(id,1280); if(!b||!b.data)return null;       // decent resolution for social
+    var r=await fetch('/publish-image',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,mime:b.mediaType,data:b.data})});
+    var j=await r.json(); return (j&&j.url)?j.url:null;
+  }catch(e){ return null; }
+}
 async function sendToGhl(p){
   var url=ghlWebhookUrl();
   if(!url){ toast('Add your GoHighLevel webhook URL in Settings → Posting first.'); return false; }
   var text=((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim();
-  var payload={ source:'WG Marketing OS', type:'social_post', postId:p.id, town:(typeof effectiveTown==='function'?effectiveTown(p):'')||'', category:p.pillar||'', caption:p.caption||'', hashtags:p.hashtags||'', text:text, photoCount:(postMedia(p)||[]).length, sentAt:Date.now() };
+  // publish each photo to a public link so it rides along with the post (Phase 2). Falls back to text-only if R2 isn't set up.
+  var photos=(postMedia(p)||[]).filter(function(m){return !/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');});
+  var imageUrls=[];
+  for(var i=0;i<photos.length && i<10;i++){ var u=await publishImagePublic(photos[i].id); if(u)imageUrls.push(u); }
+  var payload={ source:'WG Marketing OS', type:'social_post', postId:p.id, town:(typeof effectiveTown==='function'?effectiveTown(p):'')||'', category:p.pillar||'', caption:p.caption||'', hashtags:p.hashtags||'', text:text, photoCount:photos.length, imageUrl:(imageUrls[0]||''), imageUrls:imageUrls, sentAt:Date.now() };
   try{
     await fetch(url,{method:'POST',mode:'no-cors',headers:{'content-type':'text/plain'},body:JSON.stringify(payload)});
     p.sentToGhl=Date.now(); savePost(p);
-    toast('📤 Sent to GoHighLevel ✓ — finish it in GHL Social Planner (attach the photo from the Post Pack).');
+    toast(imageUrls.length ? ('📤 Sent to GoHighLevel ✓ — caption + '+imageUrls.length+' photo'+(imageUrls.length>1?'s':'')+' included.') : '📤 Sent to GoHighLevel ✓ — text only (set up image hosting for auto-photos). Ruth can attach the photo from the Post Pack.');
     return true;
   }catch(e){ toast('Couldn’t reach GoHighLevel — double-check the webhook URL in Settings.'); return false; }
 }
