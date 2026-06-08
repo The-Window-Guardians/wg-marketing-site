@@ -7114,34 +7114,10 @@ function openComposer(idOrPost,isNew){
   caBoldMild.onclick=()=>runAI('bold','🙂 Claude is adding a little wit…',0);
   caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…',1);
   caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL send…',2);
-  // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
-  const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
-  caFull.onclick=async()=>{
-    const media=postMedia(p);
-    if(!media.length){toast('Add a photo to the post first — this reads your pictures');return;}
-    if(aiBusy)return;
-    caOpts.dataset.open='1';caOpts.dataset.style='full';caOpts.innerHTML='';
-    caOpts.appendChild(el('div','sughdr','🪄 Claude is looking at your photos…'));
-    aiBusy=true;caFull.disabled=true;ALLB.forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiFullPostLive(p); }catch(e){ d={error:'net'}; }
-    aiBusy=false;caFull.disabled=false;ALLB.forEach(x=>x.disabled=false);
-    if(caOpts.dataset.open!=='1')return;
-    caOpts.innerHTML='';
-    if(d&&d.captions&&d.captions.length){
-      if(d.hashtags){ ha.value=mergeTags(ha.value,d.hashtags); p.hashtags=ha.value; }
-      if(d.category){ setCategory(d.category); }
-      scheduleDraft();
-      const done=[]; if(d.hashtags)done.push('hashtags'); if(d.category)done.push('category');
-      if(d.warn)caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)));
-      caOpts.appendChild(el('div','sughdr','Done'+(done.length?(' — '+done.join(' + ')+' filled in'):'')+'. Tap a caption to use it:'));
-      d.captions.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Caption set ✓ — hashtags + category are in')};caOpts.appendChild(o)});
-    } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
-  };
-  const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
   const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caTeach);caRow.appendChild(caProduct);caRow.appendChild(el('span','aicost','~1¢ · 3 options each'));
   const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Bold:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
   const dialRow=el('div','sugrow');dialRow.style.marginTop='6px';dialRow.appendChild(caUse);
-  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
+  cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
