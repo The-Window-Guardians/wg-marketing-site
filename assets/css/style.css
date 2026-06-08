@@ -753,8 +753,8 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .medcell .medmvbtn:disabled{opacity:.3;cursor:default}
 .medcell .medmvbtn:hover:not(:disabled){background:var(--orange)}
 .medordernote{font-size:12px;color:var(--muted);margin:0 0 8px;font-weight:600}
-.medx{position:absolute;top:4px;right:4px;width:22px;height:22px;border:none;border-radius:50%;background:#000a;color:#fff;cursor:pointer;font-size:11px;line-height:1;display:grid;place-items:center;padding:0}
-.medx:hover{background:var(--orange)}
+.medx{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;border-radius:50%;background:#000c;color:#fff;cursor:pointer;font-size:13px;line-height:1;display:grid;place-items:center;padding:0;z-index:7;box-shadow:0 1px 3px #0007}
+.medx:hover{background:var(--red,#e23b3b)}
 .meddrop.small{padding:0;aspect-ratio:1/1;display:grid;place-items:center;font-size:12px}
 .pccount{position:absolute;top:6px;right:6px;background:#000a;color:#fff;font-size:11px;font-weight:700;padding:2px 7px;border-radius:20px}
 /* cadence banner */
