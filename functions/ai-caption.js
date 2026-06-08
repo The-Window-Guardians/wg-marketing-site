@@ -190,7 +190,9 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
-    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold' || body.style === 'boldmax') ? body.style : 'rewrite';
+    const STYLES   = {best:1,showcase:1,teach:1,bold:1,boldmax:1,advice:1,rewrite:1,elaborate:1,funny:1};
+    const style    = STYLES[body.style] ? body.style : 'best';
+    const edge     = (body.edge === 2 ? 2 : body.edge === 0 ? 0 : 1); // Bold intensity: 0 mild · 1 bold · 2 MAX
     const brain    = String(body.brain    || '').slice(0, 14000); // the owner's distilled company facts (from brochures/site)
     const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
     const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
@@ -364,18 +366,22 @@ ANGLE_CREDIT +
 (images.length ? ('There ' + (images.length > 1 ? ('are ' + images.length + ' photos') : 'is 1 photo') + ' attached — look closely and describe the real work.') : '(No photo attached — write from the note.)') + '\n' +
 'Write the full post now as JSON.';
     } else {
+      var boldRule =
+        (style==='boldmax'||edge>=2)
+          ? '- MODE: BOLD MAX 🔥 — completely UNHINGED. Maximum head-turner, borderline reckless, the kind of caption that makes someone stop dead and go "did a WINDOW company really just post that?!" Absurd premises, wild metaphors, theatrical drama, deadpan chaos, personify the old windows as full-on menaces. Swing for the fences — no hedging. BUT land it on the real craftsmanship by the last line, and the hard guardrails are ABSOLUTE. 1 to 3 explosive sentences.'
+        : (edge<=0)
+          ? '- MODE: BOLD (mild) — clever and witty with a light wink, confident but easygoing. A pattern-breaking hook, a little personality, nothing over-the-top. 1 to 3 punchy sentences.'
+          : '- MODE: BOLD — full witty/edgy brand voice, a scroll-stopping head-turner. Pattern-breaking hook, lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy), dry sarcasm welcome. Clever never crude, confident never corny. 1 to 3 punchy sentences.';
       var styleRule =
-        style === 'elaborate'
-          ? '- MODE: ELABORATE. Expand into a fuller caption — add a little story, context, and benefit to the homeowner. 2 to 4 sentences. Still 100% truthful: do not invent any fact.'
-        : style === 'funny'
-          ? '- MODE: FUNNY. Write a light, playful, genuinely funny caption (a wink, a relatable joke about old drafty windows, etc.) — still on-brand and tasteful, not corny or unprofessional. 1 to 3 short sentences.'
-        : style === 'advice'
-          ? '- MODE: ADVICE / EDUCATE. Write a helpful, expert caption that teaches the homeowner something real and useful — a tip, a "did you know," what to look for, or food for thought — drawn from the product knowledge above. Lead with the value, tie it to the post, end with a soft invitation to ask or learn more. 2 to 4 sentences. General guidance only unless a feature was actually seen/stated; never fabricate job specifics.'
-        : style === 'bold'
-          ? '- MODE: BOLD. Full witty/edgy brand voice — a scroll-stopping head-turner. Open with a pattern-breaking hook, lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy), dry sarcasm welcome. Clever, never crude; confident, never corny. 1 to 3 punchy sentences, all inside the hard guardrails.'
-        : style === 'boldmax'
-          ? '- MODE: BOLD MAX 🔥 — completely UNHINGED. Maximum head-turner, borderline reckless, the kind of caption that makes someone stop dead and go "did a WINDOW company really just post that?!" Go WAY bigger than feels reasonable: absurd premises, wild metaphors, theatrical drama, deadpan chaos, personify the old windows as full-on menaces. Commit harder than Bold — no safety net, no hedging, swing for the fences. BUT: (1) still land it on the real craftsmanship by the last line, and (2) the hard guardrails are ABSOLUTE and unbreakable — no profanity, no politics/religion, no naming competitors, no fear-mongering, never insult the homeowner. Borderline, never over the line. 1 to 3 explosive sentences.'
-          : '- MODE: REWRITE. Produce a clean, polished, ready-to-post caption. Keep it tight: 1 to 3 short sentences.';
+        style === 'showcase'
+          ? '- MODE: SHOWCASE — proud, confident, craftsmanship-forward. Make the work and the transformation the star (the proof pillar). Still open with a hook, never "We installed…". 1 to 3 sentences.'
+        : (style === 'teach' || style === 'advice')
+          ? '- MODE: TEACH — a helpful expert take that teaches the homeowner something real: a tip, a "did you know," what to look for, food for thought — drawn from the product knowledge. Lead with the value, tie it to the post, end with a soft invite. 2 to 4 sentences. General guidance unless a feature was actually seen/stated.'
+        : (style === 'bold' || style === 'boldmax' || style === 'funny')
+          ? boldRule
+        : (style === 'rewrite' || style === 'elaborate')
+          ? '- MODE: CLEAN — a fresh, clean, polished, ready-to-post caption with a little spark. 1 to 3 sentences.'
+          : '- MODE: BEST — YOU choose the single strongest play for THIS post: pick the angle AND the vibe (proud showcase, witty/bold, or a quick teach) that will perform best for these photos. Make the 3 options genuinely DIFFERENT in approach so the owner can choose. 1 to 3 sentences each (a teach option may be longer).';
       sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 PERSONA +
@@ -384,7 +390,6 @@ KNOWLEDGE +
 BRAIN_BLOCK +
 VOICE_BLOCK +
 NOTE_BLOCK +
-TONE +
 FRAMING +
 'Rules:\n' +
 VISION_RULE +

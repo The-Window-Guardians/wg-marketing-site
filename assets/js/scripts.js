@@ -2755,7 +2755,7 @@ async function brainCrawlSite(startUrl,onProgress,maxPages){
   }
   return pages;
 }
-async function aiCaptionLive(p,style,useDraft){
+async function aiCaptionLive(p,style,useDraft,edge){
   var text=useDraft?((p.caption||'').trim()):'';          // fresh by default — don't anchor to (and recycle) the current caption
   var ctx=(p.caption||'')+' '+(p.jobNote||'');            // still mine the draft+job for product/trade grounding
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
@@ -2763,7 +2763,7 @@ async function aiCaptionLive(p,style,useDraft){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),useDraft:!!useDraft,images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'best'),edge:(typeof edge==='number'?edge:1),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),useDraft:!!useDraft,images:images})
   });
   return await r.json();
 }
@@ -6989,26 +6989,34 @@ function openComposer(idOrPost,isNew){
   cf.appendChild(ca);
   const caOpts=el('div','sugbox');
   const fillFallback=(hdrMsg)=>{ const typed=(ca.value||'').trim(); const opts=typed?captionImprove(p):aiCaptionOptions(p); caOpts.appendChild(el('div','sughdr',hdrMsg)); opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)}); };
-  const caRewrite=el('button','btn-set ai-draft','🤖 AI clean');caRewrite.title='A fresh, clean, polished post idea. ~1¢';
-  const caElab=el('button','btn-set ai-draft','🤖 AI story');caElab.title='A fresh, fuller take with a little story + homeowner benefit. ~1¢';
-  const caFunny=el('button','btn-set ai-draft','😄 AI funny');caFunny.title='A fresh light, playful take — still on-brand. ~1¢';
-  const caAdvice=el('button','btn-set ai-draft','💡 AI advice');caAdvice.title='A fresh expert/educational take — a tip or "did you know". ~1¢';
-  const caBold=el('button','btn-set ai-draft','🔥 AI bold');caBold.title='A fresh witty, edgy, scroll-stopping take — clever, never crude. ~1¢';
-  const caBoldMax=el('button','btn-set ai-draft','💥 AI Bold MAX');caBoldMax.title='A fresh, completely unhinged head-turner — still clean + inside the rules. ~1¢';
-  // Default = each button invents a FRESH concept. Flip this on to make them build on YOUR draft instead.
+  // ── 4 GOAL buttons (one tap = 3 fresh options) + 2 dials (edge + fresh/my-words) ──
+  const caBest=el('button','btn-set ai-draft primary','✨ Best');caBest.title='AI reads the photos and picks the strongest angle + vibe. ~1¢';
+  const caShow=el('button','btn-set ai-draft','🏆 Showcase');caShow.title='Proud — shows off the craftsmanship. ~1¢';
+  const caBold=el('button','btn-set ai-draft','🔥 Bold');caBold.title='Witty, edgy, scroll-stopping brand voice (use the edge dial). ~1¢';
+  const caTeach=el('button','btn-set ai-draft','💡 Teach');caTeach.title='Expert tip / "did you know" — builds trust. ~1¢';
+  // Fresh vs. my words
   let useMyWords=false;
-  const caUse=el('button','btn-set','✍️ Fresh ideas');caUse.title='Tap to switch: Fresh ideas (ignore my text) ↔ Use my words (build on my caption)';
+  const caUse=el('button','btn-set','✍️ Fresh ideas');caUse.title='Fresh ideas (ignore my text) ↔ Use my words (build on my caption)';
   caUse.onclick=()=>{ useMyWords=!useMyWords; caUse.textContent=useMyWords?'✍️ Using my words':'✍️ Fresh ideas'; caUse.classList.toggle('on',useMyWords); toast(useMyWords?'AI will build on your caption':'AI will invent fresh ideas'); };
+  // Edge dial (applies to 🔥 Bold): 0 mild · 1 bold · 2 MAX
+  let edgeLevel=1;
+  const edgeWrap=el('div','');edgeWrap.style.cssText='display:inline-flex;align-items:center;gap:6px';
+  edgeWrap.appendChild(el('span','muted','🔥 edge')).style.cssText='font-size:11.5px';
+  const edgeSeg=el('div','');edgeSeg.style.cssText='display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden';
+  const segPaint=(arr)=>arr.forEach(function(b,i){ var on=([0,1,2][i]===edgeLevel); b.style.background=on?'var(--orange)':'transparent'; b.style.color=on?'#fff':'var(--ink2)'; });
+  const segBtns=[['Mild',0],['Bold',1],['MAX',2]].map(function(o){ const b=el('button','',o[0]); b.style.cssText='border:none;background:transparent;color:var(--ink2);font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer'; b.onclick=()=>{ edgeLevel=o[1]; segPaint(segBtns); toast('🔥 Bold edge: '+o[0]); }; edgeSeg.appendChild(b); return b; });
+  segPaint(segBtns); edgeWrap.appendChild(edgeSeg);
   let aiBusy=false;
+  const ALLB=[caBest,caShow,caBold,caTeach];
   const runAI=async(style,workingMsg)=>{
     if(aiBusy)return;
     if(caOpts.dataset.open==='1'&&caOpts.dataset.style===style){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
     p.caption=ca.value; // use the latest text
     caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
-    aiBusy=true;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords); }catch(e){ d={error:'net'}; }
-    aiBusy=false;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=false);
+    aiBusy=true;ALLB.forEach(x=>x.disabled=true);
+    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords,(style==='bold'?edgeLevel:1)); }catch(e){ d={error:'net'}; }
+    aiBusy=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
@@ -7017,12 +7025,10 @@ function openComposer(idOrPost,isNew){
       d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
-  caRewrite.onclick=()=>runAI('rewrite','🤖 Claude is writing…');
-  caElab.onclick=()=>runAI('elaborate','🤖 Claude is elaborating…');
-  caFunny.onclick=()=>runAI('funny','🤖 Claude is having fun…');
-  caAdvice.onclick=()=>runAI('advice','💡 Claude is sharing expert advice…');
-  caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…');
-  caBoldMax.onclick=()=>runAI('boldmax','💥 Claude is going FULL send…');
+  caBest.onclick=()=>runAI('best','✨ Claude is finding the best angle…');
+  caShow.onclick=()=>runAI('showcase','🏆 Claude is showing off the work…');
+  caBold.onclick=()=>runAI('bold', edgeLevel>=2?'💥 Claude is going FULL send…':edgeLevel<=0?'🔥 Claude is adding a little wit…':'🔥 Claude is getting bold…');
+  caTeach.onclick=()=>runAI('teach','💡 Claude is sharing expert advice…');
   // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
   const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
   caFull.onclick=async()=>{
@@ -7031,9 +7037,9 @@ function openComposer(idOrPost,isNew){
     if(aiBusy)return;
     caOpts.dataset.open='1';caOpts.dataset.style='full';caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr','🪄 Claude is looking at your photos…'));
-    aiBusy=true;caFull.disabled=true;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=true);
+    aiBusy=true;caFull.disabled=true;ALLB.forEach(x=>x.disabled=true);
     let d=null; try{ d=await aiFullPostLive(p); }catch(e){ d={error:'net'}; }
-    aiBusy=false;caFull.disabled=false;[caRewrite,caElab,caFunny].forEach(x=>x.disabled=false);
+    aiBusy=false;caFull.disabled=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return;
     caOpts.innerHTML='';
     if(d&&d.captions&&d.captions.length){
@@ -7047,8 +7053,9 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
-  const caRow=el('div','sugrow');caRow.appendChild(caUse);caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(caBoldMax);caRow.appendChild(el('span','aicost','~1¢ per tap'));
-  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(caOpts);
+  const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caShow);caRow.appendChild(caBold);caRow.appendChild(caTeach);caRow.appendChild(el('span','aicost','~1¢ per tap · 3 fresh options'));
+  const dialRow=el('div','sugrow');dialRow.style.marginTop='6px';dialRow.appendChild(caUse);dialRow.appendChild(edgeWrap);
+  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
