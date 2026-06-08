@@ -2033,6 +2033,12 @@ function openJobPicker(item){
   const create=el('button','btn-set primary','＋ Create a new job');create.style.cssText='width:100%;margin-bottom:10px';
   create.onclick=async()=>{ const name=await uiPrompt('Name the new job (e.g. an address or the customer).','',{title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; assignManual(name,'Created job “'+name+'” ✓'); };
   b.appendChild(create);
+  // 🔍 Search bar — filter the job list as you type (handy when you have lots of jobs)
+  const srch=el('input','cmp-in');srch.type='search';srch.placeholder='🔍 Search your jobs…';srch.style.cssText='width:100%;margin:0 0 10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;box-sizing:border-box';
+  srch.oninput=()=>{ const q=(srch.value||'').toLowerCase().trim(); let any=false; b.querySelectorAll('.jobpick').forEach(function(opt){ const lab=((opt.querySelector('.jp-label')||{}).textContent||'').toLowerCase(); const hit=!q||lab.indexOf(q)>=0; opt.style.display=hit?'':'none'; if(hit)any=true; }); const nm=b.querySelector('.jp-none'); if(nm)nm.style.display=(q&&!any)?'':'none'; };
+  b.appendChild(srch);
+  b.appendChild(el('div','jp-none muted','No jobs match — tap “＋ Create a new job” above.')).style.cssText='display:none;font-size:12.5px;padding:4px 2px';
+  setTimeout(function(){try{srch.focus();}catch(e){}},60);
   // JOIN an existing job you made — each gets a thumbnail + photo count so you can tell them apart at a glance
   manualNames.forEach(function(gname){
     const mine=poolAvailable().filter(m=>m.cgroup===gname&&!ids[m.id]);
