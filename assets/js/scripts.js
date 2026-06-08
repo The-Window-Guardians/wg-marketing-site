@@ -6551,8 +6551,9 @@ function socLibrary(v){
 
   // ---- POSTS: drafts + waiting queue (posted ones move to "Recently posted") ----
   const active=socPosts().filter(p=>p.status!=='posted');
-  const drafts=active.filter(p=>p.status==='draft');
-  const queued=active.filter(p=>p.status==='approved');
+  const byNewest=(a,b)=>((b._ct||_tsFromId(b.id)||b._ut||0)-(a._ct||_tsFromId(a.id)||a._ut||0)); // newest first — stable order, not the random array/merge order
+  const drafts=active.filter(p=>p.status==='draft').sort(byNewest);
+  const queued=active.filter(p=>p.status==='approved').sort(byNewest);
   const postsCard=el('div','card pad');postsCard.style.marginTop='12px';
   postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${drafts.length} draft${drafts.length===1?'':'s'} · ${queued.length} waiting in the queue</small></div></div>`;
   if(!active.length){
