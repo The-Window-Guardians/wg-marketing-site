@@ -7191,22 +7191,28 @@ function openComposer(idOrPost,isNew){
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('It’s removed everywhere (drafts + queue). The photos go back to your content so you can reuse them.',{title:'Delete this post?',confirmText:'Delete',danger:true});if(ok){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal();toast('Post deleted — photos back in your content')}};foot.appendChild(del);}
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
-  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');await publishPostMedia(p);}savePost(p);closeComposer();rerenderCal();toast('Saved')};
+  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');try{await pTimeout(publishPostMedia(p),90000,'photo sync');}catch(e){save.disabled=false;toast('Photo sync was slow — saved as draft. Try Approve again. '+((e&&e.message)||''));}}savePost(p);closeComposer();rerenderCal();toast('Saved')};
   const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve & send to queue');
   appr.onclick=async()=>{
+    if(appr.disabled)return;
     const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}
     appr.disabled=true;toast('Sharing photos to the team…');
-    const r=await publishPostMedia(p); const mm=postMedia(p); const failed=r.failed||[];
-    if(mm.length && r.done===0){ // nothing reached the cloud — don't ship Ruth an empty/broken post
-      appr.disabled=false;
-      const allVid=failed.length&&failed.every(f=>f.skipReason==='video');
-      toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
-      return;
-    }
-    p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);captureApprovedExample(p);closeComposer();rerenderCal();
-    if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
-      toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
-    } else toast('Approved → posting queue ✓');
+    let r=null;
+    try{ r=await pTimeout(publishPostMedia(p),90000,'photo sync'); }
+    catch(e){ appr.disabled=false; toast('Couldn’t sync the photos ('+((e&&e.message)||'timed out')+'). Try again, or remove a problem photo and re-approve.'); return; }
+    try{
+      const mm=postMedia(p); const failed=(r&&r.failed)||[];
+      if(mm.length && (!r||r.done===0)){ // nothing reached the cloud — don't ship Ruth an empty/broken post
+        appr.disabled=false;
+        const allVid=failed.length&&failed.every(f=>f.skipReason==='video');
+        toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
+        return;
+      }
+      p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);captureApprovedExample(p);closeComposer();rerenderCal();
+      if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
+        toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
+      } else toast('Approved → posting queue ✓');
+    }catch(e){ appr.disabled=false; toast('Approve hit a snag — try again. '+((e&&e.message)||'')); }
   };
   foot.appendChild(save);foot.appendChild(appr);
   // 📤 Send to GoHighLevel — owner, once a webhook URL is set in Settings
