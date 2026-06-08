@@ -1791,6 +1791,18 @@ function openContentAudit(){
   var nb=el('button','btn-set primary','🧹 Remove no-preview photos');
   nb.onclick=function(){ cleanupNoPreview(nb); };
   nf.appendChild(nb); b.appendChild(nf);
+  // Back up every Drive photo's thumbnail to the cloud so they NEVER blank again (needs Drive connected once).
+  var unbacked=socPool().filter(function(m){ return m&&m.driveId&&!m._cloudThumb&&!/^(pf_|hf_)/.test(m.id||'')&&!(/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')); }).length;
+  var tf=el('div','cmp-field');tf.style.marginTop='12px';
+  if(unbacked>0){
+    tf.innerHTML='<label>🖼 Fix blank thumbnails (permanent)</label><p class="muted"><b>'+unbacked+'</b> Drive photo'+(unbacked!==1?'s':'')+' don’t have a cloud copy yet, so they go blank when Drive disconnects. Tap below (with Drive connected) to save a permanent cloud thumbnail for each — they’ll never blank again on any device.</p>';
+    var tb=el('button','btn-set primary','🖼 Back up thumbnails to cloud');
+    tb.onclick=function(){ backupAllThumbs(tb); };
+    tf.appendChild(tb);
+  } else {
+    tf.innerHTML='<label>🖼 Fix blank thumbnails (permanent)</label><p class="muted">✓ Every photo has a cloud copy — none will blank.</p>';
+  }
+  b.appendChild(tf);
   if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
   // ♻ Restore deleted Drive photos — Drive originals are never deleted, so deleted ones can be re-imported.
   var rf=el('div','cmp-field');rf.style.marginTop='12px';
@@ -2333,6 +2345,7 @@ async function gdSyncNow(interactive){
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
       pool.push(item);byDrive.set(f.id,item);added++; // register immediately so nothing else this pass re-adds the same file
+      if(!_isVid){ try{ await storeCloudThumb(rec.id,file); item._cloudThumb=true; }catch(e){} } // PERMANENT FIX: store a cloud copy NOW (we have the bytes) so it never blanks on any device/session, token or not
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
     else if(gdTokenValid() && (interactive || !_gdTokenRendered)){ _gdTokenRendered=true; render(); } // got Drive access → redraw so blank Drive thumbnails can finally load with the token
@@ -6110,6 +6123,27 @@ async function cloudThumbBackfill(cap){
   }catch(e){}
   _cloudThumbBF=false;
   if(did) setTimeout(function(){ cloudThumbBackfill(cap); },1500); // keep trickling until all are backed up
+}
+// Owner-triggered: back up EVERY Drive photo's thumbnail to the cloud, with progress, so they never blank again.
+async function backupAllThumbs(btn){
+  if(!window.WG_FB_READY||!WG_AUTH.currentUser){ toast('Cloud not ready — sign in first.'); return; }
+  var tok=null; try{ tok=(typeof gdGetToken==='function')?await gdGetToken(true):null; }catch(e){}
+  if(!tok){ toast('Connect Google Drive first (tap Sync), then run this again.'); return; }
+  var items=socPool().filter(function(m){ return m&&m.driveId&&!m._cloudThumb&&!/^(pf_|hf_)/.test(m.id||'')&&!(/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')); });
+  if(!items.length){ toast('✓ Every photo is already backed up to the cloud.'); return; }
+  if(btn)btn.disabled=true; var done=0,fail=0;
+  for(var i=0;i<items.length;i++){ var m=items[i];
+    if(btn)btn.textContent='🖼 Backing up '+(i+1)+' / '+items.length+'…';
+    try{
+      var ex=await cloudFileGet(m.id); if(ex&&ex.dataUrl){ m._cloudThumb=true; m._ut=Date.now(); done++; continue; }
+      var r=await fetch('https://www.googleapis.com/drive/v3/files/'+m.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}});
+      if(!r.ok){ fail++; continue; } var blob=await r.blob();
+      if(await storeCloudThumb(m.id,blob))done++; else fail++;
+    }catch(e){ fail++; }
+  }
+  commit(); if(typeof rerenderCal==='function')rerenderCal();
+  if(btn){ btn.disabled=false; btn.textContent='🖼 Back up thumbnails to cloud'; }
+  toast('✅ Backed up '+done+' thumbnail'+(done!==1?'s':'')+(fail?(' · '+fail+' couldn’t be read'):'')+'. They won’t blank again.');
 }
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
