@@ -2752,6 +2752,17 @@ function brainAdd(kind,name,brief,cat){
   brainSrcList().unshift(s); commit(); return s;
 }
 function brainRemove(id){ var a=brainSrcList(); var i=a.findIndex(function(s){return s&&s.id===id;}); if(i>=0){ a.splice(i,1); commit(); } }
+// ❤️ A post you LOVE = your strongest signal → bank the caption as a top-tier swipe example that is NEVER auto-pruned.
+function captureLovedExample(p){
+  try{ var cap=(p&&p.caption||'').trim(); if(cap.length<10)return; var list=brainSrcList();
+    if(list.some(function(s){return s&&s.cat==='swipe'&&s.loved&&(s.brief||'').trim()===cap;}))return;
+    list.unshift({id:'br_love'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:'note',cat:'swipe',name:'❤️ Loved'+(p.town?(' · '+p.town):''),brief:cap.slice(0,1500),loved:true,_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()});
+    commit();
+  }catch(e){}
+}
+function uncaptureLoved(p){
+  try{ var cap=(p&&p.caption||'').trim(); ST.brainSrc=brainSrcList().filter(function(s){return !(s&&s.cat==='swipe'&&s.loved&&(s.brief||'').trim()===cap);}); commit(); }catch(e){}
+}
 // Every approved post = a vetted winner → auto-feed it to the swipe file so the AI keeps matching what you greenlight.
 // Capped to the most recent 12 auto-captures (your manually-added examples are never pruned).
 function captureApprovedExample(p){
@@ -6305,6 +6316,11 @@ function postCard(p){
     });
   };
   card.appendChild(rm);
+  // ❤️ Love this post — strong signal that teaches the AI your best voice (banks the caption, never pruned)
+  const heart=el('button','pcheart'+(p.loved?' on':''),p.loved?'❤️':'🤍');
+  heart.title=p.loved?'You love this — it’s feeding the AI as a top example. Tap to unlove.':'Love this post → teaches the AI your best voice';
+  heart.onclick=(e)=>{ e.stopPropagation(); p.loved=!p.loved; if(p.loved){ captureLovedExample(p); toast('❤️ Loved — the AI will lean into this style'); } else { uncaptureLoved(p); toast('Removed from loved'); } savePost(p); heart.textContent=p.loved?'❤️':'🤍'; heart.classList.toggle('on',p.loved); };
+  card.appendChild(heart);
   card.onclick=()=>openComposer(p.id);
   return card;
 }

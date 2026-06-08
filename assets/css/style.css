@@ -893,6 +893,9 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 
 /* ---- Remove (✕) button on Your-posts cards ---- */
 .pcdel{position:absolute;top:7px;right:7px;width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--line2);color:var(--muted);font-size:12px;line-height:1;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0b1b3a26;padding:0}
+.pcheart{position:absolute;top:7px;left:7px;width:26px;height:26px;border-radius:50%;background:#fff;border:1px solid var(--line2);font-size:14px;line-height:1;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px #0b1b3a26;padding:0}
+.pcheart.on{border-color:#e23b3b;background:#fff0f1}
+.pcheart:hover{transform:scale(1.12)}
 .pcdel:hover{background:var(--red);border-color:var(--red);color:#fff}
 
 /* ---- Themed confirm dialog (matches the app, replaces browser confirm) ---- */
