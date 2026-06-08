@@ -2358,19 +2358,10 @@ function namedJobLocs(){
   return m;
 }
 function absorbIntoNamedJobs(){
-  try{
-    if(typeof _fbSync==='object'&&_fbSync&&_fbSync.applying)return false; // don't fight an in-flight cloud merge
-    var locs=namedJobLocs(); var keys=Object.keys(locs); if(!keys.length)return false;
-    var changed=false;
-    socPool().forEach(function(p){
-      if(!p||p.cgroup||p.ungroup||!hasLoc(p))return;     // only LOOSE GPS photos you haven't deliberately pulled out
-      var best=null,bestD=1e9;
-      keys.forEach(function(k){ var d=gdDist(p.lat,p.lng,locs[k].lat,locs[k].lng); if(d<bestD){bestD=d;best=k;} });
-      if(best&&bestD<=60){ p.cgroup=best; p._ut=Date.now(); changed=true; } // within ~60m of a named job → join it
-    });
-    if(changed)commit();
-    return changed;
-  }catch(e){ return false; }
+  // DISABLED — this auto-assigned loose GPS photos to a named job on every render and could grab the
+  // whole folder when photos shared locations (dumping everything into one job). Adding photos to a job
+  // is now MANUAL only (the picker), which is predictable and safe.
+  return false;
 }
 // Instantly correct any photo's town from its ZIP (no network) — turns townships into the real town name.
 function fixTownsFromZip(){
@@ -6624,16 +6615,16 @@ function socLibrary(v){
     // Move ticked photos to a DIFFERENT job (or a new one). On real jobs only — Needs sorting has its own "Add to a job".
     if(!opts.newGroup){
       const mj=el('button','btn-set','📍 Move to a job');mj.title='Move the ticked photos to a different job (or create a new one)';
-      mj.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos to move first (none ticked = the whole job).');return;} clearChosen(chosen); openJobPicker(chosen); };
+      mj.onclick=()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos to move first (or “✓ Select all”).');return;} clearChosen(chosen); openJobPicker(chosen); };
       foot.appendChild(mj);
     }
     // (Tag stages one photo at a time using the pills right on each thumbnail — no bulk "Tag all".)
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
-      ng.onclick=async()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos for the job first (or none = all).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” — find it up in Your content. Add more with “Add to a job”.'); };
+      ng.onclick=async()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos for the job first (or “✓ Select all”).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” ('+chosen.length+' photo'+(chosen.length>1?'s':'')+') — find it up in Your content.'); };
       foot.appendChild(ng);
       const addJob=el('button','btn-set','📍 Add to a job');addJob.title='Add the ticked photos to a job you already have (or a GPS location job)';
-      addJob.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length){toast('Tick the photos first (or none = all).');return;} clearChosen(chosen); openJobPicker(chosen); };
+      addJob.onclick=()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos to add first (or “✓ Select all”).');return;} clearChosen(chosen); openJobPicker(chosen); };
       foot.appendChild(addJob);
     }
     if(opts.moveToContent){
