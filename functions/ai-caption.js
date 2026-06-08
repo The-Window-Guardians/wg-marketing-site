@@ -163,8 +163,8 @@ function normWarn(obj) {
 function parseFullPost(text) {
   var obj = extractObj(text);
   if (!obj || typeof obj !== 'object') return null;
-  var caps = (Array.isArray(obj.captions) ? obj.captions.filter(Boolean).slice(0, 3)
-           : (obj.caption ? [obj.caption] : [])).map(noDash);
+  var caps = (Array.isArray(obj.captions) ? obj.captions.filter(_looksLikeCaption).slice(0, 3)
+           : (_looksLikeCaption(obj.caption) ? [obj.caption] : [])).map(noDash);
   if (!caps.length) return null;
   var tags = typeof obj.hashtags === 'string' ? obj.hashtags
            : (Array.isArray(obj.hashtags) ? obj.hashtags.join(' ') : '');
@@ -173,17 +173,39 @@ function parseFullPost(text) {
   return { captions: caps, hashtags: tags, category: cat, warn: normWarn(obj), photos: normPhotos(obj) };
 }
 
+// JSON scaffolding / enum values that must NEVER be shown as a caption.
+var _CAPTION_JUNK = { photos: 1, warn: 1, options: 1, captions: 1, hashtags: 1, category: 1, n: 1, kind: 1, name: 1, brief: 1, new_finished: 1, old_before: 1, in_progress: 1, other: 1, portfolio: 1, edu: 1, fun: 1, customer: 1 };
+function _looksLikeCaption(s) {
+  s = String(s || '').trim();
+  if (s.length < 12) return false;                         // too short to be a real caption
+  if (_CAPTION_JUNK[s.toLowerCase()]) return false;        // a bare key/enum
+  if (/^[a-z_]+$/i.test(s)) return false;                  // single token (an enum/key)
+  if (/^[\[\]{}",:]+$/.test(s)) return false;              // pure punctuation/brackets
+  if (/^"?(photos|warn|options|captions|hashtags|category)"?\s*:/i.test(s)) return false; // a JSON key line
+  return true;
+}
+// Pull the real caption strings out of the model text even if the JSON is truncated or malformed.
+function salvageOptions(text) {
+  text = String(text || '');
+  var i = text.search(/"options"\s*:\s*\[/);
+  var seg = i >= 0 ? text.slice(text.indexOf('[', i) + 1) : text;
+  var out = [], re = /"((?:[^"\\]|\\.)*)"/g, m;
+  while ((m = re.exec(seg))) {
+    var s = m[1].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\t/g, ' ').trim();
+    if (_looksLikeCaption(s)) out.push(s);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
 // Parse caption JSON: { photos, warn, options }
 function parseCaption(text) {
   var obj = extractObj(text);
   if (obj && Array.isArray(obj.options)) {
-    return { options: obj.options.filter(Boolean).slice(0, 3).map(noDash), warn: normWarn(obj), photos: normPhotos(obj) };
+    var clean = obj.options.filter(_looksLikeCaption).slice(0, 3).map(noDash);
+    if (clean.length) return { options: clean, warn: normWarn(obj), photos: normPhotos(obj) };
   }
-  // fallback: salvage lines if JSON shape was off
-  var opts = String(text || '').split(/\n+/).map(function (s) {
-    return s.replace(/^\s*(\d+[\).]|[-*•])\s*/, '').replace(/^["']|["']$/g, '').trim();
-  }).filter(function (s) { return s.length > 8 && s[0] !== '{' && s[0] !== '}'; }).slice(0, 3).map(noDash);
-  return { options: opts, warn: '', photos: [] };
+  // truncated / malformed JSON → salvage the real caption strings, never show scaffolding
+  return { options: salvageOptions(text).slice(0, 3).map(noDash), warn: (obj ? normWarn(obj) : ''), photos: (obj ? normPhotos(obj) : []) };
 }
 
 export async function onRequestPost(context) {
@@ -429,7 +451,7 @@ styleRule + '\n' +
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: (mode === 'fullpost') ? 1000 : (images.length ? 900 : 700),
+        max_tokens: (mode === 'fullpost') ? 1700 : 1500, // room for 3 longer options + credit lines so JSON never truncates
         system: sys,
         messages: [{ role: 'user', content: buildContent(images, usr) }]
       })
