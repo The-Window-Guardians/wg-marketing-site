@@ -3026,7 +3026,7 @@ let S=Store.load()||freshState();
   if(!S.view)S.view='dashboard';
 })();
 bindProgram(); // set the live bindings for this page before anything renders
-function commit(){if(typeof stampCts==='function')stampCts();Store.save(S);publishFeed();if(typeof fbStateSave==='function')fbStateSave();}
+function commit(){if(typeof stampCts==='function')stampCts();Store.save(S);publishFeed();if(typeof fbStateSave==='function')fbStateSave();if(typeof fbBrainSave==='function')fbBrainSave();}
 /* ============================================================
    Firestore LIVE SYNC (Path A). Shares only the shared state —
    S.prog (tasks/kpis/deliv/posts/pool/bajobs) and S.users (accounts).
@@ -3073,7 +3073,7 @@ function _mergeById(remoteArr,localArr,sinceTs,isMedia,tomb){
   return out;
 }
 // id-keyed collections that live on every program slice
-var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets','hashGroups','brainSrc'];
+var _MERGE_ARRAYS=['posts','pool','bajobs','blogs','sprints','sprintTasks','seoMedia','activity','snippets','hashGroups']; // brainSrc moved to its OWN cloud record (it's big) so the main state never overflows the 1MB doc limit
 /* Stamp a permanent creation time on every mergeable record so deletes/merges are reliable
    for base36 ids too. Cheap; runs in commit() before each save, so a record always carries
    _ct before it can ever reach the shared doc. */
@@ -3098,6 +3098,7 @@ function mergeProg(remoteProg,sinceTs){
       }
     });
     slice.deletedIds=tomb;                                          // carry the merged tombstones forward (so deletes stick + sync)
+    if(Array.isArray(L.brainSrc))slice.brainSrc=L.brainSrc;        // brain syncs via its OWN record — never let a state merge wipe it from memory
     merged[pid]=slice;
   });
   // keep any program that exists only locally (e.g. a new program added before sync)
@@ -3119,9 +3120,20 @@ async function fbSyncStart(){
   const ref=fbStateRef();
   try{
     const snap=await ref.get();
-    if(snap.exists&&snap.data()){ fbApplyRemote(snap.data()); }
-    else { _fbSync.lastSavedAt=Date.now(); _fbSync.appliedAt=_fbSync.lastSavedAt; await ref.set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser.email||'')}); }
+    const remoteState=(snap.exists&&snap.data())?snap.data():null;
+    if(remoteState){ fbApplyRemote(remoteState); }
+    else { _fbSync.lastSavedAt=Date.now(); _fbSync.appliedAt=_fbSync.lastSavedAt; await ref.set({prog:progLite(),users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser.email||'')}); }
     _fbSync.on=true;
+    // ── load the company brain from its OWN record (+ migrate any legacy brain that was embedded in the old state doc) ──
+    try{
+      var brainDoc=null; try{ var bd=await fbBrainRef().get(); if(bd.exists)brainDoc=bd.data(); }catch(e){}
+      var cloudBrain=(brainDoc&&Array.isArray(brainDoc.src))?brainDoc.src:null;
+      if(!cloudBrain && remoteState&&remoteState.prog&&remoteState.prog.social&&Array.isArray(remoteState.prog.social.brainSrc)) cloudBrain=remoteState.prog.social.brainSrc; // legacy embedded
+      if(cloudBrain && S.prog&&S.prog.social){ S.prog.social.brainSrc=_mergeById(cloudBrain,(S.prog.social.brainSrc||[]),0,false,null); try{Store.save(S);}catch(e){} if(typeof bindProgram==='function')bindProgram(); }
+      if(cloudBrain && !brainDoc){ try{ fbBrainSave(); }catch(e){} } // first run after the split → write brain to its own doc
+      if(_fbSync.brainUnsub){try{_fbSync.brainUnsub()}catch(e){}}
+      _fbSync.brainUnsub=fbBrainRef().onSnapshot(function(d){ if(!d.exists||_fbSync.applying)return; var data=d.data(); if(!data||!Array.isArray(data.src))return; if(S.prog&&S.prog.social){ S.prog.social.brainSrc=_mergeById(data.src,(S.prog.social.brainSrc||[]),0,false,null); try{Store.save(S);}catch(e){} try{ if(typeof currentView==='function'&&currentView()==='settings'&&typeof render==='function')render(); }catch(e){} } }, function(){});
+    }catch(e){}
     if(_fbSync.unsub)_fbSync.unsub();
     _fbSync.unsub=ref.onSnapshot(function(d){
       if(!d.exists||_fbSync.applying)return;
@@ -3150,11 +3162,27 @@ async function fbSyncPull(){
   }catch(e){}
   if(typeof render==='function')render();
 }
+/* The company brain (brochure/website digests) is BIG, so it lives in its own cloud record —
+   keeping the main state doc small so it never hits Firestore's 1MB limit and saves reliably. */
+function fbBrainRef(){return WG_DB.collection('workspaces').doc('wg').collection('state').doc('brain');}
+// a copy of S.prog with the bulky brainSrc stripped out (that syncs separately)
+function progLite(){ var p=S.prog||{},out={}; Object.keys(p).forEach(function(pid){ var sl=p[pid]||{},c={}; Object.keys(sl).forEach(function(k){ if(k!=='brainSrc')c[k]=sl[k]; }); out[pid]=c; }); return out; }
+var _brainT=null;
+function fbBrainSave(){
+  if(!_fbSync.on||_fbSync.applying||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
+  clearTimeout(_brainT);
+  _brainT=setTimeout(function(){ try{
+    var src=(S.prog&&S.prog.social&&Array.isArray(S.prog.social.brainSrc))?S.prog.social.brainSrc:[];
+    fbBrainRef().set({src:src,updatedAt:Date.now(),by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''})
+      .catch(function(e){ try{toast('⚠️ Brain didn’t save to the cloud ('+((e&&e.code)||e)+') — it’s safe on this device.');}catch(_){} });
+  }catch(e){} },700);
+}
 function fbStateSave(){
   if(!_fbSync.on||_fbSync.applying||!window.WG_FB_READY||!WG_AUTH.currentUser)return;
   clearTimeout(_fbSync.t);
   _fbSync.t=setTimeout(function(){ try{ _fbSync.lastSavedAt=Date.now(); _fbSync.appliedAt=_fbSync.lastSavedAt;
-    fbStateRef().set({prog:S.prog,users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''}); }catch(e){} },400);
+    fbStateRef().set({prog:progLite(),users:S.users,updatedAt:_fbSync.lastSavedAt,by:(WG_AUTH.currentUser&&WG_AUTH.currentUser.email)||''})
+      .catch(function(e){ try{toast('⚠️ Changes didn’t sync ('+((e&&e.code)||e)+') — saved on this device; check your connection.');}catch(_){} }); }catch(e){} },400);
 }
 /* ---- Handoff PHOTOS that sync to the teammate: compress to Full-HD WebP @80%, store
    each as its own small Firestore doc (well under the 1MB doc limit). Free; no Storage. ---- */
