@@ -7450,11 +7450,13 @@ function setViewAs(roleVal){
   }
   enterApp();
 }
+var _enteredOnce=false;
 function enterApp(){
   const gate=$('#gate');if(gate)gate.classList.add('hidden');
   const app=$('#app');if(app)app.style.display='block';
-  // On a fresh load, never leave an owner stuck "viewing as" a poster (Ruth) — snap back to your own dashboard.
-  try{ if(S.uid && !amPoster()){ var vr=userById(S.role); if(vr && vr.perm==='poster'){ S.role=S.uid; commit(); } } }catch(e){}
+  // ONLY on the first load: don't leave an owner stuck "viewing as" a poster from a previous session.
+  // (Not on later calls — otherwise picking "view as Ruth" would instantly snap back and you could never preview it.)
+  if(!_enteredOnce){ _enteredOnce=true; try{ if(S.uid && !amPoster()){ var vr=userById(S.role); if(vr && vr.perm==='poster'){ S.role=S.uid; commit(); } } }catch(e){} }
   const sel=$('#roleSel');
   if(sel){
     if(amPoster()){ sel.style.display='none'; } // only an ACTUAL poster is locked out of the dropdown
