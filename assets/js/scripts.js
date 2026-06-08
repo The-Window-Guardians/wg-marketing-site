@@ -6977,7 +6977,7 @@ function openComposer(idOrPost,isNew){
       const cell=el('div','medcell');
       const img=el('img','medthumb');thumbInto(img,m.id);
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
-      const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);scheduleDraft();renderMedia()};
+      const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);if(m&&m.id)poolSetStatus([m.id],'available');commit();scheduleDraft();renderMedia()};
       cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);
       cell.dataset.mid=m.id;
       if(arr.length>1){ // carousel → drag the handle to set the posting order Ruth follows
@@ -7038,7 +7038,7 @@ function openComposer(idOrPost,isNew){
           const img=el('img','medthumb');img.addEventListener('load',function(){img.style.display='block';}); // <-- without this the thumbnail stays hidden
           if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
           cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
-          cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } scheduleDraft(); renderMedia(); }; // toggle; renderMedia keeps the picker open
+          cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); poolSetStatus([m.id],'available'); } else { postMedia(p).push({id:m.id,name:m.name}); poolSetStatus([m.id],'used'); } commit(); scheduleDraft(); renderMedia(); }; // mark used→leaves its job folder; remove→comes back
           g.appendChild(cell);
         });
         picker.appendChild(g);
