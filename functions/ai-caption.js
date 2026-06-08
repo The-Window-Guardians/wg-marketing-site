@@ -421,7 +421,7 @@ styleRule + '\n' +
     if (!r.ok) {
       var errText = '';
       try { errText = await r.text(); } catch (e) {}
-      return json({ error: 'api', status: r.status, message: friendlyApiErr(r.status, errText) });
+      return json({ error: 'api', status: r.status, message: friendlyApiErr(r.status, errText), detail: String(errText).slice(0, 400) });
     }
 
     const data = await r.json();
