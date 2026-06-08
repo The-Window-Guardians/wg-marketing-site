@@ -6599,9 +6599,7 @@ function socLibrary(v){
     const post=el('button','btn-set primary');
     const updatePost=()=>{const k=inGroup().length;post.textContent=k?('Make this post from '+k+' selected'):('Make this post'+(items.length>1?(' (all '+items.length+')'):''));};
     const grid=el('div','poolgrid');
-    items.forEach(m=>{const cell=buildCell(m,sel,()=>{updatePost();updateMakeBtn();});if(opts.perCell)opts.perCell(cell,m);
-      if(opts.moveToContent&&!opts.newGroup){ const mc=el('button','addtojob','↩ Content'); mc.title='Take this photo out of the job, back to your main content'; mc.onclick=(e)=>{e.stopPropagation(); m.folder='';delete m.cgroup;m.ungroup=true;m._ut=Date.now(); commit(); rerenderCal(); toast('Moved back to your content'); }; cell.appendChild(mc); }
-      grid.appendChild(cell);}); // toggle refreshes this group AND the shared "Make a post" bar
+    items.forEach(m=>{const cell=buildCell(m,sel,()=>{updatePost();updateMakeBtn();});if(opts.perCell)opts.perCell(cell,m);grid.appendChild(cell);}); // toggle refreshes this group AND the shared "Make a post" bar
     body.appendChild(grid);
     const foot=el('div','rcactions');
     updatePost();
