@@ -222,7 +222,7 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
-    const STYLES   = {best:1,showcase:1,teach:1,bold:1,boldmax:1,advice:1,rewrite:1,elaborate:1,funny:1};
+    const STYLES   = {best:1,product:1,showcase:1,teach:1,bold:1,boldmax:1,advice:1,rewrite:1,elaborate:1,funny:1};
     const style    = STYLES[body.style] ? body.style : 'best';
     const edge     = (body.edge === 2 ? 2 : body.edge === 0 ? 0 : 1); // Bold intensity: 0 mild · 1 bold · 2 MAX
     const brain    = String(body.brain    || '').slice(0, 14000); // the owner's distilled company facts (from brochures/site)
@@ -406,8 +406,8 @@ ANGLE_CREDIT +
           ? '- MODE: BOLD (mild) — clever and witty with a light wink, confident but easygoing. A pattern-breaking hook, a little personality, nothing over-the-top. 1 to 3 punchy sentences.'
           : '- MODE: BOLD — full witty/edgy brand voice, a scroll-stopping head-turner. Pattern-breaking hook, lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy), dry sarcasm welcome. Clever never crude, confident never corny. 1 to 3 punchy sentences.';
       var styleRule =
-        style === 'showcase'
-          ? '- MODE: SHOWCASE — proud, confident, craftsmanship-forward. Make the work and the transformation the star (the proof pillar). Still open with a hook, never "We installed…". 1 to 3 sentences.'
+        (style === 'product' || style === 'showcase')
+          ? '- MODE: PRODUCT / INSTALL — center the post on the actual product AND the quality of the install. Name the real product line + the features that matter with the homeowner benefit of each, and call out install-craftsmanship details when they fit (clean caulk lines, proper flashing & insulation, level/plumb fit, capped/wrapped trim, the warranty). Confident and genuinely informative, but still open with a hook and stay human, never a dry spec dump. 1 to 3 sentences.'
         : (style === 'teach' || style === 'advice')
           ? '- MODE: TEACH — a helpful expert take that teaches the homeowner something real: a tip, a "did you know," what to look for, food for thought — drawn from the product knowledge. Lead with the value, tie it to the post, end with a soft invite. 2 to 4 sentences. General guidance unless a feature was actually seen/stated.'
         : (style === 'bold' || style === 'boldmax' || style === 'funny')

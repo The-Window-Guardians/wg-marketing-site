@@ -7076,31 +7076,27 @@ function openComposer(idOrPost,isNew){
   const fillFallback=(hdrMsg)=>{ const typed=(ca.value||'').trim(); const opts=typed?captionImprove(p):aiCaptionOptions(p); caOpts.appendChild(el('div','sughdr',hdrMsg)); opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)}); };
   // ── 4 GOAL buttons (one tap = 3 fresh options) + 2 dials (edge + fresh/my-words) ──
   const caBest=el('button','btn-set ai-draft primary','✨ Best');caBest.title='AI reads the photos and picks the strongest angle + vibe. ~1¢';
-  const caShow=el('button','btn-set ai-draft','🏆 Showcase');caShow.title='Proud — shows off the craftsmanship. ~1¢';
-  const caBold=el('button','btn-set ai-draft','🔥 Bold');caBold.title='Witty, edgy, scroll-stopping brand voice (use the edge dial). ~1¢';
   const caTeach=el('button','btn-set ai-draft','💡 Teach');caTeach.title='Expert tip / "did you know" — builds trust. ~1¢';
+  const caProduct=el('button','btn-set ai-draft','🔧 Product / Install');caProduct.title='Centers on your product + the quality of the install (features, craftsmanship, warranty). ~1¢';
+  // 🔥 Bold at 3 strengths — each one generates immediately (no separate dial)
+  const caBoldMild=el('button','btn-set ai-draft','🙂 Bold: Mild');caBoldMild.title='Clever with a light wink. ~1¢';
+  const caBold=el('button','btn-set ai-draft','🔥 Bold');caBold.title='Witty, edgy, scroll-stopping. ~1¢';
+  const caBoldMax=el('button','btn-set ai-draft','💥 Bold: MAX');caBoldMax.title='Completely unhinged head-turner (still clean). ~1¢';
   // Fresh vs. my words
   let useMyWords=false;
   const caUse=el('button','btn-set','✍️ Fresh ideas');caUse.title='Fresh ideas (ignore my text) ↔ Use my words (build on my caption)';
   caUse.onclick=()=>{ useMyWords=!useMyWords; caUse.textContent=useMyWords?'✍️ Using my words':'✍️ Fresh ideas'; caUse.classList.toggle('on',useMyWords); toast(useMyWords?'AI will build on your caption':'AI will invent fresh ideas'); };
-  // Edge dial (applies to 🔥 Bold): 0 mild · 1 bold · 2 MAX
-  let edgeLevel=1;
-  const edgeWrap=el('div','');edgeWrap.style.cssText='display:inline-flex;align-items:center;gap:6px';
-  edgeWrap.appendChild(el('span','muted','🔥 edge')).style.cssText='font-size:11.5px';
-  const edgeSeg=el('div','');edgeSeg.style.cssText='display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden';
-  const segPaint=(arr)=>arr.forEach(function(b,i){ var on=([0,1,2][i]===edgeLevel); b.style.background=on?'var(--orange)':'transparent'; b.style.color=on?'#fff':'var(--ink2)'; });
-  const segBtns=[['Mild',0],['Bold',1],['MAX',2]].map(function(o){ const b=el('button','',o[0]); b.style.cssText='border:none;background:transparent;color:var(--ink2);font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer'; b.onclick=()=>{ edgeLevel=o[1]; segPaint(segBtns); toast('🔥 Bold edge: '+o[0]); }; edgeSeg.appendChild(b); return b; });
-  segPaint(segBtns); edgeWrap.appendChild(edgeSeg);
   let aiBusy=false;
-  const ALLB=[caBest,caShow,caBold,caTeach];
-  const runAI=async(style,workingMsg)=>{
+  const ALLB=[caBest,caTeach,caProduct,caBoldMild,caBold,caBoldMax];
+  const runAI=async(style,workingMsg,edge)=>{
     if(aiBusy)return;
-    if(caOpts.dataset.open==='1'&&caOpts.dataset.style===style){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
+    const key=style+(style==='bold'?(':'+(edge==null?1:edge)):'');
+    if(caOpts.dataset.open==='1'&&caOpts.dataset.style===key){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
     p.caption=ca.value; // use the latest text
-    caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
+    caOpts.dataset.open='1';caOpts.dataset.style=key;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
     aiBusy=true;ALLB.forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords,(style==='bold'?edgeLevel:1)); }catch(e){ d={error:'net'}; }
+    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords,(style==='bold'?(edge==null?1:edge):1)); }catch(e){ d={error:'net'}; }
     aiBusy=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
@@ -7111,9 +7107,11 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   caBest.onclick=()=>runAI('best','✨ Claude is finding the best angle…');
-  caShow.onclick=()=>runAI('showcase','🏆 Claude is showing off the work…');
-  caBold.onclick=()=>runAI('bold', edgeLevel>=2?'💥 Claude is going FULL send…':edgeLevel<=0?'🔥 Claude is adding a little wit…':'🔥 Claude is getting bold…');
   caTeach.onclick=()=>runAI('teach','💡 Claude is sharing expert advice…');
+  caProduct.onclick=()=>runAI('product','🔧 Claude is detailing the product + install…');
+  caBoldMild.onclick=()=>runAI('bold','🙂 Claude is adding a little wit…',0);
+  caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…',1);
+  caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL send…',2);
   // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
   const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
   caFull.onclick=async()=>{
@@ -7138,9 +7136,10 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
-  const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caShow);caRow.appendChild(caBold);caRow.appendChild(caTeach);caRow.appendChild(el('span','aicost','~1¢ per tap · 3 fresh options'));
-  const dialRow=el('div','sugrow');dialRow.style.marginTop='6px';dialRow.appendChild(caUse);dialRow.appendChild(edgeWrap);
-  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
+  const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caTeach);caRow.appendChild(caProduct);caRow.appendChild(el('span','aicost','~1¢ · 3 options each'));
+  const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Bold:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
+  const dialRow=el('div','sugrow');dialRow.style.marginTop='6px';dialRow.appendChild(caUse);
+  cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
