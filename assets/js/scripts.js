@@ -1993,10 +1993,14 @@ function openJobPicker(item){
   const create=el('button','btn-set primary','＋ Create a new job');create.style.cssText='width:100%;margin-bottom:10px';
   create.onclick=async()=>{ const name=await uiPrompt('Name the new job (e.g. an address or the customer).','',{title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; assignManual(name,'Created job “'+name+'” ✓'); };
   b.appendChild(create);
-  // JOIN an existing job you made
+  // JOIN an existing job you made — each gets a thumbnail + photo count so you can tell them apart at a glance
   manualNames.forEach(function(gname){
+    const mine=poolAvailable().filter(m=>m.cgroup===gname&&!ids[m.id]);
     const opt=el('button','jobpick');
-    opt.appendChild(el('span','jp-label','📁 '+esc(gname)));
+    const thumb=el('img','jp-thumb'); const first=mine.find(m=>!/\.(mp4|mov|m4v|webm)$/i.test(m.name||''))||mine[0];
+    if(first){ if(VTHUMB[first.id])thumb.src=VTHUMB[first.id]; else thumbInto(thumb,first.id); thumb.addEventListener('load',()=>thumb.style.display='block'); }
+    opt.appendChild(thumb);
+    opt.appendChild(el('span','jp-label','📁 '+esc(gname)+' · '+mine.length+' photo'+(mine.length!==1?'s':'')));
     opt.onclick=()=>assignManual(gname);
     b.appendChild(opt);
   });
