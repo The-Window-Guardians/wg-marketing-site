@@ -1207,7 +1207,10 @@ async function publishPostMedia(post){
   }
   return {done,skipped,failed};
 }
-function delPostRec(id){ST.posts=socPosts().filter(p=>p.id!==id);commit()}
+/* Mark id(s) as intentionally deleted so a stale cloud snapshot can't bring them back. */
+function tombstoneIds(ids){ if(!ST)return; if(!ST.deletedIds||typeof ST.deletedIds!=='object')ST.deletedIds={}; (Array.isArray(ids)?ids:[ids]).forEach(function(id){ if(id)ST.deletedIds[id]=Date.now(); }); }
+function untombstoneIds(ids){ if(!ST||!ST.deletedIds)return; (Array.isArray(ids)?ids:[ids]).forEach(function(id){ if(id)delete ST.deletedIds[id]; }); } // on undo/restore
+function delPostRec(id){tombstoneIds(id);ST.posts=socPosts().filter(p=>p.id!==id);commit()}
 /* ---- CONTENT POOL: raw uploaded media, separate from posts ----
    Lifecycle: available → used (attached to a post) → archived (post got posted). */
 function socPool(){return (ST&&Array.isArray(ST.pool))?ST.pool:[]}
@@ -1580,11 +1583,12 @@ function poolDeleteItems(ids){
   if(!snaps.length)return;
   ST.pool=socPool().filter(m=>!set.has(m.id));
   tombstoneDrive(snaps,true);          // block Drive re-import of these
+  tombstoneIds(ids);                   // block a stale cloud snapshot from resurrecting them
   commit();
   if(typeof rerenderCal==='function')rerenderCal();
   const n=snaps.length;
   toastUndo(n+' deleted',
-    function(){ snaps.forEach(s=>socPool().push(s)); tombstoneDrive(snaps,false); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
+    function(){ snaps.forEach(s=>socPool().push(s)); tombstoneDrive(snaps,false); untombstoneIds(snaps.map(s=>s.id)); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast(n>1?'Restored':'Photo restored'); },
     function(){ snaps.forEach(s=>{ try{fileDel(s.id)}catch(e){} try{cloudFileDel(s.id)}catch(e){} }); });
 }
 /* ============================================================
@@ -2930,7 +2934,7 @@ function freshSlice(prog){
   const tasks={};
   prog.weeks.forEach(w=>prog.order.forEach(r=>{ if(w.roles[r]) tasks[w.id+'.'+r]={steps:{},roll:false,note:''} }));
   const kpis={}; prog.kpis.forEach(k=>kpis[k.id]=0);
-  return {tasks,kpis,deliv:{},posts:[],pool:[],bajobs:[],brainSrc:[]};
+  return {tasks,kpis,deliv:{},posts:[],pool:[],bajobs:[],brainSrc:[],deletedIds:{}};
 }
 function freshState(){
   const prog={}; Object.keys(PROGRAMS).forEach(id=>prog[id]=freshSlice(PROGRAMS[id]));
@@ -2963,6 +2967,7 @@ let S=Store.load()||freshState();
     if(!Array.isArray(sl.pool))sl.pool=[];
     if(!Array.isArray(sl.bajobs))sl.bajobs=[];
     if(!Array.isArray(sl.brainSrc))sl.brainSrc=[];   // AI "company brain": distilled facts from brochures/websites
+    if(!sl.deletedIds||typeof sl.deletedIds!=='object')sl.deletedIds={}; // tombstones so a deleted post/record can't resurrect from a stale cloud snapshot
     if(id==='social' && !sl._voiceSeeded){           // one-time: seed the brand-voice swipe file + rules so the witty/edgy AI has examples
       sl._voiceSeeded=true; var _t=Date.now(), _n=0; var _seed=function(cat,name,brief){ sl.brainSrc.push({id:'br_seed'+(_n++)+'_'+_t.toString(36),kind:'note',cat:cat,name:name,brief:brief,_ut:_t,_ct:_t,addedAt:_t}); };
       _seed('voice','Brand voice rules','- Clever & witty, premium, confident. Push the envelope ~40-50% of posts; rest stay warm/proud.\n- Bold posts can get a little UNHINGED (Liquid Death / Old Spice energy) but always land back on the real craftsmanship.\n- Sarcasm welcome. Pattern-break the opener — never "We installed…".\n- NEVER: politics/religion, profanity/crude, naming or knocking competitors, fear-mongering. Never insult the homeowner — the joke is the OLD windows or the situation.');
@@ -3005,11 +3010,16 @@ function recCt(r){ return (r&&typeof r._ct==='number'&&r._ct)?r._ct:_tsFromId(r&
    an older local record that's absent from remote means "a teammate deleted it" → drop, so
    deletes actually stick for EVERY id type. Un-synced photos are always kept (a remote can't
    have deleted a photo it never received). */
-function _mergeById(remoteArr,localArr,sinceTs,isMedia){
+function _mergeById(remoteArr,localArr,sinceTs,isMedia,tomb){
   var out=Array.isArray(remoteArr)?remoteArr.slice():[];
+  // drop records that were intentionally deleted (tombstone newer than the record's last activity),
+  // so a stale cloud copy can't resurrect a post/record you removed.
+  var deadOf=function(r){ if(!tomb||!r||!r.id)return false; var td=tomb[r.id]; if(!td)return false; var ru=Math.max(recCt(r),(typeof r._ut==='number'?r._ut:0)); return td>=ru; };
+  if(tomb){ out=out.filter(function(r){ return !deadOf(r); }); }
   var idx={}; out.forEach(function(r,i){ if(r&&r.id)idx[r.id]=i; });
   (Array.isArray(localArr)?localArr:[]).forEach(function(l){
     if(!l||!l.id)return;
+    if(deadOf(l))return; // tombstoned (a teammate deleted it more recently than this copy was touched)
     if(idx[l.id]!==undefined){
       // SAME record on both sides → keep whichever was edited most recently (by _ut), so a
       // stale remote snapshot can't clobber a fresher local edit to the same post/blog.
@@ -3039,7 +3049,10 @@ function mergeProg(remoteProg,sinceTs){
   Object.keys(remoteProg).forEach(function(pid){
     var R=remoteProg[pid]||{}, L=(localProg[pid]||{}), slice={};
     Object.keys(R).forEach(function(k){ slice[k]=R[k]; });          // start from remote
-    _MERGE_ARRAYS.forEach(function(k){ if(Array.isArray(R[k])||Array.isArray(L[k])) slice[k]=_mergeById(R[k],L[k],sinceTs,(k==='pool'||k==='seoMedia')); });
+    // build the union of deletion tombstones first (newest wins), pruning anything older than 60 days
+    var tomb={}, _cut=Date.now()-60*86400000;
+    [L.deletedIds||{},R.deletedIds||{}].forEach(function(src){ Object.keys(src).forEach(function(id){ var ts=src[id]; if(ts>=_cut && (!tomb[id]||ts>tomb[id]))tomb[id]=ts; }); });
+    _MERGE_ARRAYS.forEach(function(k){ if(Array.isArray(R[k])||Array.isArray(L[k])) slice[k]=_mergeById(R[k],L[k],sinceTs,(k==='pool'||k==='seoMedia'),tomb); });
     _MERGE_MAPS.forEach(function(k){
       if((R[k]&&typeof R[k]==='object')||(L[k]&&typeof L[k]==='object')){
         var m={}; var lk=L[k]||{}; Object.keys(lk).forEach(function(kk){ m[kk]=lk[kk]; }); // local-only keys preserved
@@ -3047,6 +3060,7 @@ function mergeProg(remoteProg,sinceTs){
         slice[k]=m;
       }
     });
+    slice.deletedIds=tomb;                                          // carry the merged tombstones forward (so deletes stick + sync)
     merged[pid]=slice;
   });
   // keep any program that exists only locally (e.g. a new program added before sync)
