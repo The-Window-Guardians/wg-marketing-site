@@ -2649,11 +2649,13 @@ function brainSrcList(){ return (ST&&Array.isArray(ST.brainSrc))?ST.brainSrc:[];
 var VOICE_CATS={voice:1,swipe:1,angle:1,local:1,offer:1}; // categories that feed the VOICE/style channel (everything else = product facts)
 function brainCat(s){ return (s&&s.cat)||((s&&(s.kind==='pdf'||s.kind==='url'))?'product':'product'); } // legacy items = product
 // Product-fact channel: brochures/sites + product notes (what the AI states as true about WG products)
-function brainText(){ try{ return brainSrcList().filter(function(s){ return s&&s.brief&&!VOICE_CATS[brainCat(s)]; }).map(function(s){ return (s.name?(s.name+':\n'):'')+s.brief; }).join('\n\n').slice(0,8000); }catch(e){ return ''; } }
+function brainText(){ try{ return brainSrcList().filter(function(s){ return s&&s.brief&&!VOICE_CATS[brainCat(s)]; }).map(function(s){ return (s.name?(s.name+':\n'):'')+s.brief; }).join('\n\n').slice(0,13000); }catch(e){ return ''; } }
+// split a long document into chunks on a natural boundary so every word gets read across multiple AI passes
+function chunkText(t,size){ size=size||12000; t=String(t||''); if(t.length<=size)return [t]; var out=[],i=0; while(i<t.length){ var end=Math.min(i+size,t.length); if(end<t.length){ var br=t.lastIndexOf('\n',end); if(br<=i+size*0.5)br=t.lastIndexOf(' ',end); if(br>i)end=br; } out.push(t.slice(i,end)); i=end; } return out; }
 // Voice/style channel: brand rules, swipe file, angles, local flavor, offers
 function voiceText(){ try{ return brainSrcList().filter(function(s){ return s&&s.brief&&VOICE_CATS[brainCat(s)]; }).map(function(s){ return (s.name?(s.name+':\n'):'')+s.brief; }).join('\n\n').slice(0,6000); }catch(e){ return ''; } }
 function brainAdd(kind,name,brief,cat){
-  var s={id:'br_'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:kind||'note',cat:cat||'product',name:(name||'').slice(0,120),brief:(brief||'').slice(0,3600),_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()};
+  var s={id:'br_'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:kind||'note',cat:cat||'product',name:(name||'').slice(0,120),brief:(brief||'').slice(0,16000),_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()};
   brainSrcList().unshift(s); commit(); return s;
 }
 function brainRemove(id){ var a=brainSrcList(); var i=a.findIndex(function(s){return s&&s.id===id;}); if(i>=0){ a.splice(i,1); commit(); } }
@@ -2672,7 +2674,7 @@ async function pdfToText(file){
   var lib=await loadPdfJs();
   var buf=await file.arrayBuffer();
   var pdf=await lib.getDocument({data:buf}).promise;
-  var n=Math.min(pdf.numPages||1,40), parts=[];
+  var n=Math.min(pdf.numPages||1,800), parts=[]; // read EVERY page (effectively no cap) so nothing is skipped
   for(var i=1;i<=n;i++){ try{ var pg=await pdf.getPage(i); var tc=await pg.getTextContent(); parts.push(tc.items.map(function(it){return it.str;}).join(' ')); }catch(e){} }
   return parts.join('\n').replace(/[ \t]+/g,' ').trim();
 }
@@ -5340,13 +5342,20 @@ function aiBrainCard(){
       if(!files.length)return; if(busy)return; lock(true);
       let added=0;
       for(let i=0;i<files.length;i++){ const f=files[i];
-        setStatus('📄 Reading “'+f.name+'” ('+(i+1)+' of '+files.length+')…');
+        const fname=f.name.replace(/\.pdf$/i,'').slice(0,80);
+        setStatus('📄 Reading every page of “'+f.name+'”…');
         try{
           const txt=await pdfToText(f);
           if(!txt||txt.replace(/\s/g,'').length<40){ setStatus('⚠️ “'+f.name+'” had no readable text (it may be a scanned image). Skipped.','err'); continue; }
-          const d=await brainIngest({rawText:txt,sourceName:f.name.replace(/\.pdf$/i,'').slice(0,80)});
-          if(d&&d.brief){ brainAdd('pdf',d.name||f.name,d.brief); added++; }
-          else { setStatus('⚠️ '+((d&&d.message)||('Couldn’t summarize “'+f.name+'”.')),'err'); }
+          const chunks=chunkText(txt,12000);            // read the WHOLE brochure, in passes — nothing skipped
+          const parts=[];
+          for(let ci=0;ci<chunks.length;ci++){
+            setStatus('📄 Digesting every word of “'+f.name+'” — part '+(ci+1)+' of '+chunks.length+'…'+(chunks.length>1?' (this can take a bit)':''));
+            const d=await brainIngest({rawText:chunks[ci],sourceName:fname+(chunks.length>1?(' — part '+(ci+1)+'/'+chunks.length):'')});
+            if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
+          }
+          if(parts.length){ brainAdd('pdf',fname,parts.join('\n\n')); added++; }
+          else { setStatus('⚠️ '+('Couldn’t summarize “'+f.name+'”.'),'err'); }
         }catch(e){ setStatus('⚠️ Couldn’t read “'+f.name+'”. '+((e&&e.message)||''),'err'); }
       }
       lock(false);

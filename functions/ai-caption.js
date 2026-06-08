@@ -171,7 +171,7 @@ export async function onRequestPost(context) {
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
     const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold' || body.style === 'boldmax') ? body.style : 'rewrite';
-    const brain    = String(body.brain    || '').slice(0, 7000); // the owner's distilled company facts (from brochures/site)
+    const brain    = String(body.brain    || '').slice(0, 14000); // the owner's distilled company facts (from brochures/site)
     const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
     const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
     const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
@@ -192,7 +192,7 @@ export async function onRequestPost(context) {
           return json({ error: 'fetch', message: 'Couldn’t reach that website. Check the link, or use the brochure PDF instead.' });
         }
       }
-      raw = raw.slice(0, 22000);
+      raw = raw.slice(0, 45000); // generous per-call window; the client chunks big brochures so every page still gets read
       if (raw.replace(/\s/g, '').length < 40)
         return json({ error: 'empty', message: 'Not enough readable text found' + (srcUrl ? ' — that may be a JavaScript-heavy site. Try the brochure PDF instead.' : ' in that file.') });
       const dsys =
@@ -212,13 +212,13 @@ export async function onRequestPost(context) {
       const dr = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: model, max_tokens: 1600, system: dsys, messages: [{ role: 'user', content: dusr }] })
+        body: JSON.stringify({ model: model, max_tokens: 3000, system: dsys, messages: [{ role: 'user', content: dusr }] })
       });
       if (!dr.ok) { var de = ''; try { de = await dr.text(); } catch (e) {} return json({ error: 'api', status: dr.status, message: friendlyApiErr(dr.status, de) }); }
       const dd = await dr.json();
       const dtext = (dd && dd.content && dd.content[0] && dd.content[0].text) || '';
       const dobj = extractObj(dtext) || {};
-      const brief = String(dobj.brief || dtext || '').slice(0, 3600).trim();
+      const brief = String(dobj.brief || dtext || '').slice(0, 9000).trim();
       if (!brief) return json({ error: 'empty', message: 'AI read it but couldn’t summarize — try again.' });
       return json({ brief: brief, name: String(dobj.name || srcName || srcUrl || 'Source').slice(0, 120) });
     }
