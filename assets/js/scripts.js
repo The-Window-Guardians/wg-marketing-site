@@ -6986,6 +6986,7 @@ function openComposer(idOrPost,isNew){
     arr.forEach((m,i)=>{
       const cell=el('div','medcell');
       const img=el('img','medthumb');thumbInto(img,m.id);
+      img.style.cursor='zoom-in';img.title='Tap to view full size';img.onclick=()=>openMediaPreview(m.id,m.name,arr.map(x=>({id:x.id,name:x.name}))); // click photo → big swipeable preview
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
       const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);if(m&&m.id)poolSetStatus([m.id],'available');commit();scheduleDraft();renderMedia()};
       cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);
