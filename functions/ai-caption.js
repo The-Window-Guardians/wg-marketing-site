@@ -362,14 +362,13 @@ voice + '\n')
 'You generate social media hashtag sets for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 BRAIN_BLOCK +
 NOTE_BLOCK +
-'Rules:\n' +
-'- Each set = 10 to 15 hashtags: branded + the actual PRODUCT/brands used + the service shown + local + a few broader reach tags homeowners search.\n' +
-'- HARD RULE #1 — ALWAYS include the brand #WindowGuardians.\n' +
-'- HARD RULE #2 — ALWAYS hashtag the actual PRODUCT lines/brands used in this post (from the facts/notes/caption — e.g. Okna, ProVia, AZEK, James Hardie), and tag each in MULTIPLE natural forms, e.g. #Okna500 #OknaWindows #Okna, or #AZEKtrim #AZEK, or #ProViaDoors #ProVia. Product + brand tags appear in EVERY set. If no specific product is known, use the generic product type (#ReplacementWindows #VinylWindows etc.).\n' +
-'- Local: include #BucksCountyPA, #LanghornePA, and the post’s town when given.\n' +
-'- Match the hashtags to what the post is actually about — do not tag siding on a window post.\n' +
-'- Each hashtag is one word, no spaces, no punctuation except the leading #. Separate tags with single spaces.\n' +
-'- Return ONLY valid JSON in this exact shape: {"options":["#a #b #c","#d #e #f","#g #h #i"]} — three distinct sets, nothing else.';
+'Build each set with this FIXED FORMULA (about 13 to 15 tags). The proportions matter more than the exact tags:\n' +
+'1) BRAND (always, first): #WindowGuardians.\n' +
+'2) LOCATION (3 to 5 tags): the post’s town when given, plus #BucksCountyPA and #LanghornePA, plus 1 to 2 nearby Bucks County towns (Newtown, Yardley, Richboro, Holland, Doylestown, etc.). Always include local tags.\n' +
+'3) PRODUCT / MODEL (1 to 3 tags) — ONLY if the caption actually names a specific product or brand. Use the MODEL / brand name only (e.g. #Okna700 #ProVia #JamesHardie). Do NOT make feature hashtags (no #LowEGlass, #FoamFilled, #PrairieGrids — their search volume is tiny and useless). If the caption does NOT mention a specific product, SKIP this group entirely (no product tags at all).\n' +
+'4) POPULAR INDUSTRY (the rest — about 50 to 60% of the set): the highest-traffic, most-searched home-improvement tags people actually browse. Pull from: #HomeImprovement #HomeRenovation #CurbAppeal #ReplacementWindows #NewWindows #ExteriorRemodel #HomeUpgrade #BeforeAndAfter #HomeMakeover #DreamHome #HouseGoals #HomeReno #WindowReplacement #EntryDoor. Use roughly this SAME popular set every time for consistency — it does NOT need to be tailored to the specific post.\n' +
+'NO feature hashtags. NO single-letter or invented tags. Each tag is one word, leading #, single spaces between. Keep it SIMPLE and volume-focused.\n' +
+'Return ONLY valid JSON in this exact shape: {"options":["#a #b #c","#d #e #f","#g #h #i"]} — three distinct sets, nothing else.';
       usr =
 'Town: ' + (town || '(none)') + '\n' +
 'Caption / what the post says: ' + (caption || '(none)') + '\n' +
@@ -394,7 +393,7 @@ VISION_RULE +
 '- If a town is given, work it in naturally (local pride).\n' +
 '- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle — but ALL in the brand voice with a pattern-breaking hook (never the boring "We installed…" opener). Follow the TONE above for how bold to go. Lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy) when they fit.\n' +
 ANGLE_CREDIT +
-'- hashtags: ONE set of 10 to 15 relevant tags. ALWAYS include the brand #WindowGuardians AND hashtag the actual PRODUCT lines/brands used (e.g. #Okna500 #OknaWindows #Okna, #AZEKtrim #AZEK, #ProViaDoors) in multiple natural forms; add a local tag (#BucksCountyPA + the town); match what the photos actually show.\n' +
+'- hashtags: ONE set of ~13-15 by this FIXED FORMULA: #WindowGuardians (brand) + 3-5 LOCATION tags (the town + #BucksCountyPA + #LanghornePA + a nearby Bucks town) + 1-3 PRODUCT/MODEL tags ONLY if the caption names a specific product (model/brand name only, e.g. #Okna700 #ProVia — NO feature tags) + the rest (~50-60%) the most POPULAR high-traffic home-improvement tags (#HomeImprovement #HomeRenovation #CurbAppeal #ReplacementWindows #BeforeAndAfter #HomeMakeover #NewWindows #DreamHome). No feature hashtags. Keep it simple and volume-focused.\n' +
 '- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
 '- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
       usr =
