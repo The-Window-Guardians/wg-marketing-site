@@ -1239,14 +1239,7 @@ function snippetBar(kind,getText,setText){
   return wrap;
 }
 /* ---- HASHTAG GROUPS: built-in themed sets + your own saved groups, pick one from a dropdown ---- */
-var DEFAULT_HASH_GROUPS=[
-  {id:'g_win',name:'Windows',tags:'#WindowGuardians #windowreplacement #newwindows #energyefficient #BucksCountyPA #homeupgrade #curbappeal'},
-  {id:'g_roof',name:'Roofing',tags:'#WindowGuardians #roofreplacement #roofing #BucksCountyPA #curbappeal #homeimprovement #localcontractor'},
-  {id:'g_side',name:'Siding',tags:'#WindowGuardians #jameshardiesiding #siding #exteriorremodel #BucksCountyPA #curbappeal'},
-  {id:'g_door',name:'Doors',tags:'#WindowGuardians #entrydoors #patiodoors #BucksCountyPA #homeupgrade #curbappeal'},
-  {id:'g_ba',name:'Before / After',tags:'#WindowGuardians #beforeandafter #transformation #homemakeover #BucksCountyPA #curbappeal'},
-  {id:'g_gen',name:'General',tags:'#WindowGuardians #BucksCountyPA #LanghornePA #localcontractor #homeimprovement #qualitywork #familyowned'}
-];
+var DEFAULT_HASH_GROUPS=[]; // no pre-made groups — use 🤖 Smart hashtags, then save your own group if you want
 function hashGroupsUser(){ if(!ST)return []; if(!Array.isArray(ST.hashGroups))ST.hashGroups=[]; return ST.hashGroups; }
 function hashGroupsAll(){ return DEFAULT_HASH_GROUPS.concat(hashGroupsUser()); }
 /* Hashtag group manager: pick a group to ADD it in (stacks, de-duped), plus create / edit / delete your own. */
@@ -1255,9 +1248,10 @@ function hashGroupPicker(getText,setText){
   const sel=el('select','cmp-in hgsel');
   const editId={v:null}; // id of the user group currently being edited (null = creating new)
   const fill=()=>{
-    sel.innerHTML='<option value="">📁 Hashtag groups — pick to add in…</option>'
-      +'<optgroup label="Built-in">'+DEFAULT_HASH_GROUPS.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'
-      +(hashGroupsUser().length?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'');
+    const hasUser=hashGroupsUser().length;
+    sel.innerHTML='<option value="">'+(hasUser?'📁 Your hashtag groups — pick to add in…':'📁 No saved groups yet — tap “New” to make one')+'</option>'
+      +(DEFAULT_HASH_GROUPS.length?('<optgroup label="Built-in">'+DEFAULT_HASH_GROUPS.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'')
+      +(hasUser?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'');
   };
   fill();
   // inline editor (used for both New and Edit)
