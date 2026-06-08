@@ -7074,10 +7074,13 @@ function openComposer(idOrPost,isNew){
 
   // 🎯 Note to AI — a director's note that steers EVERY AI button for this post (angle, facts to push, audience, ask).
   const nf=el('div','cmp-field');
-  nf.innerHTML='<label>🎯 Note to AI <span class="muted" style="font-weight:600">— optional. Tell Claude what to emphasize or do, e.g. “focus on energy savings,” “make it about curb appeal,” “mention the lifetime warranty,” “speak to first-time buyers.” Applies to every button below.</span></label>';
+  nf.innerHTML='<label>🎯 Note to AI <span class="muted" style="font-weight:600">— optional. Tell Claude what to emphasize, e.g. “focus on energy savings,” “make it about curb appeal,” “mention the lifetime warranty.” No need to apply — just type it, then tap any AI button below and it’s used. (Empty caption = fresh post; existing caption = it edits yours your way.)</span></label>';
   const na=el('textarea','cmp-in');na.rows=2;na.value=p.aiNote||'';na.placeholder='e.g. lean on the arched foyer window · push the no-paint AZEK trim · keep it short';
-  na.oninput=()=>{ p.aiNote=na.value; scheduleDraft(); };
-  nf.appendChild(na);b.appendChild(nf);
+  const naStat=el('div','');naStat.style.cssText='font-size:11.5px;margin-top:4px;font-weight:700';
+  const naPaint=()=>{ if((na.value||'').trim()){ naStat.textContent='🎯 Note active — it’ll steer your next AI tap.'; naStat.style.color='var(--orange)'; } else { naStat.textContent=''; } };
+  na.oninput=()=>{ p.aiNote=na.value; naPaint(); scheduleDraft(); };
+  naPaint();
+  nf.appendChild(na);nf.appendChild(naStat);b.appendChild(nf);
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
