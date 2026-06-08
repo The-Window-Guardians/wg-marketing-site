@@ -309,6 +309,11 @@ export async function onRequestPost(context) {
           .map(function (im) { return { mediaType: (im.mediaType || 'image/jpeg'), data: String(im.data).slice(0, 4000000), role: (im.role === 'before' || im.role === 'after' || im.role === 'during') ? im.role : '' }; })
       : [];
 
+    // No BEFORE photo present? Then this is an after-only post — a dominant top-of-prompt ban on inventing the old unit.
+    const afterOnly = images.length && !images.some(function (im) { return im.role === 'before'; });
+    const AFTER_ONLY = afterOnly
+      ? '‼️ TOP PRIORITY — READ FIRST: This post has NO "before" photo. You CANNOT see the old door/window, so you must NOT mention it at all. Do not write "the old door/window", "had one job", "it quit", "drafty", "fogged", or any past condition of THIS home. Write ONLY about the new product and the result. This rule beats the swipe-file examples and the persona.\n\n'
+      : '';
     // Forced per-photo classification — the core safeguard against calling an OLD/unfinished window the new install.
     const VISION_RULE = images.length ?
 ('PHOTO CHECK — do this FIRST, before writing anything:\n' +
@@ -374,6 +379,7 @@ NOTE_BLOCK +
 'Write 3 hashtag sets now.';
     } else if (mode === 'fullpost') {
       sys =
+AFTER_ONLY +
 'You are the social media manager for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 'You are shown one or more PHOTOS of a real job, plus an optional note from the owner. Look closely at the photos and write a complete, ready-to-post social post.\n' +
 PERSONA +
@@ -416,6 +422,7 @@ ANGLE_CREDIT +
           ? '- MODE: CLEAN — a fresh, clean, polished, ready-to-post caption with a little spark. 1 to 3 sentences.'
           : '- MODE: BEST — YOU choose the single strongest play for THIS post: pick the angle AND the vibe (proud showcase, witty/bold, or a quick teach) that will perform best for these photos. Make the 3 options genuinely DIFFERENT in approach so the owner can choose. 1 to 3 sentences each (a teach option may be longer).';
       sys =
+AFTER_ONLY +
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 PERSONA +
 'You are also a genuine exterior-remodeling expert who can teach, guide, and give homeowners food for thought when it adds value.\n' +
