@@ -42,7 +42,8 @@ const PERSONA =
 '- Open with a HOOK that breaks the pattern — a twist, a confession, a personified jab at old windows. NEVER open with "We installed…".\n' +
 '- Clever and witty with a little bite; dry sarcasm is welcome. Premium, never corny, never crude.\n' +
 '- Confidence is QUIET — shown through sharp wit, real know-how and great results, never through bragging. BANNED energy: "we’re the best," "nobody does it better," "unmatched/unrivaled quality," "we don’t do good enough," and any chest-thumping self-praise. If a line is about how great WE are, rewrite it to be about the homeowner, the home, or the old-window villain.\n' +
-'- Short and punchy. Say less, hit harder. Let the photos and the result speak — you supply the wit, not the hype.\n' +
+'- Short and punchy. Say less, hit harder. Let the photos and the result speak; you supply the wit, not the hype.\n' +
+'- PUNCTUATION RULE (hard): NEVER use an em-dash (—) or en-dash (–) anywhere in a caption. Use a period, a comma, or start a new sentence instead. Do not output the "—" character at all.\n' +
 '- Recurring villains we tease (NEVER the customer): old windows & doors acting like they have a personality and bad manners; the years-long "I\'ll get to it next year" procrastination; the quiet neighbor-envy a great-looking house creates.\n' +
 '- Even the boldest post stays grounded — the real craftsmanship and product are the backbone under the joke.\n' +
 'CALLS TO ACTION: sprinkle a soft CTA here and there — NOT every post (roughly one in three, or just one of the three caption options). Keep it light and varied: "free in-home estimate," "DM us," "link in bio," "we’re booking [season] now," "tap to get a quote," or "call/text 215-608-1075." Window Guardians’ real phone number is 215-608-1075 — use it in SOME CTAs (not every one). Use ONLY real offers (free estimate, financing). Never pushy, never the same CTA twice in a row.\n' +
@@ -92,6 +93,15 @@ function buildContent(images, usrText) {
   return content;
 }
 
+// Hard guarantee: no em/en dashes in any caption the user sees (the model loves them; the owner hates them).
+function noDash(s) {
+  return String(s == null ? '' : s)
+    .replace(/\s*[—–]\s*/g, ', ')   // " — " / "–" → ", "
+    .replace(/,\s*,/g, ',')          // tidy any double commas this creates
+    .replace(/,\s*([.!?])/g, '$1')   // ", ." → "."
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 // Strip a web page down to readable text (drop scripts, styles, tags, entities).
 function htmlToText(html) {
   return String(html || '')
@@ -153,8 +163,8 @@ function normWarn(obj) {
 function parseFullPost(text) {
   var obj = extractObj(text);
   if (!obj || typeof obj !== 'object') return null;
-  var caps = Array.isArray(obj.captions) ? obj.captions.filter(Boolean).slice(0, 3)
-           : (obj.caption ? [obj.caption] : []);
+  var caps = (Array.isArray(obj.captions) ? obj.captions.filter(Boolean).slice(0, 3)
+           : (obj.caption ? [obj.caption] : [])).map(noDash);
   if (!caps.length) return null;
   var tags = typeof obj.hashtags === 'string' ? obj.hashtags
            : (Array.isArray(obj.hashtags) ? obj.hashtags.join(' ') : '');
@@ -167,12 +177,12 @@ function parseFullPost(text) {
 function parseCaption(text) {
   var obj = extractObj(text);
   if (obj && Array.isArray(obj.options)) {
-    return { options: obj.options.filter(Boolean).slice(0, 3), warn: normWarn(obj), photos: normPhotos(obj) };
+    return { options: obj.options.filter(Boolean).slice(0, 3).map(noDash), warn: normWarn(obj), photos: normPhotos(obj) };
   }
   // fallback: salvage lines if JSON shape was off
   var opts = String(text || '').split(/\n+/).map(function (s) {
     return s.replace(/^\s*(\d+[\).]|[-*•])\s*/, '').replace(/^["']|["']$/g, '').trim();
-  }).filter(function (s) { return s.length > 8 && s[0] !== '{' && s[0] !== '}'; }).slice(0, 3);
+  }).filter(function (s) { return s.length > 8 && s[0] !== '{' && s[0] !== '}'; }).slice(0, 3).map(noDash);
   return { options: opts, warn: '', photos: [] };
 }
 
