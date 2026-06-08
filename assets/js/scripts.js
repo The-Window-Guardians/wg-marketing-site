@@ -7080,10 +7080,10 @@ function openComposer(idOrPost,isNew){
   const caBest=el('button','btn-set ai-draft primary','✨ Best');caBest.title='AI reads the photos and picks the strongest angle + vibe. ~1¢';
   const caTeach=el('button','btn-set ai-draft','💡 Teach');caTeach.title='Expert tip / "did you know" — builds trust. ~1¢';
   const caProduct=el('button','btn-set ai-draft','🔧 Product / Install');caProduct.title='Centers on your product + the quality of the install (features, craftsmanship, warranty). ~1¢';
-  // 🔥 Bold at 3 strengths — each one generates immediately (no separate dial)
-  const caBoldMild=el('button','btn-set ai-draft','🙂 Bold: Mild');caBoldMild.title='Clever with a light wink. ~1¢';
-  const caBold=el('button','btn-set ai-draft','🔥 Bold');caBold.title='Witty, edgy, scroll-stopping. ~1¢';
-  const caBoldMax=el('button','btn-set ai-draft','💥 Bold: MAX');caBoldMax.title='Completely unhinged head-turner (still clean). ~1¢';
+  // 🔥 Bold at 3 escalating strengths — each one generates immediately (no separate dial)
+  const caBoldMild=el('button','btn-set ai-draft','🔥 Bold');caBoldMild.title='Witty, edgy, scroll-stopping. ~1¢';
+  const caBold=el('button','btn-set ai-draft','😈 Bolder');caBold.title='Cranked up — more swagger + a wilder angle. ~1¢';
+  const caBoldMax=el('button','btn-set ai-draft','💥 Unhinged');caBoldMax.title='Full chaos — absurd + fearless, still clean. ~1¢';
   // AUTO: empty caption box = fresh idea; if you've typed a caption, the AI builds on YOUR words. (No toggle.)
   let aiBusy=false;
   const ALLB=[caBest,caTeach,caProduct,caBoldMild,caBold,caBoldMax];
@@ -7109,11 +7109,11 @@ function openComposer(idOrPost,isNew){
   caBest.onclick=()=>runAI('best','✨ Claude is finding the best angle…');
   caTeach.onclick=()=>runAI('teach','💡 Claude is sharing expert advice…');
   caProduct.onclick=()=>runAI('product','🔧 Claude is detailing the product + install…');
-  caBoldMild.onclick=()=>runAI('bold','🙂 Claude is adding a little wit…',0);
-  caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…',1);
-  caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL send…',2);
+  caBoldMild.onclick=()=>runAI('bold','🔥 Claude is getting bold…',0);
+  caBold.onclick=()=>runAI('bold','😈 Claude is cranking it up…',1);
+  caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL unhinged…',2);
   const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caTeach);caRow.appendChild(caProduct);caRow.appendChild(el('span','aicost','~1¢ · 3 options each'));
-  const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Bold:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
+  const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Edge:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
   const dialRow=el('div','');dialRow.style.cssText='font-size:11.5px;color:var(--ink2);margin-top:7px';dialRow.textContent='💡 Empty caption = fresh ideas. Type a caption = the AI builds on your words.';
   cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
