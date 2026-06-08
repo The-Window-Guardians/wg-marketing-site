@@ -6627,7 +6627,7 @@ function socLibrary(v){
     }
     if(opts.moveToContent){
       const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
-      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m.ungroup=true;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); }; // ungroup flag = stays out, won't auto-rejoin by GPS
+      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m.ungroup=true; if(m.locManual){delete m.lat;delete m.lng;delete m.locManual;} m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); }; // also drops a manually-copied location so it returns to Needs sorting
       foot.appendChild(mv);
     }
     if(typeof isOwner==='function'&&isOwner()){
@@ -6690,7 +6690,7 @@ function socLibrary(v){
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=(e)=>{e.preventDefault();e.stopPropagation();renameCluster(c.items,base);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(c.items));
       d.appendChild(sum);
-      renderGroupBody(d,c.items,{moveToContent:(POOL_SRC!=='main')});
+      renderGroupBody(d,c.items,{moveToContent:true}); // location jobs also get Select all + ↩ Move to Content
       poolCard.appendChild(d);
     });
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
