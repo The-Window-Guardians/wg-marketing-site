@@ -1756,6 +1756,18 @@ function openContentAudit(){
   nb.onclick=function(){ cleanupNoPreview(nb); };
   nf.appendChild(nb); b.appendChild(nf);
   if(s.orphanRefs>0){ var ofd=el('div','cmp-field');ofd.innerHTML='<label>Heads-up</label><p class="muted">'+s.orphanRefs+' post photo reference'+(s.orphanRefs>1?'s point':' points')+' to media not in your library. Re-pick photos in those posts if needed.</p>';b.appendChild(ofd); }
+  // ♻ Restore deleted Drive photos — Drive originals are never deleted, so deleted ones can be re-imported.
+  var rf=el('div','cmp-field');rf.style.marginTop='12px';
+  var ndel=(ST&&ST.driveDeleted)?Object.keys(ST.driveDeleted).length:0;
+  if(ndel>0){
+    rf.innerHTML='<label>♻ Restore deleted photos (from Drive)</label><p class="muted">You have <b>'+ndel+'</b> deleted photo'+(ndel>1?'s':'')+' that came from your Google Drive folder — still safe in Drive. Re-import them all (older deletes come back too; just re-delete any you don’t want). They’ll rejoin their job by location automatically.</p>';
+    var rb=el('button','btn-set primary','♻ Re-import '+ndel+' deleted Drive photo'+(ndel>1?'s':''));
+    rb.onclick=async function(){ if(!await uiConfirm('Re-import every photo you’ve deleted that came from Google Drive ('+ndel+')? Older deletes come back too — just re-delete any you don’t want.',{title:'Restore from Drive?',confirmText:'Restore all'}))return; ST.driveDeleted={}; commit(); closeComposer(); toast('♻ Restoring from Drive — syncing, give it a moment…'); try{ await gdSyncNow(true); }catch(e){} };
+    rf.appendChild(rb);
+  } else {
+    rf.innerHTML='<label>♻ Restore deleted photos (from Drive)</label><p class="muted">Nothing to restore — no Drive-sourced photos are currently deleted. (Phone-uploaded photos can’t be restored after the Undo window; re-upload from your camera roll.)</p>';
+  }
+  b.appendChild(rf);
   var bf=el('div','cmp-field');bf.style.marginTop='12px';
   if(s.baFolder||s.baJobs){
     bf.innerHTML='<label>Old Before / After folder</label><p class="muted">Import your '+s.baFolder+' photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into Content — they keep their Before/After stage tag and stay location-tracked. Undoable.</p>';
