@@ -2289,6 +2289,30 @@ function clusterByLocation(items,radius){
   cl.forEach(c=>c.items.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0)));
   return cl.sort((a,b)=>((b.items[0]&&b.items[0].addedAt)||0)-((a.items[0]&&a.items[0].addedAt)||0));
 }
+/* Auto-join: a NAMED location job "claims" its spot, so new GPS photos dropped at the same
+   address later fall straight into that named job (instead of forming a separate 📍 cluster).
+   Respects an explicit "move out" (ungroup) so a photo you pulled out stays out. */
+function namedJobLocs(){
+  var m={};
+  socPool().forEach(function(p){ if(p&&p.cgroup&&hasLoc(p)){ var g=m[p.cgroup]||(m[p.cgroup]={la:0,ln:0,n:0}); g.la+=p.lat; g.ln+=p.lng; g.n++; } });
+  Object.keys(m).forEach(function(k){ m[k].lat=m[k].la/m[k].n; m[k].lng=m[k].ln/m[k].n; });
+  return m;
+}
+function absorbIntoNamedJobs(){
+  try{
+    if(typeof _fbSync==='object'&&_fbSync&&_fbSync.applying)return false; // don't fight an in-flight cloud merge
+    var locs=namedJobLocs(); var keys=Object.keys(locs); if(!keys.length)return false;
+    var changed=false;
+    socPool().forEach(function(p){
+      if(!p||p.cgroup||p.ungroup||!hasLoc(p))return;     // only LOOSE GPS photos you haven't deliberately pulled out
+      var best=null,bestD=1e9;
+      keys.forEach(function(k){ var d=gdDist(p.lat,p.lng,locs[k].lat,locs[k].lng); if(d<bestD){bestD=d;best=k;} });
+      if(best&&bestD<=60){ p.cgroup=best; p._ut=Date.now(); changed=true; } // within ~60m of a named job → join it
+    });
+    if(changed)commit();
+    return changed;
+  }catch(e){ return false; }
+}
 function gdStartPolling(){if(_gdTimer)return;_gdTimer=setInterval(()=>{if(!document.hidden)gdSyncNow(false);},60000);}
 /* best-effort silent reconnect when the page loads if Drive was connected before */
 async function gdAutoResume(){
@@ -6508,7 +6532,7 @@ function socLibrary(v){
     }
     if(opts.moveToContent){
       const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
-      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); };
+      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m.ungroup=true;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); }; // ungroup flag = stays out, won't auto-rejoin by GPS
       foot.appendChild(mv);
     }
     if(typeof isOwner==='function'&&isOwner()){
@@ -6535,6 +6559,7 @@ function socLibrary(v){
       poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
     }
   }else if(grouped){
+    absorbIntoNamedJobs(); // new GPS photos auto-join a named job at the same address
     // accordion: exactly ONE group opens on first load (the rest collapse) → short scroll
     let firstOpen=true; const defOpen=function(){ if(firstOpen){ firstOpen=false; return true; } return false; };
     // manual groups the user created (no GPS needed) take priority over auto GPS clustering
