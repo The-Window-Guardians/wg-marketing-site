@@ -67,6 +67,7 @@ export async function onRequestGet(context) {
 }
 
 function friendlyApiErr(status, body) {
+  if (/credit balance|billing|insufficient|too low/i.test(body || '')) return '💳 Your Anthropic AI credit ran out. Add credits at console.anthropic.com → Plans & Billing, then try again.';
   if (status === 401 || status === 403) return 'The AI key is missing or wrong — re-check ANTHROPIC_API_KEY in Cloudflare.';
   if (status === 400 && /model/i.test(body || '')) return 'AI model name not recognized — set ANTHROPIC_MODEL in Cloudflare.';
   if (status === 429) return 'AI is busy or out of credit — top up your Anthropic balance and try again.';
