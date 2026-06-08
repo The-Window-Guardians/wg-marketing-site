@@ -2755,15 +2755,15 @@ async function brainCrawlSite(startUrl,onProgress,maxPages){
   }
   return pages;
 }
-async function aiCaptionLive(p,style){
-  var text=(p.caption||'').trim();
-  var ctx=text+' '+(p.jobNote||'');
+async function aiCaptionLive(p,style,useDraft){
+  var text=useDraft?((p.caption||'').trim()):'';          // fresh by default — don't anchor to (and recycle) the current caption
+  var ctx=(p.caption||'')+' '+(p.jobNote||'');            // still mine the draft+job for product/trade grounding
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
   var images=await postImagesB64(p,4);                 // vision: let Claude see the attached photos
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'rewrite'),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),useDraft:!!useDraft,images:images})
   });
   return await r.json();
 }
@@ -6989,12 +6989,16 @@ function openComposer(idOrPost,isNew){
   cf.appendChild(ca);
   const caOpts=el('div','sugbox');
   const fillFallback=(hdrMsg)=>{ const typed=(ca.value||'').trim(); const opts=typed?captionImprove(p):aiCaptionOptions(p); caOpts.appendChild(el('div','sughdr',hdrMsg)); opts.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)}); };
-  const caRewrite=el('button','btn-set ai-draft','🤖 AI rewrite');caRewrite.title='Clean, polished caption from what you wrote — keeps your facts, fixes grammar, adds product + town. ~1¢';
-  const caElab=el('button','btn-set ai-draft','🤖 AI elaborate');caElab.title='Expands it with more detail and a bit of story — no made-up facts. ~1¢';
-  const caFunny=el('button','btn-set ai-draft','🤖 AI funny');caFunny.title='A light, playful, funny take — still on-brand. ~1¢';
-  const caAdvice=el('button','btn-set ai-draft','💡 AI advice');caAdvice.title='An expert, educational take — a tip, "did you know," or food for thought for the homeowner. ~1¢';
-  const caBold=el('button','btn-set ai-draft','🔥 AI bold');caBold.title='Witty, edgy, scroll-stopping take in the Window Guardians voice — clever, never crude. ~1¢';
-  const caBoldMax=el('button','btn-set ai-draft','💥 AI Bold MAX');caBoldMax.title='Completely unhinged, borderline-reckless head-turner — still clean + inside the rules. Use sparingly! ~1¢';
+  const caRewrite=el('button','btn-set ai-draft','🤖 AI clean');caRewrite.title='A fresh, clean, polished post idea. ~1¢';
+  const caElab=el('button','btn-set ai-draft','🤖 AI story');caElab.title='A fresh, fuller take with a little story + homeowner benefit. ~1¢';
+  const caFunny=el('button','btn-set ai-draft','😄 AI funny');caFunny.title='A fresh light, playful take — still on-brand. ~1¢';
+  const caAdvice=el('button','btn-set ai-draft','💡 AI advice');caAdvice.title='A fresh expert/educational take — a tip or "did you know". ~1¢';
+  const caBold=el('button','btn-set ai-draft','🔥 AI bold');caBold.title='A fresh witty, edgy, scroll-stopping take — clever, never crude. ~1¢';
+  const caBoldMax=el('button','btn-set ai-draft','💥 AI Bold MAX');caBoldMax.title='A fresh, completely unhinged head-turner — still clean + inside the rules. ~1¢';
+  // Default = each button invents a FRESH concept. Flip this on to make them build on YOUR draft instead.
+  let useMyWords=false;
+  const caUse=el('button','btn-set','✍️ Fresh ideas');caUse.title='Tap to switch: Fresh ideas (ignore my text) ↔ Use my words (build on my caption)';
+  caUse.onclick=()=>{ useMyWords=!useMyWords; caUse.textContent=useMyWords?'✍️ Using my words':'✍️ Fresh ideas'; caUse.classList.toggle('on',useMyWords); toast(useMyWords?'AI will build on your caption':'AI will invent fresh ideas'); };
   let aiBusy=false;
   const runAI=async(style,workingMsg)=>{
     if(aiBusy)return;
@@ -7003,7 +7007,7 @@ function openComposer(idOrPost,isNew){
     caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
     aiBusy=true;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiCaptionLive(p,style); }catch(e){ d={error:'net'}; }
+    let d=null; try{ d=await aiCaptionLive(p,style,useMyWords); }catch(e){ d={error:'net'}; }
     aiBusy=false;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
@@ -7043,7 +7047,7 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
-  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(caBoldMax);caRow.appendChild(el('span','aicost','~1¢ per tap'));
+  const caRow=el('div','sugrow');caRow.appendChild(caUse);caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(caBoldMax);caRow.appendChild(el('span','aicost','~1¢ per tap'));
   cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 

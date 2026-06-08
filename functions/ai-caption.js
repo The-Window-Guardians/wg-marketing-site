@@ -193,6 +193,7 @@ export async function onRequestPost(context) {
     const brain    = String(body.brain    || '').slice(0, 14000); // the owner's distilled company facts (from brochures/site)
     const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
     const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
+    const useDraft = (body.useDraft === true); // build on the owner's existing caption; default = invent a FRESH concept
     const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
@@ -301,6 +302,14 @@ voice + '\n')
 ('OWNER’S DIRECTION FOR THIS SPECIFIC POST — follow it closely. It steers the angle, facts to emphasize, audience, or ask. It overrides default angle choices, but NEVER the hard guardrails:\n"' + note + '"\n')
 : '';
 
+    // The post can be ANY angle; the product just has to be credited (woven in, or a final credit line).
+    const ANGLE_CREDIT =
+'- ANGLE FREEDOM: the post can be WHATEVER you see fit — a story, a joke, an observation, a question, a tip. It does NOT have to describe the product or job literally. Be genuinely creative; surprise the reader.\n' +
+'- PRODUCT CREDIT (required): the product/brand must always appear somewhere. If you name it naturally in the caption, done. If you do NOT, add a FINAL line crediting it, formatted: "Installed: <product line + key features actually shown or stated>" — e.g. "Installed: ProVia Legacy Steel entry door · black grids · AZEK trim". Use ONLY products/features actually seen in the photo or stated in the facts/notes; NEVER invent a brand — if the exact brand is unknown, credit the generic type you can see (e.g. "Installed: new black double-hung windows"). About 1 in 3 posts, add a short CTA onto that line (free estimate · call/text 215-608-1075).\n';
+    // Fresh by default; the owner can flip "use my words" to build on their draft instead.
+    const FRAMING = (useDraft && caption)
+      ? 'The owner gave you a draft below — keep its facts and intent and polish it into a finished, on-brand caption.\n'
+      : 'Write a FRESH, original post from scratch — do NOT reword any earlier caption. Build the idea from the photos, the job and the known facts (plus the owner’s note if given). Choose a genuinely interesting angle; if asked again, pick a DIFFERENT angle than the obvious one so options never feel recycled.\n';
     // TONE control — about 45% of generated posts come in bold; the rest stay warm/proud.
     const TONE = bold
       ? 'TONE: BOLD & a little UNHINGED — this is the post people screenshot and text to a friend. Think Liquid Death / Old Spice energy: absurd, unexpected, gleefully dramatic, a hook that makes people do a double-take. Personify the old windows, invent a tiny over-the-top scenario, commit to a ridiculous bit — go further than feels comfortable. Do NOT hedge, do NOT sound like a company, do NOT play it safe; a tame post is a failure. BUT land the plane: every wild swing still ties back to the real craftsmanship/product by the end — chaos with a point, not chaos for its own sake. That balance (unhinged + actually about great windows) is the whole game. Stay 100% inside the hard guardrails — that is the ONE rule; everything inside them is fair game. Short, punchy, fearless. Make at least 2 of the 3 options swing hard; one may be a touch more grounded.\n'
@@ -342,6 +351,7 @@ VISION_RULE +
 '- Base everything on what you can actually SEE plus the facts given (e.g. white double-hung windows, a black entry door, new siding, brick facade). NEVER invent a brand, material, count, price, or warranty that was not given.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
 '- captions: 3 distinct options, each 1 to 3 short sentences, no hashtags, at most one emoji. Make the three DIFFERENT in angle — but ALL in the brand voice with a pattern-breaking hook (never the boring "We installed…" opener). Follow the TONE above for how bold to go. Lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy) when they fit.\n' +
+ANGLE_CREDIT +
 '- hashtags: ONE set of 10 to 15 relevant tags. ALWAYS include the brand #WindowGuardians AND hashtag the actual PRODUCT lines/brands used (e.g. #Okna500 #OknaWindows #Okna, #AZEKtrim #AZEK, #ProViaDoors) in multiple natural forms; add a local tag (#BucksCountyPA + the town); match what the photos actually show.\n' +
 '- category: pick the single best fit from EXACTLY this list — "portfolio" (the work itself / before-after / installs / craftsmanship), "edu" (tips / what homeowners should know), "fun" (behind-the-scenes / crew / lighter), "customer" (reviews / happy homeowners / thank-yous).\n' +
 '- Return ONLY valid JSON in this exact shape: {"photos":[{"n":1,"kind":"new_finished"}],"warn":"","captions":["..","..",".."],"hashtags":"#a #b #c","category":"portfolio"} — nothing else.';
@@ -373,12 +383,14 @@ KNOWLEDGE +
 BRAIN_BLOCK +
 VOICE_BLOCK +
 NOTE_BLOCK +
-'The owner’s text below may be EITHER a rough draft caption OR a plain-English description of what they want the post to say. Either way, turn it into a finished caption — never echo an instruction back literally.\n' +
+TONE +
+FRAMING +
 'Rules:\n' +
 VISION_RULE +
-'- Keep the owner’s facts and meaning. NEVER invent brands, materials, counts, prices, warranties, or claims that were not given.\n' +
-'- Fix all grammar, spelling, capitalization, and flow.\n' +
+'- NEVER invent brands, materials, counts, prices, warranties, or claims that were not seen or given.\n' +
+'- Perfect grammar, spelling, capitalization, and flow.\n' +
 '- If a town is given, work it in naturally (local pride).\n' +
+ANGLE_CREDIT +
 styleRule + '\n' +
 '- No hashtags. At most one emoji, only if it fits.\n' +
 '- Return ONLY valid JSON in this exact shape: ' + (images.length ? '{"photos":[{"n":1,"kind":"new_finished"}],"warn":"","options":["one","two","three"]}' : '{"options":["one","two","three"]}') + ' — three distinct captions, nothing else.';
