@@ -6844,6 +6844,7 @@ function openComposer(idOrPost,isNew){
   const caFunny=el('button','btn-set ai-draft','🤖 AI funny');caFunny.title='A light, playful, funny take — still on-brand. ~1¢';
   const caAdvice=el('button','btn-set ai-draft','💡 AI advice');caAdvice.title='An expert, educational take — a tip, "did you know," or food for thought for the homeowner. ~1¢';
   const caBold=el('button','btn-set ai-draft','🔥 AI bold');caBold.title='Witty, edgy, scroll-stopping take in the Window Guardians voice — clever, never crude. ~1¢';
+  const caBoldMax=el('button','btn-set ai-draft','💥 AI Bold MAX');caBoldMax.title='Completely unhinged, borderline-reckless head-turner — still clean + inside the rules. Use sparingly! ~1¢';
   let aiBusy=false;
   const runAI=async(style,workingMsg)=>{
     if(aiBusy)return;
@@ -6851,9 +6852,9 @@ function openComposer(idOrPost,isNew){
     p.caption=ca.value; // use the latest text
     caOpts.dataset.open='1';caOpts.dataset.style=style;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
-    aiBusy=true;[caRewrite,caElab,caFunny,caAdvice,caBold].forEach(x=>x.disabled=true);
+    aiBusy=true;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=true);
     let d=null; try{ d=await aiCaptionLive(p,style); }catch(e){ d={error:'net'}; }
-    aiBusy=false;[caRewrite,caElab,caFunny,caAdvice,caBold].forEach(x=>x.disabled=false);
+    aiBusy=false;[caRewrite,caElab,caFunny,caAdvice,caBold,caBoldMax].forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
@@ -6867,6 +6868,7 @@ function openComposer(idOrPost,isNew){
   caFunny.onclick=()=>runAI('funny','🤖 Claude is having fun…');
   caAdvice.onclick=()=>runAI('advice','💡 Claude is sharing expert advice…');
   caBold.onclick=()=>runAI('bold','🔥 Claude is getting bold…');
+  caBoldMax.onclick=()=>runAI('boldmax','💥 Claude is going FULL send…');
   // 🪄 One-tap full post — Claude LOOKS at the attached photos and writes caption + hashtags + category at once
   const caFull=el('button','btn-set primary ai-draft','🪄 Write whole post');caFull.title='Claude looks at your photos and writes the caption, hashtags, and picks the category — all at once. ~2¢';
   caFull.onclick=async()=>{
@@ -6891,7 +6893,7 @@ function openComposer(idOrPost,isNew){
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
   const caFullRow=el('div','sugrow');caFullRow.appendChild(caFull);caFullRow.appendChild(el('span','aicost','~2¢ · reads your photos'));
-  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(el('span','aicost','~1¢ per tap'));
+  const caRow=el('div','sugrow');caRow.appendChild(caRewrite);caRow.appendChild(caElab);caRow.appendChild(caFunny);caRow.appendChild(caAdvice);caRow.appendChild(caBold);caRow.appendChild(caBoldMax);caRow.appendChild(el('span','aicost','~1¢ per tap'));
   cf.appendChild(caFullRow);cf.appendChild(caRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 

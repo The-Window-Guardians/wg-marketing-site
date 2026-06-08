@@ -170,10 +170,10 @@ export async function onRequestPost(context) {
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
-    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold') ? body.style : 'rewrite';
+    const style    = (body.style === 'elaborate' || body.style === 'funny' || body.style === 'advice' || body.style === 'bold' || body.style === 'boldmax') ? body.style : 'rewrite';
     const brain    = String(body.brain    || '').slice(0, 7000); // the owner's distilled company facts (from brochures/site)
     const voice    = String(body.voice    || '').slice(0, 6000); // the owner's voice/style notes + swipe file
-    const bold     = (body.bold === true || style === 'bold');   // push the witty/edgy persona for this post
+    const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
     // ── INGEST: read a brochure (text already pulled from a PDF) or a website URL,
@@ -306,6 +306,8 @@ VISION_RULE +
           ? '- MODE: ADVICE / EDUCATE. Write a helpful, expert caption that teaches the homeowner something real and useful — a tip, a "did you know," what to look for, or food for thought — drawn from the product knowledge above. Lead with the value, tie it to the post, end with a soft invitation to ask or learn more. 2 to 4 sentences. General guidance only unless a feature was actually seen/stated; never fabricate job specifics.'
         : style === 'bold'
           ? '- MODE: BOLD. Full witty/edgy brand voice — a scroll-stopping head-turner. Open with a pattern-breaking hook, lean on the recurring villains (old/ugly/drafty units, the years-long procrastination, neighbor envy), dry sarcasm welcome. Clever, never crude; confident, never corny. 1 to 3 punchy sentences, all inside the hard guardrails.'
+        : style === 'boldmax'
+          ? '- MODE: BOLD MAX 🔥 — completely UNHINGED. Maximum head-turner, borderline reckless, the kind of caption that makes someone stop dead and go "did a WINDOW company really just post that?!" Go WAY bigger than feels reasonable: absurd premises, wild metaphors, theatrical drama, deadpan chaos, personify the old windows as full-on menaces. Commit harder than Bold — no safety net, no hedging, swing for the fences. BUT: (1) still land it on the real craftsmanship by the last line, and (2) the hard guardrails are ABSOLUTE and unbreakable — no profanity, no politics/religion, no naming competitors, no fear-mongering, never insult the homeowner. Borderline, never over the line. 1 to 3 explosive sentences.'
           : '- MODE: REWRITE. Produce a clean, polished, ready-to-post caption. Keep it tight: 1 to 3 short sentences.';
       sys =
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
