@@ -2722,6 +2722,19 @@ function brainAdd(kind,name,brief,cat){
   brainSrcList().unshift(s); commit(); return s;
 }
 function brainRemove(id){ var a=brainSrcList(); var i=a.findIndex(function(s){return s&&s.id===id;}); if(i>=0){ a.splice(i,1); commit(); } }
+// Every approved post = a vetted winner → auto-feed it to the swipe file so the AI keeps matching what you greenlight.
+// Capped to the most recent 12 auto-captures (your manually-added examples are never pruned).
+function captureApprovedExample(p){
+  try{
+    var cap=(p&&p.caption||'').trim(); if(cap.length<15)return;
+    var list=brainSrcList();
+    if(list.some(function(s){return s&&s.cat==='swipe'&&(s.brief||'').trim()===cap;}))return; // already captured
+    list.unshift({id:'br_appr'+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36),kind:'note',cat:'swipe',name:'★ Approved'+(p.town?(' · '+p.town):''),brief:cap.slice(0,1200),auto:true,_ut:Date.now(),_ct:Date.now(),addedAt:Date.now()});
+    var autos=list.filter(function(s){return s&&s.cat==='swipe'&&s.auto;});
+    if(autos.length>12){ var keep={}; autos.slice(0,12).forEach(function(s){keep[s.id]=1;}); ST.brainSrc=list.filter(function(s){return !(s&&s.cat==='swipe'&&s.auto)||keep[s.id];}); }
+    commit();
+  }catch(e){}
+}
 // Pull readable text out of a PDF in the browser (no upload, no typing). Loads pdf.js on first use.
 function loadPdfJs(){
   if(window.pdfjsLib&&window.pdfjsLib.getDocument)return Promise.resolve(window.pdfjsLib);
@@ -7164,7 +7177,7 @@ function openComposer(idOrPost,isNew){
       toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
       return;
     }
-    p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);closeComposer();rerenderCal();
+    p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);captureApprovedExample(p);closeComposer();rerenderCal();
     if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
       toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
     } else toast('Approved → posting queue ✓');
