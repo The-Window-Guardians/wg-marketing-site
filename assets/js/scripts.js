@@ -1433,9 +1433,10 @@ async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   const total=files.length; _uplAbort=false; uploadProgress(0,total);
-  let addedN=0, localVid=false, imgFailed=0, doneN=0, dupSkipped=0;
+  let addedN=0, localVid=false, imgFailed=0, doneN=0;
   const addToPool=function(it){ socPool().push(it); addedN++; }; // ALWAYS push to the live pool — a mid-upload cloud sync swaps the pool object, so a captured reference would silently lose photos
-  const seen=new Set(); socPool().forEach(function(m){ if(m.sig)seen.add(m.sig); }); // signatures already in the library
+  // NOTE: we NO LONGER silent-skip "duplicates" on upload — that hid photos when the existing copy
+  // was in a job/post/another device. Everything you upload now lands; clean up with 🔍 Find duplicates.
   let next=0;
   // each worker pulls the next photo and runs the full pipeline; up to 3 run at once so
   // a photo can upload while the next one encodes. Each photo still saves the instant it lands.
@@ -1443,9 +1444,7 @@ async function poolAddFiles(fileList,folder){
     while(true){
       const idx=next++; if(idx>=files.length||_uplAbort)break; // Stop button → workers stop pulling new photos
       const raw=files[idx];
-      const _sig=fileSig(raw); // sync — claimed before any await, so concurrent workers can't double-add a dup
-      if(_sig && seen.has(_sig)){ dupSkipped++; doneN++; uploadProgress(doneN,total); continue; }
-      if(_sig) seen.add(_sig);
+      const _sig=fileSig(raw); // kept ON the item so the manual 🔍 Find-duplicates button can still spot exact dupes later
       const isImg=/^image\//.test(raw.type)||/\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i.test(raw.name||'');
       try{
         if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
@@ -1485,7 +1484,7 @@ async function poolAddFiles(fileList,folder){
   if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
   uploadProgress(-1);
-  if(dupSkipped)setTimeout(function(){toast(addedN?('Skipped '+dupSkipped+' duplicate'+(dupSkipped>1?'s':'')+' already in your library'):('All '+dupSkipped+' already in your library — nothing new added'))},650);
+  if(addedN)setTimeout(function(){toast('✅ Added '+addedN+' to your content'+(imgFailed?(' · '+imgFailed+' had trouble'):''))},650);
   if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
