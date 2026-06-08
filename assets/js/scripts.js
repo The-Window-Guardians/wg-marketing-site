@@ -2683,6 +2683,24 @@ async function brainIngest(payload){
   var r=await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.assign({mode:'ingest'},payload))});
   return await r.json();
 }
+// Crawl a whole site server-side, page by page (browser can't fetch other sites directly).
+// BFS from the start URL, same domain only, product/spec/warranty pages first. Returns all page text.
+async function brainCrawlSite(startUrl,onProgress,maxPages){
+  maxPages=maxPages||40;
+  var visited={}, queue=[startUrl], pages=[];
+  var kw=/(window|door|siding|roof|product|series|collection|spec|warrant|about|gallery|finish|option|catalog|brochure|energy|glass|vinyl|fiberglass|hardie|provia|okna|azek)/i;
+  while(queue.length && pages.length<maxPages){
+    var u=queue.shift(); if(!u||visited[u])continue; visited[u]=1;
+    if(onProgress)onProgress(pages.length+1, Math.min(maxPages, pages.length+queue.length+1));
+    var r=null; try{ r=await (await fetch('/ai-caption',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({mode:'fetchpage',url:u})})).json(); }catch(e){ continue; }
+    if(!r)continue;
+    if(r.text && r.text.replace(/\s/g,'').length>80)pages.push(r.text);
+    var links=(r.links||[]).filter(function(l){return !visited[l];});
+    links.sort(function(a,b){ return (kw.test(b)?1:0)-(kw.test(a)?1:0); }); // product/spec/warranty pages first
+    links.forEach(function(l){ if(!visited[l] && queue.indexOf(l)<0 && queue.length<400)queue.push(l); });
+  }
+  return pages;
+}
 async function aiCaptionLive(p,style){
   var text=(p.caption||'').trim();
   var ctx=text+' '+(p.jobNote||'');
@@ -5322,13 +5340,24 @@ function aiBrainCard(){
     const setStatus=(msg,kind)=>{ status.textContent=msg||''; status.style.color=kind==='err'?'var(--red)':kind==='ok'?'var(--green)':'var(--ink2)'; };
     const lock=(on)=>{ busy=on; urlBtn.disabled=on; pdfBtn.disabled=on; };
     urlBtn.onclick=async()=>{
-      const u=(urlIn.value||'').trim(); if(!u){setStatus('Paste a link first.','err');return;}
-      if(!/^https?:\/\//i.test(u)){setStatus('Link should start with http:// or https://','err');return;}
-      if(busy)return; lock(true); setStatus('🌐 Reading the page and distilling it… (a few seconds)');
-      let d=null; try{ d=await brainIngest({url:u,sourceName:u.replace(/^https?:\/\//,'').slice(0,60)}); }catch(e){ d={error:'net',message:'Network error.'}; }
+      let u=(urlIn.value||'').trim(); if(!u){setStatus('Paste a link first.','err');return;}
+      if(!/^https?:\/\//i.test(u))u='https://'+u;
+      if(!/^https?:\/\/.+\..+/.test(u)){setStatus('That doesn’t look like a web address.','err');return;}
+      if(busy)return; lock(true);
+      const host=u.replace(/^https?:\/\//,'').replace(/\/.*/,'');
+      setStatus('🌐 Crawling '+host+' — reading every page I can find… (this can take a while)');
+      let pages=[]; try{ pages=await brainCrawlSite(u,function(n,tot){ setStatus('🌐 Crawling '+host+' — page '+n+' of ~'+tot+'…'); },40); }catch(e){}
+      if(!pages.length){ lock(false); setStatus('⚠️ Couldn’t read that site (it may block bots or be JavaScript-only). Try the brochure PDF instead.','err'); return; }
+      const chunks=chunkText(pages.join('\n\n'),12000);   // digest the WHOLE crawl, nothing skipped
+      const parts=[];
+      for(let ci=0;ci<chunks.length;ci++){
+        setStatus('🧠 Digesting '+host+' ('+pages.length+' pages) — part '+(ci+1)+' of '+chunks.length+'…');
+        const d=await brainIngest({rawText:chunks[ci],sourceName:host+(chunks.length>1?(' — part '+(ci+1)):'')});
+        if(d&&d.brief)parts.push(chunks.length>1?('— Part '+(ci+1)+' —\n'+d.brief):d.brief);
+      }
       lock(false);
-      if(d&&d.brief){ brainAdd('url',d.name||u,d.brief); urlIn.value=''; setStatus('✅ Added — the AI now knows this.','ok'); draw(); }
-      else { setStatus('⚠️ '+((d&&d.message)||'Couldn’t read that page. Try the brochure PDF instead.'),'err'); }
+      if(parts.length){ brainAdd('url',host,parts.join('\n\n')); urlIn.value=''; setStatus('✅ Crawled '+pages.length+' page'+(pages.length>1?'s':'')+' — the AI now knows this whole site.','ok'); draw(); }
+      else setStatus('⚠️ Read the site but couldn’t summarize it — try again.','err');
     };
     urlRow.appendChild(urlIn); urlRow.appendChild(urlBtn); card.appendChild(urlRow);
 

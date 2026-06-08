@@ -104,6 +104,25 @@ function htmlToText(html) {
     .trim();
 }
 
+// Same registrable host? (ignore www.) — keeps the crawl on the company's own site.
+function sameHost(a, b) {
+  try { return new URL(a).host.replace(/^www\./, '') === new URL(b).host.replace(/^www\./, ''); } catch (e) { return false; }
+}
+// Pull same-site page links out of an HTML page (skips files, anchors, mailto/tel, off-site).
+function extractLinks(html, base) {
+  var out = [], seen = {}, m, re = /href\s*=\s*["']([^"']+)["']/gi;
+  while ((m = re.exec(html))) {
+    var href = (m[1] || '').trim();
+    if (!href || /^(mailto:|tel:|javascript:|data:|#)/i.test(href)) continue;
+    if (/\.(jpe?g|png|gif|webp|svg|pdf|zip|mp4|mov|css|js|ico|woff2?|xml|rss)(\?|$)/i.test(href)) continue;
+    var abs; try { abs = new URL(href, base).href; } catch (e) { continue; }
+    abs = abs.split('#')[0];
+    if (!/^https?:/i.test(abs) || !sameHost(abs, base)) continue;
+    if (seen[abs]) continue; seen[abs] = 1; out.push(abs);
+    if (out.length >= 120) break;
+  }
+  return out;
+}
 // Pull a JSON object out of the model text (clean, or buried in prose).
 function extractObj(text) {
   if (!text) return null;
@@ -176,6 +195,21 @@ export async function onRequestPost(context) {
     const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
     const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+
+    // ── FETCHPAGE: grab ONE web page's readable text + its same-site links (no AI call).
+    //    The client uses this to crawl a whole site page-by-page, then sends the text back via ingest.
+    if (body.mode === 'fetchpage') {
+      const u = String(body.url || '').slice(0, 1200);
+      if (!/^https?:\/\//i.test(u)) return json({ error: 'badurl', message: 'Bad URL', text: '', links: [] });
+      try {
+        const pr = await fetch(u, { headers: { 'user-agent': 'Mozilla/5.0 (compatible; WindowGuardiansBot/1.0)', 'accept': 'text/html' } });
+        if (!pr.ok) return json({ error: 'fetch', status: pr.status, text: '', links: [] });
+        const ct = pr.headers.get('content-type') || '';
+        if (ct && !/text\/html|application\/xhtml|^$/i.test(ct)) return json({ text: '', links: [] }); // not an HTML page
+        const html = await pr.text();
+        return json({ text: htmlToText(html).slice(0, 32000), links: extractLinks(html, u) });
+      } catch (e) { return json({ error: 'fetch', text: '', links: [] }); }
+    }
 
     // ── INGEST: read a brochure (text already pulled from a PDF) or a website URL,
     //    then have Claude distill it into a tight, reusable fact sheet for the brain.
