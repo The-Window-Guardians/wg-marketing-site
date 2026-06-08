@@ -6859,6 +6859,23 @@ function socLibrary(v){
 }
 /* social-calendar.html (if visited directly) mirrors Home */
 function viewCalendar(v){return viewSocialDashboard(v);}
+/* Load EVERY photo on a post into real File objects (local blob first, else the cloud copy).
+   Returns {files, miss, vid}: miss = photos not synced to this device yet, vid = videos (can't sync). */
+async function gatherPostFiles(arr){
+  const files=[]; let miss=0,vid=0;
+  for(const m of (arr||[])){
+    const isVid=m.skipReason==='video'||/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
+    try{
+      const rec=await fileGet(m.id);
+      if(rec&&rec.blob){ files.push(new File([rec.blob], rec.name||m.name||(isVid?'video.mp4':'photo.jpg'), {type:rec.blob.type||(isVid?'video/mp4':'image/jpeg')})); continue; }
+      if(isVid){ vid++; continue; }                                  // video lives only on the original device
+      const c=await cloudFileGet(m.id);
+      if(c&&c.dataUrl){ const b=await (await fetch(c.dataUrl)).blob(); files.push(new File([b], c.name||m.name||'photo.jpg', {type:b.type||'image/jpeg'})); }
+      else miss++;
+    }catch(e){ miss++; }
+  }
+  return {files:files, miss:miss, vid:vid};
+}
 function readyCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
   const card=el('div','readycard');
@@ -6883,25 +6900,40 @@ function readyCard(p){
     sf.appendChild(strip);body.insertBefore(sf,body.querySelector('.rcloc'));
   }
   const foot=el('div','rcactions');
-  const dlb=el('button','btn-set',mm.length>1?`⬇ Download ${mm.length} files`:'⬇ Download media');
-  dlb.onclick=async()=>{const arr=postMedia(p);if(!arr.length){toast('No media on this post');return}let got=0,miss=0,vid=0;
-    // browsers block rapid-fire downloads (and cancel a URL revoked too soon) — so trigger each one,
-    // append to the DOM, revoke later, and wait between each so ALL the photos actually save.
-    const trigger=(href,name)=>{const a=document.createElement('a');a.href=href;a.download=name||'photo';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();}catch(e){}},1000);};
-    const gap=()=>new Promise(r=>setTimeout(r,600));
-    for(const m of arr){
-      const isVid=m.skipReason==='video'||/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
-      const rec=await fileGet(m.id);
-      if(rec&&rec.blob){const u=URL.createObjectURL(rec.blob);trigger(u,rec.name||m.name||(isVid?'video':'media'));setTimeout(function(){try{URL.revokeObjectURL(u)}catch(e){}},15000);got++;await gap();continue;}
-      if(isVid){vid++;continue;} // video can't live in the cloud — never tell Ruth to "re-share" it
-      const c=await cloudFileGet(m.id);
-      if(c&&c.dataUrl){trigger(c.dataUrl,c.name||m.name||'photo.webp');got++;await gap();}else{miss++;}
+  const dlb=el('button','btn-set',mm.length>1?`⬇ Save / share ${mm.length} photos`:'⬇ Save / share photo');
+  // Pre-load the photos the moment Ruth's finger lands on the button, so the native share sheet
+  // (which needs the live tap) can fire with ALL photos at once instead of just the first.
+  let _shareReady=null; const startPrep=()=>{ if(!_shareReady)_shareReady=gatherPostFiles(postMedia(p)); };
+  dlb.addEventListener('touchstart',startPrep,{passive:true});
+  dlb.addEventListener('pointerdown',startPrep);
+  dlb.onclick=async()=>{
+    startPrep();
+    dlb.disabled=true; const _lbl=dlb.textContent; dlb.textContent='Preparing photos…';
+    let res; try{ res=await _shareReady; }catch(e){ res={files:[],miss:(postMedia(p)||[]).length,vid:0}; }
+    dlb.disabled=false; dlb.textContent=_lbl;
+    const files=res.files||[], miss=res.miss||0, vid=res.vid||0;
+    if(!files.length){
+      toast(vid&&!miss ? 'This post only has a video — send it by text or AirDrop. Video can’t sync through the app.'
+                       : 'These photos haven’t synced to this device yet. Pull down to refresh the page, wait about 10 seconds, then tap Save / share again.');
+      return;
     }
-    const msg=[];
-    if(got)msg.push('Downloaded '+got);
-    if(vid)msg.push(vid+' video'+(vid>1?'s':'')+' must be sent another way (text/AirDrop) — video can’t sync through the app');
-    if(miss)msg.push(miss+' photo'+(miss>1?'s':'')+' couldn’t be found (ask Sebastian to re-approve)');
-    toast(msg.length?msg.join(' · '):(arr.length>1?'Downloading all '+arr.length:'Downloading'));
+    // PHONE (the normal case): one native share sheet with every photo → Save to Photos, or send straight into Instagram / Facebook.
+    if(navigator.canShare && navigator.canShare({files})){
+      try{
+        await navigator.share({files:files, title:'Window Guardians'});
+        const t=['Sent '+files.length+' photo'+(files.length>1?'s':'')+' to your share sheet'];
+        if(vid)t.push(vid+' video — send by text/AirDrop');
+        if(miss)t.push(miss+' not synced yet — refresh & retry');
+        toast(t.join(' · ')); return;
+      }catch(e){ if(e&&e.name==='AbortError')return; } // Ruth closed the share sheet → stop
+    }
+    // DESKTOP fallback: download each file. If the browser asks to allow multiple downloads, tap Allow.
+    const trigger=(href,name)=>{const a=document.createElement('a');a.href=href;a.download=name||'photo';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();}catch(e){}},1000);};
+    for(const f of files){ const u=URL.createObjectURL(f); trigger(u,f.name); setTimeout(function(){try{URL.revokeObjectURL(u)}catch(e){}},15000); await new Promise(r=>setTimeout(r,600)); }
+    const t=['Saving '+files.length+' photo'+(files.length>1?'s':'')+' — if your browser asks, tap “Allow”'];
+    if(vid)t.push(vid+' video — send by text/AirDrop');
+    if(miss)t.push(miss+' not synced yet — refresh & retry');
+    toast(t.join(' · '));
   };
   const done=el('button','btn-set primary done-btn','✅ Mark as posted');done.onclick=async()=>{
     const post=postById(p.id); if(!post)return;
@@ -6931,7 +6963,9 @@ function readyCard(p){
   rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
   rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app → '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost — do it every time.)';
   foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs);foot.appendChild(done);
-  const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);
+  const dlhint=el('div','muted');dlhint.style.cssText='font-size:12px;margin:6px 2px 0;line-height:1.4';
+  dlhint.innerHTML='💡 <b>Save / share</b> sends every photo at once — pick <b>Save to Photos</b> (or share straight to Instagram/Facebook). If it says some photos “aren’t synced yet,” pull down to <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
+  const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);rb.appendChild(dlhint);
   return card;
 }
 function bumpPostsKpi(){ // keep the "Posts published" KPI in step with posted count
