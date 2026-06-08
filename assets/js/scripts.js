@@ -2345,7 +2345,7 @@ async function gdSyncNow(interactive){
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
       pool.push(item);byDrive.set(f.id,item);added++; // register immediately so nothing else this pass re-adds the same file
-      if(!_isVid){ try{ await storeCloudThumb(rec.id,file); item._cloudThumb=true; }catch(e){} } // PERMANENT FIX: store a cloud copy NOW (we have the bytes) so it never blanks on any device/session, token or not
+      if(!_isVid){ try{ if(await storeCloudThumb(rec.id,file)) item._cloudThumb=true; }catch(e){} } // PERMANENT FIX: store a cloud copy NOW (we have the bytes) so it never blanks on any device/session, token or not. Only mark backed-up on real success, else it'd be wrongly skipped by the backfill.
     }
     if(added||backfilled){ST.pool=pool;commit();render();}
     else if(gdTokenValid() && (interactive || !_gdTokenRendered)){ _gdTokenRendered=true; render(); } // got Drive access → redraw so blank Drive thumbnails can finally load with the token
