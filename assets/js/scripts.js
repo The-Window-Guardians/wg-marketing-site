@@ -5402,13 +5402,18 @@ function aiBrainCard(){
     const srcs=brainSrcList();
     const products=srcs.filter(s=>!VOICE_CATS[brainCat(s)]);
     const voices=srcs.filter(s=>VOICE_CATS[brainCat(s)]);
-    const renderGroup=(title,items)=>{
+    const renderGroup=(title,items,clearLabel)=>{
       const wrap=el('div',''); wrap.style.marginTop='12px';
       const hdr=el('div',''); hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px';
       hdr.appendChild(el('b','',`${title} (${items.length})`)).style.fontSize='13px';
+      const btns=el('div','');btns.style.cssText='display:flex;gap:12px;align-items:center';
       const allBtn=el('button','linklike','Expand all'); allBtn.style.fontSize='12px';
       allBtn.onclick=()=>{ const ds=wrap.querySelectorAll('details.brainsrc'); const anyClosed=Array.prototype.some.call(ds,d=>!d.open); ds.forEach(d=>d.open=anyClosed); allBtn.textContent=anyClosed?'Collapse all':'Expand all'; };
-      if(items.length)hdr.appendChild(allBtn); wrap.appendChild(hdr);
+      if(items.length)btns.appendChild(allBtn);
+      if(items.length&&clearLabel){ const clr=el('button','linklike',clearLabel);clr.style.cssText='font-size:12px;color:var(--red,#e23b3b)';
+        clr.onclick=async()=>{ if(await uiConfirm('Remove all '+items.length+' '+clearLabel.replace(/^Clear all /,'')+'? You can re-add them fresh. (Your voice & swipe file are NOT touched.)',{title:'Clear these?',confirmText:'Clear all',danger:true})){ var ids=items.map(s=>s.id); ST.brainSrc=brainSrcList().filter(s=>ids.indexOf(s.id)<0); commit(); draw(); toast('Cleared — add them back fresh'); } };
+        btns.appendChild(clr); }
+      if(items.length)hdr.appendChild(btns); wrap.appendChild(hdr);
       items.forEach(s=>{
         const d=el('details','brainsrc'); // collapsed by default — click the header to read it
         d.style.cssText='border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:8px';
@@ -5428,7 +5433,7 @@ function aiBrainCard(){
       empty.innerHTML='Nothing added yet. The AI is using general window/door knowledge. Add a brochure or website above to teach it <b>your</b> products, and add voice notes below to shape its personality.';
       list.appendChild(empty);
     } else {
-      if(products.length)list.appendChild(renderGroup('🧠 Products the AI knows',products));
+      if(products.length)list.appendChild(renderGroup('🧠 Products the AI knows',products,'Clear all products'));
       if(voices.length)list.appendChild(renderGroup('🎤 Voice & style',voices));
     }
     card.appendChild(list);
