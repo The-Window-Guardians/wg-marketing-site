@@ -2453,7 +2453,14 @@ function detectCity(note){
 function townInNote(note){ return detectCity(note); }            // back-compat (composer uses it)
 /* The town to actually use: what they typed in the note wins; else the dropdown pick; else
    blank (captions then read naturally with no city — never a wrong default). */
-function effectiveTown(p){ return detectCity(p&&p.jobNote) || (p&&p.town) || ''; }
+// The town the AI should use. Priority: the post's photos' ZIP → real town (most reliable, beats township),
+// then a town detected in the job note, then the stored town. Always strips a trailing "Township".
+function effectiveTown(p){
+  try{ if(p&&Array.isArray(p.media)&&typeof socPool==='function'){ var pool=socPool();
+    for(var i=0;i<p.media.length;i++){ var pm=pool.find(function(x){return x&&x.id===p.media[i].id;}); if(pm&&pm.zip){ var zt=townFromZip(pm.zip); if(zt)return zt; } } } }catch(e){}
+  var t=detectCity(p&&p.jobNote)||(p&&p.town)||'';
+  return String(t).replace(/\s+township$/i,'').trim();   // never say "Township"
+}
 /* Pull marketing signals out of the note so copy can name the real product + work. */
 function noteSignals(note){
   var n=(note||'').toLowerCase();
@@ -2865,7 +2872,8 @@ async function buildMyWeek(count){
   if(!fresh.length){toast('No named jobs yet — rename a job (it turns yellow 📁) to make it free-game for the AI, then try again.');return 0;}
   const groups=[]; const manualMap={};
   fresh.forEach(m=>{ (manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
-  Object.keys(manualMap).forEach(k=>groups.push({title:k,town:(manualMap[k].find(m=>m.town)||{}).town||'',items:manualMap[k]})); // the job's name = its title (feeds the AI)
+  const groupTown=function(items){ for(var i=0;i<items.length;i++){ var m=items[i]; if(m&&m.zip){ var zt=townFromZip(m.zip); if(zt)return zt; } } var w=(items.find(function(m){return m&&m.town;})||{}).town||''; return String(w).replace(/\s+township$/i,'').trim(); }; // ZIP → real town, never township
+  Object.keys(manualMap).forEach(k=>groups.push({title:k,town:groupTown(manualMap[k]),items:manualMap[k]})); // the job's name = its title (feeds the AI)
   if(!groups.length){toast('No named jobs yet — rename a job to make it free-game for the AI.');return 0;}
   // The AI should pick the richest-described jobs first — a fuller title (product + town + features) = more to work with = a better post.
   const richness=function(g){ var t=(g.title||'').trim(); var words=t?t.split(/\s+/).length:0; var prod=productLine(t)?3:0; return words+prod; };

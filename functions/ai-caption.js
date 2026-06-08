@@ -218,7 +218,7 @@ export async function onRequestPost(context) {
     try { body = await request.json(); } catch (e) {}
     const caption  = String(body.caption  || '').slice(0, 2000);
     const jobNote  = String(body.jobNote  || '').slice(0, 2000);
-    const town     = String(body.town     || '').slice(0, 80);
+    const town     = String(body.town     || '').replace(/\s+township$/i, '').slice(0, 80); // never let "Township" through
     const grounding= String(body.grounding|| '').slice(0, 2000);
     const type     = (body.type === 'reel' || body.type === 'video') ? 'video' : 'photo';
     const mode     = (body.mode === 'hashtags') ? 'hashtags' : (body.mode === 'fullpost') ? 'fullpost' : (body.mode === 'ingest') ? 'ingest' : 'caption';
@@ -346,6 +346,7 @@ voice + '\n')
     const ANGLE_CREDIT =
 '- NO OLD-UNIT BACKSTORY WITHOUT A BEFORE PHOTO (HARD RULE, overrides everything including the swipe-file examples): If NO photo in this post is labeled BEFORE or classified "old_before", you may NOT reference THIS home’s old door/window/unit at all. Do NOT open with or build the caption around it. Banned in that case: "the old door/window", "had one job", "it quit", "failing for years", "drafts", "fogged glass", or any claim about how the previous one looked or performed — you cannot see it, so do not invent it. Instead: write about the NEW product and the result. If you want the old-unit angle, keep it CLEARLY GENERAL about old units everywhere (e.g. "old doors love to quit on people"), never "the old door" of THIS house. The swipe-file examples use old-unit backstory ONLY because those posts had before photos; without one, ignore that pattern.\n' +
 '- ANGLE FREEDOM: the post can be WHATEVER you see fit — a story, a joke, an observation, a question, a tip. It does NOT have to describe the product or job literally. Be genuinely creative; surprise the reader.\n' +
+'- TOWN NAME: use the real town people say (e.g. Langhorne, Yardley, Newtown). NEVER write a township name or the word "Township" (e.g. not "Middletown Township"). If the location given looks like a township, just use the town/borough name instead.\n' +
 '- PRODUCT CREDIT (required): the product/brand must always appear somewhere. If you name it naturally in the caption, done. If you do NOT, add a FINAL line crediting it, formatted: "Installed: <product line + key features actually shown or stated>" — e.g. "Installed: ProVia Legacy Steel entry door · black grids · AZEK trim". Use ONLY products/features actually seen in the photo or stated in the facts/notes; NEVER invent a brand — if the exact brand is unknown, credit the generic type you can see (e.g. "Installed: new black double-hung windows"). About 1 in 3 posts, add a short CTA onto that line (free estimate · call/text 215-608-1075).\n';
     // Fresh by default; the owner can flip "use my words" to build on their draft instead.
     const FRAMING = (useDraft && caption)
