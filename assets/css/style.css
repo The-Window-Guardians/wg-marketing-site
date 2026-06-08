@@ -648,7 +648,7 @@ details.jobgroup.done>summary{background:#f1faf4}
 .pctown{font-size:12.5px;color:var(--ink2);font-weight:600}
 .pccap{font-size:13px;color:var(--ink);line-height:1.4;min-height:34px}
 .pcfoot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--faint);font-weight:700;border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
-.pcfoot .rdy{color:var(--green)}
+.pcfoot .rdy{color:var(--orange);font-weight:700}
 .postcard.empty{border-style:dashed;background:transparent;align-items:center;justify-content:center;min-height:170px}
 .postcard.empty:hover{background:var(--bg)}
 .emptywrap{text-align:center;padding:14px;color:var(--muted)}
