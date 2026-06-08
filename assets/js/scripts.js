@@ -1530,12 +1530,12 @@ async function backfillLocalPhotos(){
   return done;
 }
 if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} }); }
-function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id))m.status=status});}
+function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id)){m.status=status;m._ut=Date.now();}});} // bump _ut so a status change (used/available/posted) can't be reverted by a stale cloud copy
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
   const ids=new Set((p.media||[]).map(m=>m.id));
   const jobIds=new Set();socBaJobs().forEach(j=>jobItems(j).forEach(x=>jobIds.add(x.id)));
-  socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used'&&!jobIds.has(m.id))m.status='available'});
+  socPool().forEach(m=>{if(ids.has(m.id)&&m.status==='used'&&!jobIds.has(m.id)){m.status='available';m._ut=Date.now();}});
 }
 /* free the local IndexedDB BLOB cache once a post is posted (unless an active post/job still
    needs it), but KEEP the pool record + its shared CLOUD copy so the photo stays REUSABLE for
@@ -1780,10 +1780,10 @@ function deleteJobPhoto(jobId,mediaId){
   if(j.after)j.after=j.after.filter(x=>x.id!==mediaId);
   let removedJob=false;
   if(!jobItems(j).length){ ST.bajobs=socBaJobs().filter(x=>x.id!==jobId); removedJob=true; } else { j._ut=Date.now(); }
-  ST.pool=socPool().filter(m=>m.id!==mediaId);if(poolSnap)tombstoneDrive([poolSnap],true);commit();
+  ST.pool=socPool().filter(m=>m.id!==mediaId);if(poolSnap)tombstoneDrive([poolSnap],true);tombstoneIds([mediaId]);commit();
   if(typeof rerenderCal==='function')rerenderCal();
   toastUndo('Photo deleted',
-    function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap){socPool().push(poolSnap);tombstoneDrive([poolSnap],false);} commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+    function(){ if(removedJob){socBaJobs().unshift(jobSnap);} else {const cur=socBaJobs().find(x=>x.id===jobId);if(cur){cur.items=jobSnap.items;cur.before=jobSnap.before;cur.after=jobSnap.after;cur._ut=Date.now();}} if(poolSnap){socPool().push(poolSnap);tombstoneDrive([poolSnap],false);} untombstoneIds([mediaId]); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
     function(){ try{fileDel(mediaId)}catch(e){} try{cloudFileDel(mediaId)}catch(e){} });
 }
 /* ---- LOOK-ALIKE duplicate finder: compares the actual picture (8x8 perceptual hash), so it
@@ -5935,12 +5935,12 @@ async function openMediaPreview(mediaId,name,list){
       if(usedByPost||usedByJob){ toast('In use by a post or job — remove it there first.'); return; }
       if(!pm)return;
       const snap=JSON.parse(JSON.stringify(pm));
-      ST.pool=socPool().filter(z=>z.id!==mid); tombstoneDrive([snap],true); commit();
+      ST.pool=socPool().filter(z=>z.id!==mid); tombstoneDrive([snap],true); tombstoneIds([mid]); commit();
       list.splice(i,1);
       if(typeof rerenderCal==='function')rerenderCal();
       if(!list.length){ closeMediaPreview(); } else { if(i>=list.length)i=list.length-1; render(); }
       toastUndo('Photo deleted',
-        function(){ socPool().push(snap); tombstoneDrive([snap],false); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
+        function(){ socPool().push(snap); tombstoneDrive([snap],false); untombstoneIds([mid]); commit(); if(typeof rerenderCal==='function')rerenderCal(); toast('Photo restored'); },
         function(){ try{fileDel(mid)}catch(e){} try{cloudFileDel(mid)}catch(e){} });
     };
   }
@@ -6675,7 +6675,7 @@ function openComposer(idOrPost,isNew){
   ov.appendChild(box);document.body.appendChild(ov);
   // auto-save the in-progress post so closing/leaving never loses your typing — it comes back in "Your posts" drafts
   function composerSaveDraft(){ try{ if(p && p.status!=='posted'){ var has=(p.caption||'').trim()||(Array.isArray(p.media)&&p.media.length)||(p.jobNote||'').trim()||(p.hashtags||'').trim(); if(has){ if(!p.status)p.status='draft'; savePost(p); } } }catch(e){} }
-  let _draftT=null; function scheduleDraft(){ clearTimeout(_draftT); _draftT=setTimeout(composerSaveDraft,1500); } // debounced while typing (survives navigation/refresh)
+  let _draftT=null; function scheduleDraft(){ if(p)p._ut=Date.now(); clearTimeout(_draftT); _draftT=setTimeout(composerSaveDraft,1500); } // bump _ut NOW so a mid-edit cloud snapshot can't revert you; debounced save survives navigation/refresh
   function composerClose(){ clearTimeout(_draftT); composerSaveDraft(); closeComposer(); }
   // The post window NEVER closes from tapping outside — you're typing in here, and an accidental
   // outside-tap (dismissing the keyboard, ending a text highlight) must not nuke your work.
@@ -6694,7 +6694,7 @@ function openComposer(idOrPost,isNew){
   // category segmented
   const pf=el('div','cmp-field');pf.innerHTML='<label>Category</label>';
   const seg=el('div','seg');
-  SOC_PILLARS.forEach(pl=>{const btn=el('button','seg-b'+(p.pillar===pl.id?' on':''),`${pl.icon} ${pl.t}`);btn.dataset.pid=pl.id;btn.onclick=()=>{p.pillar=pl.id;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on')};seg.appendChild(btn)});
+  SOC_PILLARS.forEach(pl=>{const btn=el('button','seg-b'+(p.pillar===pl.id?' on':''),`${pl.icon} ${pl.t}`);btn.dataset.pid=pl.id;btn.onclick=()=>{p.pillar=pl.id;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on');scheduleDraft();};seg.appendChild(btn)});
   pf.appendChild(seg);b.appendChild(pf);
   const setCategory=(id)=>{ if(!id)return; var hit=false; seg.querySelectorAll('.seg-b').forEach(x=>{var on=x.dataset.pid===id;x.classList.toggle('on',on);if(on)hit=true;}); if(hit)p.pillar=id; };
 
@@ -6704,7 +6704,7 @@ function openComposer(idOrPost,isNew){
   if(!p.town){ let _mt=''; postMedia(p).forEach(function(mm){ if(_mt)return; var pm=(typeof socPool==='function')?socPool().find(function(x){return x.id===mm.id;}):null; if(pm&&pm.town)_mt=pm.town; }); if(_mt)p.town=_mt; }
   const sel=el('select','cmp-in');{const ph=document.createElement('option');ph.value='';ph.textContent='— Pick a town —';if(!p.town)ph.selected=true;sel.appendChild(ph);}SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===p.town)o.selected=true;sel.appendChild(o)});
   if(p.town && SOC_TOWNS.indexOf(p.town)<0){const o=document.createElement('option');o.value=p.town;o.textContent=p.town;o.selected=true;sel.appendChild(o);} // a GPS town outside the core list
-  sel.onchange=()=>p.town=sel.value;tf.appendChild(sel);b.appendChild(tf);
+  sel.onchange=()=>{p.town=sel.value;scheduleDraft();};tf.appendChild(sel);b.appendChild(tf);
 
   // media
   const mf=el('div','cmp-field');mf.innerHTML='<label>Media</label>';
@@ -6737,7 +6737,7 @@ function openComposer(idOrPost,isNew){
           grip.removeEventListener('pointermove',move);grip.removeEventListener('pointerup',up);
           var ids=Array.prototype.map.call(grid.querySelectorAll('.medcell'),function(c){return c.dataset.mid;});
           p.media.sort(function(a,b){return ids.indexOf(a.id)-ids.indexOf(b.id);});
-          renderMedia();
+          scheduleDraft();renderMedia();
         }
         grip.addEventListener('pointermove',move);grip.addEventListener('pointerup',up);
       });
@@ -6746,7 +6746,7 @@ function openComposer(idOrPost,isNew){
       const cell=el('div','medcell');
       const img=el('img','medthumb');thumbInto(img,m.id);
       const ph=el('span','medph',/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')?'🎬':'🖼️');
-      const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);renderMedia()};
+      const x=el('button','medx','✕');x.title='Remove';x.onclick=()=>{p.media.splice(i,1);scheduleDraft();renderMedia()};
       cell.appendChild(img);cell.appendChild(ph);cell.appendChild(x);
       cell.dataset.mid=m.id;
       if(arr.length>1){ // carousel → drag the handle to set the posting order Ruth follows
@@ -6773,7 +6773,7 @@ function openComposer(idOrPost,isNew){
     inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;
       if(files.some(isHeic))toast('iPhone photo — converting…');
       for(const raw of files){const f=await normalizeImage(raw);const rec=await fileAdd(f,p.week,S.role,'post.'+p.id);p.media.push({id:rec.id,name:rec.name});}
-      renderMedia();toast(files.length>1?files.length+' files attached':'Media attached')};
+      scheduleDraft();renderMedia();toast(files.length>1?files.length+' files attached':'Media attached')};
     drop.appendChild(inp);grid.appendChild(drop);
     if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Drag the ⠿ handle to reorder.'));
     media.appendChild(grid);
@@ -6807,7 +6807,7 @@ function openComposer(idOrPost,isNew){
           const img=el('img','medthumb');img.addEventListener('load',function(){img.style.display='block';}); // <-- without this the thumbnail stays hidden
           if(VTHUMB[m.id])img.src=VTHUMB[m.id]; else if(m.driveThumb){img.onerror=()=>{img.onerror=null;thumbInto(img,m.id);};img.src=m.driveThumb;} else thumbInto(img,m.id);
           cell.appendChild(img);cell.appendChild(el('span','medselck','✓'));cell.appendChild(el('div','medname',esc(m.name||'')));
-          cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } renderMedia(); }; // toggle; renderMedia keeps the picker open
+          cell.onclick=()=>{ if(inPost.has(m.id)){ p.media=postMedia(p).filter(x=>x.id!==m.id); } else { postMedia(p).push({id:m.id,name:m.name}); } scheduleDraft(); renderMedia(); }; // toggle; renderMedia keeps the picker open
           g.appendChild(cell);
         });
         picker.appendChild(g);
