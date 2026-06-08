@@ -1146,12 +1146,19 @@ const townSlug=t=>(t||'').replace(/[^a-z]/gi,'');
 /* ---- post CRUD (operate on the active program's slice) ---- */
 function socPosts(){return (ST&&Array.isArray(ST.posts))?ST.posts:[]}
 function postById(id){return socPosts().find(p=>p.id===id)}
+/* 3 best-time slots (9am–5pm window) that ROTATE per new post, so a batch spreads across the day
+   instead of stacking. You can still change the time on any post. */
+var BEST_TIMES=['11:00','13:00','15:00']; // 11am · 1pm · 3pm — strong mid-day/afternoon engagement windows
+function nextBestTime(){
+  try{ if(!ST)return BEST_TIMES[0]; var i=(typeof ST._btIdx==='number'?ST._btIdx:0)%BEST_TIMES.length; ST._btIdx=((typeof ST._btIdx==='number'?ST._btIdx:0)+1); return BEST_TIMES[i]; }
+  catch(e){ return BEST_TIMES[0]; }
+}
 function newPost(week,slot){
   const p={id:'p_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
     week:week||1,slot:(slot==null?0:slot),pillar:suggestPillar(week||1),type:'photo',
     town:'',jobNote:'',caption:'',hashtags:'',
     platforms:{ig:true,fb:true,gbp:true,nd:false},
-    date:'',time:'11:00',status:'draft',ruthNote:'',media:[],by:S.role};
+    date:'',time:nextBestTime(),status:'draft',ruthNote:'',media:[],by:S.role};
   return p;
 }
 /* media is an array of {id,name}; migrate legacy single mediaId on read */
