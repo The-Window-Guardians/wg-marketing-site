@@ -2851,7 +2851,7 @@ async function brainCrawlSite(startUrl,onProgress,maxPages){
   }
   return pages;
 }
-async function aiCaptionLive(p,style,useDraft,edge){
+async function aiCaptionLive(p,style,useDraft,edge,platform){
   var text=useDraft?((p.caption||'').trim()):'';          // fresh by default — don't anchor to (and recycle) the current caption
   var ctx=(p.caption||'')+' '+(p.jobNote||'');            // still mine the draft+job for product/trade grounding
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
@@ -2859,19 +2859,19 @@ async function aiCaptionLive(p,style,useDraft,edge){
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'best'),edge:(typeof edge==='number'?edge:1),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),useDraft:!!useDraft,images:images})
+    body:JSON.stringify({caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,style:(style||'best'),edge:(typeof edge==='number'?edge:1),brain:brainText(),voice:voiceText(),note:(p.aiNote||''),useDraft:!!useDraft,platform:(platform==='li'?'li':'fb'),images:images})
   });
   return await r.json();
 }
 // Real AI hashtags — same secure backend, mode:'hashtags'. Vision-aware. Returns {options:[...]} or {error,message}.
-async function aiHashtagsLive(p){
+async function aiHashtagsLive(p,platform){
   var ctx=(p.caption||'')+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
   var images=await postImagesB64(p,3);
   var r=await fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),images:images})
+    body:JSON.stringify({mode:'hashtags',caption:p.caption||'',jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),platform:(platform==='li'?'li':'fb'),images:images})
   });
   return await r.json();
 }
@@ -7213,6 +7213,18 @@ function openComposer(idOrPost,isNew){
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
+  // Platform target — Facebook/Instagram (default) vs LinkedIn company-page B2B voice. Changes what the AI writes below.
+  let aiPlatform=(p.platform==='li')?'li':'fb';
+  const ptRow=el('div','sugrow');ptRow.style.marginBottom='4px';
+  const ptLab=el('span','muted');ptLab.style.cssText='font-size:12px;align-self:center;margin-right:4px;font-weight:700';ptLab.textContent='Write for:';
+  const ptFB=el('button','btn-set','📣 Facebook / Instagram');ptFB.title='Your normal scroll-stopping FB & Instagram voice';
+  const ptLI=el('button','btn-set','💼 LinkedIn (B2B)');ptLI.title='Professional company-page posts for property managers, commercial owners & partners';
+  const ptHint=el('div','');ptHint.style.cssText='font-size:11.5px;margin:2px 0;font-weight:600;color:#0a66c2';
+  const paintPT=()=>{ const li=aiPlatform==='li'; ptFB.classList.toggle('primary',!li); ptLI.classList.toggle('primary',li); ptHint.textContent=li?'💼 LinkedIn mode: professional company-page posts for property managers, commercial owners & referral partners. Copy it into your Window Guardians LinkedIn page.':''; };
+  ptFB.onclick=()=>{ aiPlatform='fb'; p.platform='fb'; paintPT(); scheduleDraft(); };
+  ptLI.onclick=()=>{ aiPlatform='li'; p.platform='li'; paintPT(); scheduleDraft(); };
+  ptRow.appendChild(ptLab);ptRow.appendChild(ptFB);ptRow.appendChild(ptLI);
+  cf.appendChild(ptRow);cf.appendChild(ptHint);paintPT();
   if(p.aiWarn){ const wb=el('div','aiwarn');wb.style.margin='6px 0';wb.innerHTML='⚠️ '+esc(p.aiWarn)+' ';const dx=el('button','linklike','Looks fine — dismiss');dx.onclick=()=>{p.aiWarn='';savePost(p);wb.remove();toast('Dismissed');};wb.appendChild(dx);cf.appendChild(wb); }
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write your caption… or describe what you want and let Claude write it';
   ca.oninput=()=>{ p.caption=ca.value; const t=detectCity(ca.value); if(t&&t!==p.town){ p.town=t; if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t; } scheduleDraft(); };
@@ -7239,7 +7251,7 @@ function openComposer(idOrPost,isNew){
     caOpts.dataset.open='1';caOpts.dataset.style=key;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
     aiBusy=true;ALLB.forEach(x=>x.disabled=true);
-    let d=null; try{ d=await aiCaptionLive(p,style,useDraft,(style==='bold'?(edge==null?1:edge):1)); }catch(e){ d={error:'net'}; }
+    let d=null; try{ d=await aiCaptionLive(p,style,useDraft,(style==='bold'?(edge==null?1:edge):1),aiPlatform); }catch(e){ d={error:'net'}; }
     aiBusy=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
@@ -7273,7 +7285,7 @@ function openComposer(idOrPost,isNew){
     haOpts.dataset.open='1';haOpts.innerHTML='';
     haOpts.appendChild(el('div','sughdr','🤖 Claude is picking hashtags…'));
     haAI.disabled=true;
-    let d=null; try{ d=await aiHashtagsLive(p); }catch(e){ d={error:'net'}; }
+    let d=null; try{ d=await aiHashtagsLive(p,aiPlatform); }catch(e){ d={error:'net'}; }
     haAI.disabled=false;
     if(haOpts.dataset.open!=='1')return;
     haOpts.innerHTML='';

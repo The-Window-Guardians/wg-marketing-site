@@ -55,6 +55,26 @@ const PERSONA =
 '- Never use fear-mongering or scare tactics ("your home is unsafe!"). Tease the inconvenience, never threaten.\n' +
 '- Never insult the homeowner. The joke is always the OLD windows or the situation, with the reader in on it.\n';
 
+// ── LINKEDIN persona: same company, totally different room. B2B company-page voice. ──
+const LI_PERSONA =
+'WINDOW GUARDIANS ON LINKEDIN — company-page voice for a B2B room:\n' +
+'AUDIENCE: this is a LinkedIn post for the Window Guardians COMPANY PAGE. Readers are decision-makers and referral partners, NOT retail homeowners: HOA / condo / 55+ community property managers, commercial building owners, general contractors, real estate agents, and insurance adjusters. Write to THEM and what they care about (budgets, timelines, resident/tenant disruption, liability, warranties, doing it once and right).\n' +
+'VOICE: a credible, trusted exterior-remodeling expert and a dependable partner. Quiet confidence, never bragging. Warm and human, never stiff corporate filler. Lead with competence: outcomes, schedules kept, minimal disruption, code & safety, energy performance, real warranties, clean professional crews, and manufacturer partnerships (e.g. Okna) when relevant. Make the building owner / property manager the hero who made a smart, low-risk decision.\n' +
+'KEY INSIGHT: most contractors on LinkedIn either brag or post boring "another job done" updates. Go the opposite way: be the calm expert who clearly understands a property manager\'s real worries and quietly shows Window Guardians removes them. NONE of the Facebook/Instagram "unhinged," sarcasm, or gimmicks here — that energy is wrong for this room.\n' +
+'HARD GUARDRAILS (never break): no politics or religion; no profanity or crude humor; never name, mock, or compare against a competitor; no fear-mongering or scare tactics; never talk down to the reader. Fair game: the headaches of aging/failing building windows, deferred maintenance, and the value of doing it right once.\n';
+const LI_FORMAT =
+'LINKEDIN FORMAT (follow it):\n' +
+'- Open with a strong, professional hook line: an insight, a question a property manager actually asks, or a crisp result. Never the boring "We installed…" opener, and never clickbait.\n' +
+'- Then 2 to 4 SHORT paragraphs separated by line breaks (LinkedIn rewards white space). Tell a brief, concrete story or make a clear point: the situation, what Window Guardians did, and the outcome that matters to an owner/manager (on schedule, residents barely disrupted, warranty, energy, curb appeal, fewer service calls).\n' +
+'- Work the product/brand in NATURALLY (no "Installed:" tag line, that is for Instagram). Name the real product line only if it was given or clearly shown.\n' +
+'- End with a soft, low-pressure call to action for B2B readers (vary it, e.g. "If you manage a community with aging windows, we are glad to walk the property and scope it."). About 1 in 3 posts may include call or text 215-608-1075.\n' +
+'- Length: roughly 60 to 140 words. Professional, scannable, human. At most ONE tasteful emoji, usually none.\n';
+const LI_HASHTAGS =
+'LINKEDIN HASHTAGS — keep it professional and SHORT: 3 to 5 B2B tags only (LinkedIn is not Instagram, no giant stacks).\n' +
+'1) Always start with #WindowGuardians.\n' +
+'2) Then pick the 3 to 4 MOST relevant from: #PropertyManagement #HOA #CommunityAssociations #CommercialRealEstate #FacilitiesManagement #CapitalImprovements #BuildingMaintenance #ExteriorRemodeling #ReplacementWindows #EnergyEfficiency #CurbAppeal #BucksCountyPA.\n' +
+'No feature tags, no invented tags, no location-stuffing. One word each, leading #, single spaces.\n';
+
 function json(obj, status) {
   return new Response(JSON.stringify(obj), {
     status: status || 200,
@@ -230,6 +250,7 @@ export async function onRequestPost(context) {
     const note     = String(body.note     || '').slice(0, 1200); // per-post director's note (steer THIS post)
     const useDraft = (body.useDraft === true); // build on the owner's existing caption; default = invent a FRESH concept
     const bold     = (body.bold === true || style === 'bold' || style === 'boldmax');   // push the witty/edgy persona for this post
+    const IS_LI    = (body.platform === 'li' || body.platform === 'linkedin'); // LinkedIn company-page B2B post instead of FB/IG
     const model    = env.ANTHROPIC_MODEL || DEFAULT_MODEL;
 
     // ── FETCHPAGE: grab ONE web page's readable text + its same-site links (no AI call).
@@ -358,7 +379,18 @@ voice + '\n')
       : 'TONE: keep the warm, proud, confident voice with a light witty touch — clean and on-brand. Still never the boring "We installed…" opener; give it a little spark.\n';
 
     var sys, usr;
-    if (mode === 'hashtags') {
+    if (mode === 'hashtags' && IS_LI) {
+      sys =
+'You generate LinkedIn hashtag sets for the Window Guardians company page (premium exterior remodeling, Langhorne, Bucks County PA — replacement windows, entry & patio doors, siding, roofing). Audience is B2B: property managers, HOA/condo boards, commercial owners, GCs, agents, adjusters.\n' +
+NOTE_BLOCK +
+LI_HASHTAGS +
+'Return ONLY valid JSON in this exact shape: {"options":["#a #b #c","#d #e #f","#g #h #i"]} — three distinct short sets, nothing else.';
+      usr =
+'Town: ' + (town || '(none)') + '\n' +
+'Caption / what the post says: ' + (caption || '(none)') + '\n' +
+'What was done: ' + (jobNote || '(none)') + '\n' +
+'Write 3 short LinkedIn hashtag sets now.';
+    } else if (mode === 'hashtags') {
       sys =
 'You generate social media hashtag sets for Window Guardians, a premium exterior remodeling company in Langhorne, Bucks County, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 BRAIN_BLOCK +
@@ -421,7 +453,40 @@ ANGLE_CREDIT +
         : (style === 'rewrite' || style === 'elaborate')
           ? '- MODE: CLEAN — a fresh, clean, polished, ready-to-post caption with a little spark. 1 to 3 sentences.'
           : '- MODE: BEST — YOU choose the single strongest play for THIS post: pick the angle AND the vibe (proud showcase, witty/bold, or a quick teach) that will perform best for these photos. Make the 3 options genuinely DIFFERENT in approach so the owner can choose. 1 to 3 sentences each (a teach option may be longer).';
-      sys =
+      // LinkedIn angle mapping (no chaos, B2B framing) — used only when IS_LI.
+      var liStyleRule =
+        (style === 'teach' || style === 'advice')
+          ? '- ANGLE: lead with a genuinely useful insight for property managers / building owners — a what-to-look-for, a budgeting or timing tip, a code / energy / warranty point — tied to a real project. Teach, do not pitch.'
+        : (style === 'product' || style === 'showcase')
+          ? '- ANGLE: a project case study. The property type and scope, the product line and why it fit, and the result that matters to an owner/manager (on schedule, minimal disruption, warranty, energy, fewer service calls). Credible and specific.'
+        : (style === 'bold' || style === 'boldmax' || style === 'funny')
+          ? '- ANGLE: a confident point-of-view post — ONE clear, mildly provocative professional opinion a property manager would nod at (e.g. why the cheapest bid usually costs a board more, why doing it once right protects a budget). Have a spine, stay fully professional. NO sarcasm, NO chaos, NO gimmicks.'
+        : '- ANGLE: YOU pick the strongest professional angle for these photos — a project case study, an expert insight, or a confident POV. Make the 3 options genuinely different.';
+      if (IS_LI) {
+        sys =
+AFTER_ONLY +
+'You write LinkedIn posts for the Window Guardians COMPANY PAGE, a premium exterior remodeling company in Langhorne, Bucks County PA (replacement windows, entry & patio doors, siding, roofing).\n' +
+LI_PERSONA +
+'You are a genuine exterior-remodeling expert who can give building owners and property managers something genuinely useful.\n' +
+KNOWLEDGE +
+BRAIN_BLOCK +
+VOICE_BLOCK +
+NOTE_BLOCK +
+FRAMING +
+'Rules:\n' +
+VISION_RULE +
+'- NEVER invent brands, materials, counts, prices, warranties, or claims that were not seen or given.\n' +
+'- Perfect grammar, spelling, capitalization, and flow.\n' +
+'- If a town is given, work it in naturally.\n' +
+'- NO OLD-UNIT BACKSTORY WITHOUT A BEFORE PHOTO: if no photo is labeled BEFORE, do not reference this building\'s old windows/doors at all — write about the new product and the result.\n' +
+'- TOWN NAME: use the real town people say (Langhorne, Yardley, Newtown). NEVER write a township name or the word "Township".\n' +
+'- PRODUCT: credit the real product/brand only if it was given or clearly shown; weave it in naturally, never invent one.\n' +
+LI_FORMAT +
+liStyleRule + '\n' +
+'- No hashtags in the post body. No "Installed:" tag line.\n' +
+'- Return ONLY valid JSON in this exact shape: ' + (images.length ? '{"photos":[{"n":1,"kind":"new_finished"}],"warn":"","options":["one","two","three"]}' : '{"options":["one","two","three"]}') + ' — three distinct LinkedIn posts, nothing else.';
+      } else {
+        sys =
 AFTER_ONLY +
 'You write social media captions for Window Guardians, a premium exterior remodeling company in Langhorne, PA (replacement windows, entry & patio doors, siding, roofing).\n' +
 PERSONA +
@@ -440,6 +505,7 @@ ANGLE_CREDIT +
 styleRule + '\n' +
 '- No hashtags. At most one emoji, only if it fits.\n' +
 '- Return ONLY valid JSON in this exact shape: ' + (images.length ? '{"photos":[{"n":1,"kind":"new_finished"}],"warn":"","options":["one","two","three"]}' : '{"options":["one","two","three"]}') + ' — three distinct captions, nothing else.';
+      }
       usr =
 'Town: ' + (town || '(none)') + '\n' +
 'The owner wrote (may be a draft caption OR a description of what they want): ' + (caption || jobNote || '(nothing yet — write a fresh, on-brand caption for this kind of job)') + '\n' +
@@ -458,7 +524,7 @@ styleRule + '\n' +
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: (mode === 'fullpost') ? 1700 : 1500, // room for 3 longer options + credit lines so JSON never truncates
+        max_tokens: (mode === 'fullpost') ? 1700 : (IS_LI ? 2400 : 1500), // LinkedIn posts run longer (3 options), so give them headroom or the JSON truncates
         system: sys,
         messages: [{ role: 'user', content: buildContent(images, usr) }]
       })
