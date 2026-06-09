@@ -2933,6 +2933,7 @@ async function buildMyWeek(count){
     const temp={id:'tmp',type:(pics.length>1?'carousel':'photo'),town:g.town||'',caption:'',jobNote:(g.title||''),media:pics.map(m=>({id:m.id,name:m.name,role:m.role||''}))}; // feed the job TITLE to the AI as context
     let d=null; try{ d=await aiFullPostLive(temp,bold); }catch(e){ d=null; }
     if(d&&d.captions&&d.captions.length){
+      if(d.warn && /before[\s-]?only|no (?:after|finished)|needs an after/i.test(d.warn)){ skippedBefore++; continue; } // vision sees only before/unfinished photos (even if unmarked) → never draft a before-only post
       const np=newPost(wk);
       np.media=pics.map(m=>({id:m.id,name:m.name,role:(m.stage||m.role||'')}));
       np.type=pics.length>1?'carousel':'photo';
@@ -7282,6 +7283,13 @@ function openComposer(idOrPost,isNew){
     if(caOpts.dataset.open==='1'&&caOpts.dataset.style===key){caOpts.innerHTML='';caOpts.dataset.open='0';return} // tap the same mode again = close
     p.caption=ca.value; // use the latest text
     const useDraft=!!((ca.value||'').trim()); // typed a caption → build on it; empty → fresh idea
+    // GATE 1: never write a finished/after-style post from BEFORE-only photos (deterministic, for marked photos)
+    const _photos=(postMedia(p)||[]).filter(m=>m&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')&&!/^video\//.test(m.type||''));
+    if(_photos.length && _photos.every(m=>m.role==='before')){
+      caOpts.dataset.open='1';caOpts.dataset.style=key;caOpts.innerHTML='';
+      caOpts.appendChild(el('div','aiwarn','⚠️ This post has only BEFORE photos. I won’t write a finished-result post from before-only shots. Add an After (or During) photo, or tap a photo above to mark one AFTER, then try again.'));
+      return;
+    }
     caOpts.dataset.open='1';caOpts.dataset.style=key;caOpts.innerHTML='';
     caOpts.appendChild(el('div','sughdr',workingMsg));
     aiBusy=true;ALLB.forEach(x=>x.disabled=true);
@@ -7289,6 +7297,12 @@ function openComposer(idOrPost,isNew){
     aiBusy=false;ALLB.forEach(x=>x.disabled=false);
     if(caOpts.dataset.open!=='1')return; // closed while waiting
     caOpts.innerHTML='';
+    // GATE 2: the AI flagged before-only / no finished product (catches UNMARKED before photos via vision) — block the post
+    if(d && d.warn && /before[\s-]?only|no (?:after|finished)|needs an after/i.test(d.warn)){
+      caOpts.innerHTML='';
+      caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)+' These read as only BEFORE / unfinished photos, so I won’t write a finished-result post. Add or mark an AFTER photo, then try again.'));
+      return;
+    }
     if(d&&d.options&&d.options.length){
       if(d.warn)caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)));
       caOpts.appendChild(el('div','sughdr','Tap one to use it:'));
