@@ -494,7 +494,7 @@ table.ref.fixtbl td.tool{font-size:11px;white-space:nowrap;color:var(--navy)}
 .fchip b{margin-left:4px;color:var(--faint)}
 .fchip.on{background:var(--navy);color:#fff;border-color:transparent}
 .fchip.on b{color:var(--orange)}
-.library{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.library{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:20px}
 .pctype{position:absolute;top:6px;left:6px;background:#000a;color:#fff;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
 /* add-content drop zone */
 .dropzone{display:flex;align-items:center;gap:14px;width:100%;border:2px dashed var(--line2);border-radius:13px;padding:20px;cursor:pointer;background:var(--bg);transition:.15s}
@@ -631,7 +631,7 @@ details.jobgroup.done>summary{background:#f1faf4}
 .timerow .ttime{font-weight:700;color:var(--orange)}
 .timerow .tnote{color:var(--ink2)}
 @media(max-width:600px){.timerow{grid-template-columns:1fr;gap:2px}}
-.postcard{border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--card);transition:.15s;display:flex;flex-direction:column}
+.postcard{border:1.5px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--card);transition:.15s;display:flex;flex-direction:column;box-shadow:0 2px 6px rgba(16,24,40,.10)}
 .postcard:hover{border-color:var(--orange);transform:translateY(-1px);box-shadow:var(--shadow)}
 .postcard.approved{border-color:var(--green)}
 .postcard.posted{opacity:.72}
