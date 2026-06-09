@@ -6856,27 +6856,27 @@ function socLibrary(v){
   // ---- POSTS: drafts + waiting queue (posted ones move to "Recently posted") ----
   const active=socPosts().filter(p=>p.status!=='posted');
   const byNewest=(a,b)=>((b._ct||_tsFromId(b.id)||b._ut||0)-(a._ct||_tsFromId(a.id)||a._ut||0)); // newest first — stable order, not the random array/merge order
-  const drafts=active.filter(p=>p.status==='draft').sort(byNewest);
-  const queued=active.filter(p=>p.status==='approved').sort(byNewest);
+  const fbDrafts=active.filter(p=>p.status==='draft'&&p.platform!=='li').sort(byNewest);
+  const fbQueued=active.filter(p=>p.status==='approved'&&p.platform!=='li').sort(byNewest);
+  const liPosts=active.filter(p=>p.platform==='li').sort(byNewest);
   const postsCard=el('div','card pad');postsCard.style.marginTop='12px';
-  postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${drafts.length} draft${drafts.length===1?'':'s'} · ${queued.length} waiting in the queue</small></div></div>`;
+  postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${fbDrafts.length} draft${fbDrafts.length===1?'':'s'} · ${fbQueued.length} in the queue · ${liPosts.length} LinkedIn</small></div></div>`;
   if(!active.length){
     postsCard.innerHTML+=`<p class="muted">No posts yet. Tick some content above and tap “Make a post”.</p>`;
   }else{
-    const section=(title,sub,arr)=>{ // a labeled sub-section so drafts and approved are clearly separated
+    let _secN=0;
+    const section=(title,sub,arr,accent)=>{ // each is its own clearly-separated section, divided by a line
+      if(!arr.length)return;
+      if(_secN++){ const ln=el('div'); ln.style.cssText='border-top:2px solid var(--line,#e3e6ea);margin:20px 0 0'; postsCard.appendChild(ln); } // divider between sections so you see where one ends
       const h=el('div','postsec-h'); h.style.cssText='display:flex;align-items:baseline;gap:8px;margin:14px 0 6px';
-      h.appendChild(el('b','',title)).style.fontSize='13.5px';
+      const tb=el('b','',title); tb.style.cssText='font-size:13.5px'+(accent?(';color:'+accent):''); h.appendChild(tb);
       h.appendChild(el('span','muted',sub)).style.fontSize='12px';
       postsCard.appendChild(h);
-      const fb=arr.filter(p=>p.platform!=='li'), li=arr.filter(p=>p.platform==='li');
-      if(fb.length){ const g=el('div','library'); fb.forEach(p=>g.appendChild(postCard(p))); postsCard.appendChild(g); }
-      if(li.length){ // LinkedIn posts grouped + labeled so it's obvious which is which
-        const lh=el('div','postsec-h'); lh.style.cssText='margin:10px 0 6px'; const lb=el('b','','💼 LinkedIn'); lb.style.cssText='font-size:12.5px;color:#0a66c2'; lh.appendChild(lb); postsCard.appendChild(lh);
-        const g2=el('div','library'); li.forEach(p=>g2.appendChild(postCard(p))); postsCard.appendChild(g2);
-      }
+      const g=el('div','library'); arr.forEach(p=>g.appendChild(postCard(p))); postsCard.appendChild(g);
     };
-    if(drafts.length)section('📝 Drafts','— still being worked on; not in the queue yet',drafts);
-    if(queued.length)section('✅ Approved · in the queue','— ready for Ruth to post',queued);
+    section('📝 Drafts','still being worked on, not in the queue yet',fbDrafts);
+    section('✅ Approved · in the queue','ready for Ruth to post',fbQueued);
+    section('💼 LinkedIn','company-page posts (drafts and queue)',liPosts,'#0a66c2');
   }
   // ✨ Build my week — owner taps it; Claude drafts a few posts from the newest photos to review (added AFTER innerHTML+= so the handler survives)
   if(typeof isOwner==='function'&&isOwner()){
