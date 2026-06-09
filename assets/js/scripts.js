@@ -7244,7 +7244,7 @@ function openComposer(idOrPost,isNew){
 
   // 🎯 Note to AI — a director's note that steers EVERY AI button for this post (angle, facts to push, audience, ask).
   const nf=el('div','cmp-field');
-  nf.innerHTML='<label>🎯 Note to AI <span class="muted" style="font-weight:600">— optional. Tell Claude what to emphasize, e.g. “focus on energy savings,” “make it about curb appeal,” “mention the lifetime warranty.” No need to apply — just type it, then tap any AI button below and it’s used. (Empty caption = fresh post; existing caption = it edits yours your way.)</span></label>';
+  nf.innerHTML='<label>🎯 Note to AI</label>';
   const na=el('textarea','cmp-in');na.rows=2;na.value=p.aiNote||'';na.placeholder='e.g. lean on the arched foyer window · push the no-paint AZEK trim · keep it short';
   const naStat=el('div','');naStat.style.cssText='font-size:11.5px;margin-top:4px;font-weight:700';
   const naPaint=()=>{ if((na.value||'').trim()){ naStat.textContent='🎯 Note active — it’ll steer your next AI tap.'; naStat.style.color='var(--orange)'; } else { naStat.textContent=''; } };
