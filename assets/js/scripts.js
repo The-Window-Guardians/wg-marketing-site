@@ -6326,6 +6326,28 @@ function uiPrompt(message, current, opts){
     setTimeout(()=>{try{inp.focus();inp.select();}catch(e){}},30);
   });
 }
+/* Spin off a SEPARATE LinkedIn company-page post from an existing post.
+   Reuses the exact same photo files (same ids) so nothing is re-uploaded or re-downloaded. */
+function makeLinkedInVersion(src){
+  if(!src)return;
+  try{ if(src.status!=='posted'){ if(!src.status)src.status='draft'; savePost(src); } }catch(e){} // persist source so the twin's photo refs are stable
+  var existing=socPosts().find(function(x){return x&&x.platform==='li'&&x.sourceId===src.id&&x.status!=='posted';});
+  if(existing){ openComposer(existing.id); toast('Opened the existing LinkedIn version of this post'); return; }
+  var p=newPost(src.week||1,0);
+  p.platform='li';
+  p.sourceId=src.id;
+  p.pillar=src.pillar||p.pillar;
+  p.type=src.type||'photo';
+  p.town=src.town||'';
+  p.jobNote=src.jobNote||'';
+  if(src.fromJob)p.fromJob=src.fromJob;
+  p.media=(postMedia(src)||[]).map(function(m){return {id:m.id,name:m.name,role:m.role};}); // SAME photo ids = shared files, no re-download for anyone
+  p.caption='';p.hashtags='';p.status='draft';
+  try{ poolSetStatus(p.media.map(function(m){return m.id;}),'used'); }catch(e){} // keep the shared photos parked as "used"
+  savePost(p);
+  openComposer(p,true); // opens in LinkedIn mode (composer reads platform) — banner shows LinkedIn, AI writes B2B
+  toast('💼 LinkedIn version created from this post — same photos. Tap a mode to write it.');
+}
 function postCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
   const card=el('div','postcard '+p.status);
@@ -6334,7 +6356,7 @@ function postCard(p){
   const mm=postMedia(p);
   card.innerHTML=`<div class="pcimg"><img alt="" style="display:none"><span class="pcph">${pl.icon}</span><span class="pctype">${ty.icon} ${esc(ty.t)}</span>${mm.length>1?`<span class="pccount">📎 ${mm.length}</span>`:''}</div>
     <div class="pcbody">
-      <div class="pcmeta"><span class="pchip">${pl.icon} ${esc(pl.t)}</span>${statusPill(p.status)}</div>
+      <div class="pcmeta">${p.platform==='li'?'<span class="pchip" style="background:#eef3fb;color:#0a66c2">💼 LinkedIn</span>':''}<span class="pchip">${pl.icon} ${esc(pl.t)}</span>${statusPill(p.status)}</div>
       <div class="pctown">📍 ${esc(p.town||'—')}${p.date?` · ${esc(p.date)}${p.time?' '+esc(p.time):''}`:''}</div>
       <div class="pccap">${cap?esc(cap.slice(0,90))+(cap.length>90?'…':''):'<span class=\"muted\">No caption yet</span>'}</div>
       ${p.aiWarn?`<div class="pcwarn" title="${esc(p.aiWarn)}">⚠️ check photos</div>`:''}
@@ -6401,7 +6423,11 @@ function ruthQueue(v){
     rf.onclick=()=>{ if(typeof fbSyncPull==='function'){fbSyncPull();} toast('Checking…'); };
     emp.appendChild(rf); q.appendChild(emp);
   }
-  ready.forEach(p=>q.appendChild(readyCard(p)));
+  // Split Facebook/Instagram from LinkedIn so Ruth always knows which channel each post is for
+  const fbReady=ready.filter(p=>p.platform!=='li'), liReady=ready.filter(p=>p.platform==='li');
+  const grp=(title,arr)=>{ if(!arr.length)return; if(fbReady.length&&liReady.length){ const h=el('div','postsec-h'); h.style.cssText='margin:12px 0 4px;font-weight:800;font-size:13.5px'; h.textContent=title; q.appendChild(h); } arr.forEach(p=>q.appendChild(readyCard(p))); };
+  grp('📣 Facebook & Instagram',fbReady);
+  grp('💼 LinkedIn',liReady);
   v.appendChild(q);
   v.appendChild(activityCard());
 }
@@ -6842,7 +6868,12 @@ function socLibrary(v){
       h.appendChild(el('b','',title)).style.fontSize='13.5px';
       h.appendChild(el('span','muted',sub)).style.fontSize='12px';
       postsCard.appendChild(h);
-      const grid=el('div','library'); arr.forEach(p=>grid.appendChild(postCard(p))); postsCard.appendChild(grid);
+      const fb=arr.filter(p=>p.platform!=='li'), li=arr.filter(p=>p.platform==='li');
+      if(fb.length){ const g=el('div','library'); fb.forEach(p=>g.appendChild(postCard(p))); postsCard.appendChild(g); }
+      if(li.length){ // LinkedIn posts grouped + labeled so it's obvious which is which
+        const lh=el('div','postsec-h'); lh.style.cssText='margin:10px 0 6px'; const lb=el('b','','💼 LinkedIn'); lb.style.cssText='font-size:12.5px;color:#0a66c2'; lh.appendChild(lb); postsCard.appendChild(lh);
+        const g2=el('div','library'); li.forEach(p=>g2.appendChild(postCard(p))); postsCard.appendChild(g2);
+      }
     };
     if(drafts.length)section('📝 Drafts','— still being worked on; not in the queue yet',drafts);
     if(queued.length)section('✅ Approved · in the queue','— ready for Ruth to post',queued);
@@ -6918,10 +6949,12 @@ function readyCard(p){
   const card=el('div','readycard');
   card.innerHTML=`<div class="rcimg"><img alt="" style="display:none"><span class="pcph">${pl.icon}</span><span class="pctype">${ty.icon} ${esc(ty.t)}</span></div>
     <div class="rcbody">
-      <div class="pcmeta"><span class="pchip">${pl.icon} ${esc(pl.t)}</span><span class="muted" style="font-size:12px">${esc(ty.t)}${p.date?' · '+esc(p.date)+(p.time?' '+esc(p.time):''):''}</span></div>
+      <div class="pcmeta">${p.platform==='li'?'<span class="pchip" style="background:#eef3fb;color:#0a66c2">💼 LinkedIn</span>':''}<span class="pchip">${pl.icon} ${esc(pl.t)}</span><span class="muted" style="font-size:12px">${esc(ty.t)}${p.date?' · '+esc(p.date)+(p.time?' '+esc(p.time):''):''}</span></div>
       <div class="rcfield"><label>Caption</label><div class="rctext">${esc(p.caption||'—')}</div></div>
       <div class="rcfield"><label>Hashtags</label><div class="rctext">${esc(p.hashtags||'—')}</div></div>
-      <div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}</b> — on Instagram/Facebook tap <b>Add location</b> and choose “${esc(p.town||'your town')}, PA”. Google &amp; Nextdoor are already local.</div>
+      ${p.platform==='li'
+        ? `<div class="rcloc">💼 <b>Post to the Window Guardians LinkedIn company page.</b> No location tag needed on LinkedIn. Copy the caption and hashtags, attach the photo, post.</div>`
+        : `<div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}</b>. On Instagram/Facebook tap <b>Add location</b> and choose “${esc(p.town||'your town')}, PA”. Google and Nextdoor are already local.</div>`}
       <div class="rcnote">📋 ${esc(p.ruthNote||aiRuthNote(p))}</div>
     </div>`;
   fillMediaRoles(p);                 // make sure Drive photos show their Before/After labels
@@ -7004,11 +7037,19 @@ function readyCard(p){
   // 📍 Location reminder — the one thing she must do by hand for the native pin
   const locTown=((typeof effectiveTown==='function'?effectiveTown(p):'')||p.town||'').trim();
   const rem=el('div','rcremind');
-  rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
-  rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app → '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost — do it every time.)';
-  foot.appendChild(copyAll);foot.appendChild(dlb);foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs);foot.appendChild(done);
+  if(p.platform==='li'){
+    rem.style.cssText='background:#eef3fb;border:1px solid #0a66c2;border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
+    rem.innerHTML='💼 <b>Post to the Window Guardians LinkedIn company page</b> (not a personal profile). Copy the caption and hashtags, attach the photo, and post. No location tag needed on LinkedIn.';
+  } else {
+    rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
+    rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app to '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost, do it every time.)';
+  }
+  const liBtn=el('button','btn-set','💼 Open LinkedIn');liBtn.title='Open the Window Guardians LinkedIn page to paste + post';liBtn.onclick=()=>window.open('https://www.linkedin.com/company/window-guardians/','_blank','noopener');
+  foot.appendChild(copyAll);foot.appendChild(dlb);
+  if(p.platform==='li'){ foot.appendChild(liBtn); } else { foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs); }
+  foot.appendChild(done);
   const dlhint=el('div','muted');dlhint.style.cssText='font-size:12px;margin:6px 2px 0;line-height:1.4';
-  dlhint.innerHTML='💡 <b>Save / share</b> grabs every photo at once. On your <b>computer</b> it downloads one <b>.zip</b> — double-click it to open all the photos. On your <b>phone</b> it opens the share sheet (Save to Photos, or send to Instagram/Facebook). If it says photos “aren’t synced yet,” <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
+  dlhint.innerHTML='💡 <b>Save / share</b> grabs every photo at once. On your <b>computer</b> it downloads one <b>.zip</b>, double-click it to open all the photos. On your <b>phone</b> it opens the share sheet (Save to Photos, or send straight to '+(p.platform==='li'?'LinkedIn':'Instagram/Facebook')+'). If it says photos “aren’t synced yet,” <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
   const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);rb.appendChild(dlhint);
   return card;
 }
@@ -7213,18 +7254,11 @@ function openComposer(idOrPost,isNew){
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
   const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
-  // Platform target — Facebook/Instagram (default) vs LinkedIn company-page B2B voice. Changes what the AI writes below.
-  let aiPlatform=(p.platform==='li')?'li':'fb';
-  const ptRow=el('div','sugrow');ptRow.style.marginBottom='4px';
-  const ptLab=el('span','muted');ptLab.style.cssText='font-size:12px;align-self:center;margin-right:4px;font-weight:700';ptLab.textContent='Write for:';
-  const ptFB=el('button','btn-set','📣 Facebook / Instagram');ptFB.title='Your normal scroll-stopping FB & Instagram voice';
-  const ptLI=el('button','btn-set','💼 LinkedIn (B2B)');ptLI.title='Professional company-page posts for property managers, commercial owners & partners';
-  const ptHint=el('div','');ptHint.style.cssText='font-size:11.5px;margin:2px 0;font-weight:600;color:#0a66c2';
-  const paintPT=()=>{ const li=aiPlatform==='li'; ptFB.classList.toggle('primary',!li); ptLI.classList.toggle('primary',li); ptHint.textContent=li?'💼 LinkedIn mode: professional company-page posts for property managers, commercial owners & referral partners. Copy it into your Window Guardians LinkedIn page.':''; };
-  ptFB.onclick=()=>{ aiPlatform='fb'; p.platform='fb'; paintPT(); scheduleDraft(); };
-  ptLI.onclick=()=>{ aiPlatform='li'; p.platform='li'; paintPT(); scheduleDraft(); };
-  ptRow.appendChild(ptLab);ptRow.appendChild(ptFB);ptRow.appendChild(ptLI);
-  cf.appendChild(ptRow);cf.appendChild(ptHint);paintPT();
+  // This post's platform is fixed when it is created. The AI writes in that platform's voice. (Spin off a LinkedIn twin with the button below.)
+  const aiPlatform=(p.platform==='li')?'li':'fb';
+  const ptBanner=el('div','');ptBanner.style.cssText='font-size:12.5px;font-weight:700;margin:0 0 6px;padding:7px 10px;border-radius:8px;'+(aiPlatform==='li'?'background:#eef3fb;color:#0a66c2':'background:var(--green-soft,#eaf7ee);color:#137333');
+  ptBanner.innerHTML=(aiPlatform==='li')?'💼 LinkedIn post (company page). The AI writes a professional B2B post for property managers, owners and partners.':'📣 Facebook &amp; Instagram post. Your normal scroll-stopping voice.';
+  cf.appendChild(ptBanner);
   if(p.aiWarn){ const wb=el('div','aiwarn');wb.style.margin='6px 0';wb.innerHTML='⚠️ '+esc(p.aiWarn)+' ';const dx=el('button','linklike','Looks fine — dismiss');dx.onclick=()=>{p.aiWarn='';savePost(p);wb.remove();toast('Dismissed');};wb.appendChild(dx);cf.appendChild(wb); }
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write your caption… or describe what you want and let Claude write it';
   ca.oninput=()=>{ p.caption=ca.value; const t=detectCity(ca.value); if(t&&t!==p.town){ p.town=t; if(!Array.prototype.some.call(sel.options,o=>o.value===t)){const o=document.createElement('option');o.value=t;o.textContent=t;sel.appendChild(o);} sel.value=t; } scheduleDraft(); };
@@ -7339,6 +7373,13 @@ function openComposer(idOrPost,isNew){
     }catch(e){ appr.disabled=false; toast('Approve hit a snag — try again. '+((e&&e.message)||'')); }
   };
   foot.appendChild(save);foot.appendChild(appr);
+  // 💼 Make LinkedIn version — spin off a separate LinkedIn post that reuses these exact photos (no re-download)
+  if(p.platform!=='li'){
+    const mkli=el('button','btn-set','💼 Make LinkedIn version');
+    mkli.title='Create a separate LinkedIn company-page post from this one, using the same photos';
+    mkli.onclick=()=>{ makeLinkedInVersion(p); };
+    foot.appendChild(mkli);
+  }
   // 📤 Send to GoHighLevel — owner, once a webhook URL is set in Settings
   if(typeof isOwner==='function'&&isOwner()&&ghlWebhookUrl()){
     const ghl=el('button','btn-set','📤 '+(p.sentToGhl?'Re-send to GoHighLevel':'Send to GoHighLevel'));
