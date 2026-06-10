@@ -3011,7 +3011,7 @@ function postGaps(p){
   const g=[];
   if(!postMedia(p).length)g.push('media');
   if(!(p.caption||'').trim())g.push('caption');
-  if(!(p.hashtags||'').trim())g.push('hashtags');
+  if(p&&p.platform!=='li' && !(p.hashtags||'').trim())g.push('hashtags'); // LinkedIn posts don't need a hashtag stack — never block approve on it
   if(!Object.values(p.platforms||{}).some(Boolean))g.push('platform');
   // date is intentionally optional — post any day, just stay consistent
   return g;
