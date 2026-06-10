@@ -1227,8 +1227,8 @@ async function publishPostMedia(post){
     const id=m.id; delete m.failedToPublish; delete m.skipReason;          // recompute fresh each approve
     if(!id){skipped++;continue;}
     if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
-    try{ const ex=await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get();
-         if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published
+    try{ const ex=await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get(),12000,'check');
+         if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published (bounded so a slow read can't stall approval)
     let rec=null; try{ rec=await fileGet(id); }catch(e){}
     if(!rec||!rec.blob){m.failedToPublish=true;m.skipReason='notsynced';skipped++;failed.push(m);continue;} // no local blob to copy
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||m.name||'');
@@ -1236,10 +1236,10 @@ async function publishPostMedia(post){
     try{
       const dataUrl=await imgToWebp(rec.blob);
       const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
-      await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id)
-        .set({name:(rec.name||m.name||'photo'),type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),fromPost:true});
+      await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id)
+        .set({name:(rec.name||m.name||'photo'),type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),fromPost:true}),20000,'upload'); // bounded so one stuck write can't freeze approve
       VTHUMB[id]=dataUrl; done++;
-    }catch(e){ m.failedToPublish=true;m.skipReason='toolarge';skipped++;failed.push(m); }
+    }catch(e){ m.failedToPublish=true;m.skipReason=(e&&/timeout/.test(e.message))?'slow':'toolarge';skipped++;failed.push(m); }
   }
   return {done,skipped,failed};
 }
@@ -7400,14 +7400,15 @@ function openComposer(idOrPost,isNew){
   appr.onclick=async()=>{
     if(appr.disabled)return;
     const g=postGaps(p);if(g.length){toast('Add '+g.join(', ')+' before approving');return}
-    appr.disabled=true;toast('Sharing photos to the team…');
+    const _aplbl=appr.textContent; appr.disabled=true; appr.textContent='⏳ Working…'; toast('Sharing photos to the team…');
+    const reEnable=()=>{ appr.disabled=false; appr.textContent=_aplbl; }; // guarantee the button never stays frozen
     let r=null;
-    try{ r=await pTimeout(publishPostMedia(p),90000,'photo sync'); }
-    catch(e){ appr.disabled=false; toast('Couldn’t sync the photos ('+((e&&e.message)||'timed out')+'). Try again, or remove a problem photo and re-approve.'); return; }
+    try{ r=await pTimeout(publishPostMedia(p),45000,'photo sync'); }
+    catch(e){ reEnable(); toast('Couldn’t sync the photos ('+((e&&e.message)||'timed out')+'). Try again, or remove a problem photo and re-approve.'); return; }
     try{
       const mm=postMedia(p); const failed=(r&&r.failed)||[];
       if(mm.length && (!r||r.done===0)){ // nothing reached the cloud — don't ship Ruth an empty/broken post
-        appr.disabled=false;
+        reEnable();
         const allVid=failed.length&&failed.every(f=>f.skipReason==='video');
         toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
         return;
@@ -7416,7 +7417,7 @@ function openComposer(idOrPost,isNew){
       if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
         toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
       } else toast('Approved → posting queue ✓');
-    }catch(e){ appr.disabled=false; toast('Approve hit a snag — try again. '+((e&&e.message)||'')); }
+    }catch(e){ reEnable(); toast('Approve hit a snag — try again. '+((e&&e.message)||'')); }
   };
   foot.appendChild(save);foot.appendChild(appr);
   // 💼 Make LinkedIn version — spin off a separate LinkedIn post that reuses these exact photos (no re-download)
