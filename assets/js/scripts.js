@@ -2892,6 +2892,10 @@ async function aiFullPostLive(p,bold){
 /* "Build my week" — owner taps it; Claude looks at the newest GROUPED photos and drafts a few
    complete posts (caption + hashtags + category) for review. Nothing posts automatically; each
    lands in "Your posts" as a draft. Each photo set used is marked 'used' so a re-run won't repeat. */
+/* ⭐ Starred jobs — the owner marks which named jobs the AI should build FIRST (any number). */
+function socStarJobs(){ if(!ST)return {}; if(!ST.starJobs||typeof ST.starJobs!=='object')ST.starJobs={}; return ST.starJobs; }
+function isStarJob(name){ return !!(name&&socStarJobs()[name]); }
+function toggleStarJob(name){ if(!name)return; var s=socStarJobs(); if(s[name])delete s[name]; else s[name]=Date.now(); commit(); }
 async function buildMyWeek(count){
   if(typeof isOwner==='function'&&!isOwner()){toast('Owner only');return 0;}
   const isPhoto=m=>!/^video\//.test(m.type||'')&&!/\.(mp4|mov|m4v|webm)$/i.test(m.name||'');
@@ -2911,7 +2915,7 @@ async function buildMyWeek(count){
   const recent=socPosts().slice().sort(function(a,b){ return ((b._ct||_tsFromId(b.id)||0))-((a._ct||_tsFromId(a.id)||0)); })
                           .map(function(p){ return (p.jobNote||'').toLowerCase().trim(); }).filter(Boolean);
   const recentRank=function(title){ var i=recent.indexOf((title||'').toLowerCase().trim()); return i<0?0:(recent.length-i); }; // 0 = never posted (goes first); higher = used more recently (goes last)
-  groups.sort(function(a,b){ var ra=recentRank(a.title), rb=recentRank(b.title); if(ra!==rb)return ra-rb; return richness(b)-richness(a); });
+  groups.sort(function(a,b){ var sa=isStarJob(a.title)?1:0, sb=isStarJob(b.title)?1:0; if(sa!==sb)return sb-sa; /* ⭐ starred jobs first */ var ra=recentRank(a.title), rb=recentRank(b.title); if(ra!==rb)return ra-rb; return richness(b)-richness(a); });
   const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
   const target=(typeof count==='number'&&count>0) ? Math.min(count, groups.length) : Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
   const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
@@ -6762,7 +6766,15 @@ function socLibrary(v){
       const items=manualMap[gname];
       const d=el('details','jobgroup'+(groupDone(items)?' done':''));applyGroupOpen(d,'mg:'+gname, defOpen());
       const sum=el('summary','jobsum');
+      if(typeof isOwner==='function'&&isOwner()){ // ⭐ star this job so the AI builds it first (far left)
+        const star=el('button','jobstar'+(isStarJob(gname)?' on':''), isStarJob(gname)?'★':'☆');
+        star.title=isStarJob(gname)?'Starred — the AI builds this job first. Tap to unstar.':'Star this job so the AI builds it first';
+        star.style.cssText='background:none;border:none;cursor:pointer;font-size:18px;line-height:1;margin-right:3px;padding:0 2px;color:'+(isStarJob(gname)?'#f5a623':'#c0c4cc');
+        star.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleStarJob(gname); rerenderCal(); };
+        sum.appendChild(star);
+      }
       sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+' photo'+(items.length>1?'s':'')));
+      if(isStarJob(gname))sum.appendChild(el('span','jobdone','★ AI first'));
       if(groupDone(items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
