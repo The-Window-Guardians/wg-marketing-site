@@ -6700,6 +6700,10 @@ function socLibrary(v){
     selAll.textContent=(items.length&&items.every(m=>sel.has(m.id)))?'◻ Unselect all':'✓ Select all';
     selAll.onclick=()=>{ const all=items.every(m=>sel.has(m.id)); items.forEach(m=>{ if(all)sel.delete(m.id); else sel.add(m.id); }); rerenderCal(); };
     foot.appendChild(selAll);
+    // ⬇ Download this job's photos — ticked ones if any are ticked, otherwise the whole group. Zip on desktop, share sheet on phone.
+    const dlGrp=el('button','btn-set','⬇ Download');dlGrp.title='Download the ticked photos, or all of this job if none are ticked';
+    dlGrp.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; downloadMediaItems(chosen.map(m=>({id:m.id,name:m.name,type:m.type})),dlGrp); };
+    foot.appendChild(dlGrp);
     // Move ticked photos to a DIFFERENT job (or a new one). On real jobs only — Needs sorting has its own "Add to a job".
     if(!opts.newGroup){
       const mj=el('button','btn-set','📍 Move to a job');mj.title='Move the ticked photos to a different job (or create a new one)';
