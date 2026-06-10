@@ -1381,12 +1381,21 @@ function shortenText(t){
 }
 function poolAvailable(){return socPool().filter(m=>m.status==='available')}
 function poolIsMain(m){return !m.folder||m.folder==='Drive'} // sits directly in the synced folder
+/* Concurrency gate — caps how many image reads/fetches run at once. On a weak network,
+   firing 20 big Firestore reads at the same time saturates the pipe and everything stalls.
+   Limiting to a handful makes each finish faster and the grid fill smoothly. */
+var _NET_MAX=5, _netActive=0, _netQueue=[];
+function _netAcquire(){ return new Promise(function(res){ if(_netActive<_NET_MAX){ _netActive++; res(); } else { _netQueue.push(res); } }); }
+function _netRelease(){ if(_netQueue.length){ var r=_netQueue.shift(); r(); } else { _netActive=Math.max(0,_netActive-1); } }
 /* fetch a cloud-stored media file (WebP) by id — social pool photos (pf_) or handoff photos (hf_) */
 async function cloudFileGet(id){
   if(!window.WG_DB||!id)return null;
   var cols = id.indexOf('hf_')===0?['hfiles']:id.indexOf('pf_')===0?['poolfiles']:['poolfiles','hfiles'];
-  for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()&&d.data().dataUrl)return d.data(); }catch(e){} }
-  return null;
+  await _netAcquire();
+  try{
+    for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()&&d.data().dataUrl)return d.data(); }catch(e){} }
+    return null;
+  } finally { _netRelease(); }
 }
 /* read GPS lat/lng from a JPEG's EXIF so before/after location grouping still works on in-app uploads.
    Best-effort, JPEG only; returns null on anything unusual (HEIC, no GPS, parse issue). */
@@ -6071,15 +6080,16 @@ function videoThumb(blob){
    frequently 403s when used as an <img src>). Only runs when Drive is already connected. Caches
    the result so re-renders are instant. */
 async function driveFetchInto(img,pm,mediaId){
+  if(!pm||!pm.driveId||typeof gdGetToken!=='function')return;
+  await _netAcquire();                                                 // gated so many Drive fetches don't saturate a weak network
   try{
-    if(!pm||!pm.driveId||typeof gdGetToken!=='function')return;
     const tok=await gdGetToken(false); if(!tok)return;                 // silent — only if already signed in
     const r=await fetch('https://www.googleapis.com/drive/v3/files/'+pm.driveId+'?alt=media',{headers:{Authorization:'Bearer '+tok}});
     if(!r.ok)return; const blob=await r.blob(); const url=URL.createObjectURL(blob);
     if(mediaId)VTHUMB[mediaId]=url;                                    // cache so the next render is instant
     img.onload=()=>{img.style.display='block'}; img.onerror=()=>{img.style.display='none'}; img.src=url;
     if(mediaId)storeCloudThumb(mediaId,blob);                          // PERMANENT FIX: save a small cloud thumb so it never blanks again on any device/session
-  }catch(e){}
+  }catch(e){} finally { _netRelease(); }
 }
 /* Downscale a blob to a small JPEG dataURL (grid thumb + decent preview). HEIC won't decode in <img> → returns null. */
 function blobToThumb(blob,px){
