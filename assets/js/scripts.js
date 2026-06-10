@@ -6190,6 +6190,9 @@ async function openMediaPreview(mediaId,name,list){
   }
   let delBtn=null;
   if(typeof isOwner==='function'&&isOwner()){ delBtn=el('button','mprev-del','🗑 Delete permanently'); box.appendChild(delBtn); }
+  const dlBtn=el('button','');dlBtn.textContent='⬇ Download';
+  dlBtn.style.cssText='position:absolute;left:10px;bottom:10px;z-index:8;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer';
+  box.appendChild(dlBtn);
   box.appendChild(cap);
   ov.appendChild(box);document.body.appendChild(ov);
   ov.onclick=e=>{if(e.target===ov)closeMediaPreview()};
@@ -6216,6 +6219,7 @@ async function openMediaPreview(mediaId,name,list){
   }
   async function render(){
     var mid=list[i].id; var nm=list[i].name||((socPool().find(z=>z.id===mid)||{}).name)||'';
+    dlBtn.onclick=function(){ downloadMediaItems([{id:mid,name:nm}],dlBtn); };
     wireDelete();
     cap.textContent=(list.length>1?((i+1)+' / '+list.length+(nm?'  ·  '+nm:'')):(nm||''));
     // hide the corner controls (🗑 / ‹ ›) WHILE loading so they don't flash before the image fills the box
@@ -6613,7 +6617,9 @@ function socLibrary(v){
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
   let delBtn=null;
-  const updateMakeBtn=()=>{makeBtn.textContent=`＋ Make a post from ${POOL_SEL.size} selected`;makeBtn.style.display=POOL_SEL.size?'':'none';if(delBtn){delBtn.textContent=`🗑 Delete ${POOL_SEL.size} forever`;delBtn.style.display=POOL_SEL.size?'':'none';}};
+  const dlSelBtn=el('button','btn-set');dlSelBtn.style.cssText='margin:12px 0 0 8px';dlSelBtn.style.display='none';
+  dlSelBtn.onclick=()=>{ const sel=allAvail.filter(m=>POOL_SEL.has(m.id)); if(!sel.length)return; downloadMediaItems(sel.map(m=>({id:m.id,name:m.name,type:m.type})),dlSelBtn); };
+  const updateMakeBtn=()=>{makeBtn.textContent=`＋ Make a post from ${POOL_SEL.size} selected`;makeBtn.style.display=POOL_SEL.size?'':'none';dlSelBtn.textContent=`⬇ Download ${POOL_SEL.size}`;dlSelBtn.style.display=POOL_SEL.size?'':'none';if(delBtn){delBtn.textContent=`🗑 Delete ${POOL_SEL.size} forever`;delBtn.style.display=POOL_SEL.size?'':'none';}};
   const buildCell=(m,sel,onToggle)=>{
     sel=sel||POOL_SEL; onToggle=onToggle||updateMakeBtn;
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
@@ -6803,6 +6809,7 @@ function socLibrary(v){
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
   poolCard.appendChild(makeBtn); // cross-group selection bar — hidden until you tick photos in one or more jobs
+  poolCard.appendChild(dlSelBtn); // download the ticked content (one or many) — zip on desktop, share sheet on phone
   poolCard.appendChild(blank);
   if(typeof isOwner==='function'&&isOwner()){
     delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.style.display='none';delBtn.textContent='🗑 Delete forever';
@@ -6944,6 +6951,31 @@ async function buildZip(entries){ // entries: [{name, blob}]
   ev.setUint32(12,cdSize,true); ev.setUint32(16,cdOffset,true); ev.setUint16(20,0,true);
   parts.push(eo);
   return new Blob(parts,{type:'application/zip'});
+}
+/* Download ANY set of content (one or many). Phone: native share sheet (Save to Photos / send to an app).
+   Desktop: one file downloads directly, many bundle into a single .zip so the browser never blocks it. */
+async function downloadMediaItems(items,btn){
+  var arr=(items||[]).filter(Boolean);
+  if(!arr.length){ toast('Nothing selected to download'); return; }
+  var _lbl=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Preparing…'; }
+  var res; try{ res=await gatherPostFiles(arr); }catch(e){ res={files:[],miss:arr.length,vid:0}; }
+  if(btn){ btn.disabled=false; btn.textContent=_lbl; }
+  var files=res.files||[], miss=res.miss||0, vid=res.vid||0;
+  var tail=function(){ var t=[]; if(vid)t.push(vid+' video — send by text/AirDrop'); if(miss)t.push(miss+' not synced yet — refresh & retry'); return t; };
+  if(!files.length){ toast(vid&&!miss ? 'Only video selected. Send it by text or AirDrop, video can’t sync through the app.' : 'These aren’t synced to this device yet. Refresh the page, wait ~10 seconds, then try again.'); return; }
+  var dlOne=function(blob,name){ var u=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=u; a.download=name||'photo'; a.style.display='none'; document.body.appendChild(a); a.click(); setTimeout(function(){ try{a.remove();URL.revokeObjectURL(u);}catch(e){} },20000); };
+  var coarse=false; try{ coarse=!!(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches); }catch(e){}
+  if(coarse && navigator.canShare && navigator.canShare({files:files})){
+    try{ await navigator.share({files:files,title:'Window Guardians'}); toast(['Sent '+files.length+' to your share sheet'].concat(tail()).join(' · ')); return; }catch(e){ if(e&&e.name==='AbortError')return; }
+  }
+  if(files.length===1){ dlOne(files[0],files[0].name); toast(['Downloaded the photo'].concat(tail()).join(' · ')); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Zipping '+files.length+'…'; }
+  try{
+    var entries=files.map(function(f,i){ return {name:(i+1<10?'0':'')+(i+1)+'_'+f.name, blob:f}; });
+    var zip=await buildZip(entries); dlOne(zip,'WG_content_'+files.length+'photos.zip');
+    toast(['Downloaded a zip of '+files.length+' photos — double-click to open them all'].concat(tail()).join(' · '));
+  }catch(e){ for(var i=0;i<files.length;i++){ dlOne(files[i],files[i].name); await new Promise(function(r){ setTimeout(r,700); }); } toast(['Saving '+files.length+' photos'].concat(tail()).join(' · ')); }
+  if(btn){ btn.disabled=false; btn.textContent=_lbl; }
 }
 function readyCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
