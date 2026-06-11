@@ -1272,6 +1272,8 @@ async function publishPostMedia(post){
     const id=m.id; delete m.failedToPublish; delete m.skipReason;          // recompute fresh each approve
     if(!id){skipped++;continue;}
     if(m.videoUrl){done++;continue;}                                        // video already on the public bucket
+    { const pm0=socPool().find(x=>x.id===id);                               // video uploaded at add-time (maybe on ANOTHER device) → reuse its bucket URL, works even with no local copy here
+      if(pm0&&pm0.videoUrl){ m.videoUrl=pm0.videoUrl; done++; continue; } }
     if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
     try{ const ex=await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get(),12000,'check');
          if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published (bounded so a slow read can't stall approval)
@@ -1279,6 +1281,8 @@ async function publishPostMedia(post){
     if(!rec||!rec.blob){m.failedToPublish=true;m.skipReason='notsynced';skipped++;failed.push(m);continue;} // no local blob to copy
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||m.name||'');
     if(isVid){                                                              // video → public R2 bucket (streams to every device)
+      const pm0=socPool().find(x=>x.id===id);
+      if(pm0&&pm0.videoUrl){ m.videoUrl=pm0.videoUrl; done++; continue; }   // already uploaded at add-time → reuse, never upload the same video twice
       try{ toast('📹 Uploading the video for the team — big files take a minute…'); }catch(e){}
       const vurl=await publishVideoPublic(id,rec.blob,rec.type||'video/mp4');
       if(vurl){
