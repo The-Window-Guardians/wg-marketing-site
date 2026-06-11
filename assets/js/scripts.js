@@ -19,6 +19,43 @@
    ============================================================ */
 
 /* ============================================================
+   ERROR REPORTER — every bug so far failed SILENTLY (deletes not sticking,
+   approve freezing, blank tiles) and was found days later. This catches every
+   JS error + failed promise the moment it happens, keeps the last 40 locally,
+   and mirrors a few to the shared cloud so problems on ANY device are visible
+   in Settings → System health the same day. Zero deps; installed first so
+   even boot errors get caught.
+   ============================================================ */
+var _ERRLOG_KEY='wg_errlog', _errSent={}, _errSentN=0;
+function _errEntries(){ try{ return JSON.parse(localStorage.getItem(_ERRLOG_KEY))||[]; }catch(e){ return []; } }
+function logErr(msg,extra){
+  try{
+    msg=String(msg||'unknown').slice(0,300);
+    var e={ t:Date.now(), msg:msg, page:(location.pathname.split('/').pop()||'index'),
+            ver:(function(){ try{ var s=document.querySelector('script[src*="scripts.js"]'); var m=/v=([\w]+)/.exec(s?s.src:''); return m?m[1]:''; }catch(_){ return ''; } })(),
+            role:(window.S&&S.role)||'', ua:navigator.userAgent.slice(0,80) };
+    if(extra&&extra.stack)e.stack=String(extra.stack).slice(0,400);
+    if(extra&&extra.src)e.src=String(extra.src).slice(0,160);
+    var arr=_errEntries(); arr.unshift(e); arr=arr.slice(0,40);
+    try{ localStorage.setItem(_ERRLOG_KEY,JSON.stringify(arr)); }catch(_){}
+    // mirror to the shared cloud — throttled (max 8/session, each unique message once) so an error loop can't spam writes
+    try{
+      if(!_errSent[msg]&&_errSentN<8&&window.WG_DB&&window.WG_AUTH&&WG_AUTH.currentUser){
+        _errSent[msg]=1;_errSentN++;
+        WG_DB.collection('workspaces').doc('wg').collection('errlog').add(e).catch(function(){});
+      }
+    }catch(_){}
+  }catch(_){}
+}
+window.addEventListener('error',function(ev){
+  if(ev&&ev.target&&ev.target!==window&&(ev.target.tagName==='IMG'||ev.target.tagName==='SCRIPT'||ev.target.tagName==='LINK'))return; // skip routine resource 404s (img fallbacks are by design)
+  logErr((ev&&ev.message)||'script error',{src:((ev&&ev.filename)||'')+':'+((ev&&ev.lineno)||''),stack:ev&&ev.error&&ev.error.stack});
+},true);
+window.addEventListener('unhandledrejection',function(ev){
+  var r=ev&&ev.reason; logErr('unhandled: '+((r&&r.message)||String(r||'')),{stack:r&&r.stack});
+});
+
+/* ============================================================
    DATA LAYER  (the only part the programmer touches to add the backend)
    ============================================================ */
 const KEY='wg_mktg_os_v2';
@@ -1238,6 +1275,7 @@ async function publishPostMedia(post){
       const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
       await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id)
         .set({name:(rec.name||m.name||'photo'),type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now(),fromPost:true}),20000,'upload'); // bounded so one stuck write can't freeze approve
+      storeGridThumb(id,dataUrl); // fire-and-forget small grid thumb — Ruth's grid loads it light
       VTHUMB[id]=dataUrl; done++;
     }catch(e){ m.failedToPublish=true;m.skipReason=(e&&/timeout/.test(e.message))?'slow':'toolarge';skipped++;failed.push(m); }
   }
@@ -1397,6 +1435,29 @@ async function cloudFileGet(id){
     return null;
   } finally { _netRelease(); }
 }
+/* ---- GRID THUMBNAILS: a separate `thumbs` collection of SMALL (560px) copies.
+   The grid reads these instead of the full-size image — ~80% less data per photo,
+   which is the difference between "instant" and "stalled" on a weak connection.
+   Self-healing: any time the grid is forced to pull a full-size image, it saves a
+   small thumb so every later load (any device) is light. ---- */
+var _gridThumbWrote={};                                 // once per id per session
+function _thumbsRef(id){ return WG_DB.collection('workspaces').doc('wg').collection('thumbs').doc(id); }
+async function cloudThumbGet(id){
+  if(!window.WG_DB||!id)return null;
+  await _netAcquire();
+  try{ const d=await _thumbsRef(id).get(); return (d.exists&&d.data()&&d.data().dataUrl)?d.data():null; }
+  catch(e){ return null; } finally { _netRelease(); }
+}
+async function storeGridThumb(id,src){ // src = Blob OR dataURL string; silently no-ops on failure
+  try{
+    if(!window.WG_DB||!window.WG_AUTH||!WG_AUTH.currentUser||!id||!src||_gridThumbWrote[id])return false;
+    var blob=(typeof src==='string')?await (await fetch(src)).blob():src;
+    var dataUrl=await blobToThumb(blob,560); if(!dataUrl)return false;          // (videos return null → skipped)
+    _gridThumbWrote[id]=1;
+    await _thumbsRef(id).set({dataUrl:dataUrl,at:Date.now(),by:(WG_AUTH.currentUser.email||'')});
+    return true;
+  }catch(e){ return false; }
+}
 /* read GPS lat/lng from a JPEG's EXIF so before/after location grouping still works on in-app uploads.
    Best-effort, JPEG only; returns null on anything unusual (HEIC, no GPS, parse issue). */
 function exifGps(file){
@@ -1503,6 +1564,7 @@ async function poolAddFiles(fileList,folder){
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
             const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
             await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,dataUrl:dataUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 25000, 'upload'); // stalled cloud write → fall to local save below
+            storeGridThumb(id,dataUrl); // fire-and-forget small grid thumb so other devices load it light from day one
             const item={id:id,name:name,type:mime,status:'available',cloud:true,addedAt:Date.now()};
             if(geo){item.lat=geo.lat;item.lng=geo.lng;}
             if(folder)item.folder=folder;
@@ -5677,10 +5739,38 @@ function ghlCard(){
   return card;
 }
 
+/* 🩺 System health — the error reporter's viewer. Shows what broke, where, when,
+   on this device AND (via the cloud mirror) on the team's devices. Owner only. */
+function healthCard(){
+  const card=el('div','card pad');card.style.marginBottom='16px';
+  const local=_errEntries();
+  card.appendChild(el('div','sec-title',`<div class="chip" style="background:${local.length?'var(--orange-soft)':'var(--green-soft)'}">🩺</div><div><h3>System health</h3><small>${local.length?(local.length+' error'+(local.length>1?'s':'')+' caught on this device (last 40 kept)'):'✓ No errors caught on this device'}</small></div></div>`));
+  const box=el('div','');box.style.cssText='max-height:260px;overflow:auto;font-size:12px;line-height:1.45';
+  const fmt=e=>{ const d=new Date(e.t); return '<div style="padding:6px 8px;border-bottom:1px solid var(--line)"><b>'+esc(e.msg||'')+'</b><br><span class="muted">'+d.toLocaleString()+' · '+esc(e.page||'')+(e.ver?(' · v'+esc(e.ver)):'')+(e.role?(' · '+esc(e.role)):'')+(e.src?(' · '+esc(e.src)):'')+'</span></div>'; };
+  box.innerHTML=local.slice(0,12).map(fmt).join('')||'<p class="muted" style="padding:4px 8px">Nothing logged. If something ever misbehaves, it shows up here with the time and page.</p>';
+  card.appendChild(box);
+  const row=el('div','');row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px';
+  const team=el('button','btn-set','👥 Check team devices');team.title='Pull the latest errors reported from every device (Ruth’s phone, your laptop…)';
+  team.onclick=async()=>{ team.disabled=true;team.textContent='Checking…';
+    try{
+      const snap=await WG_DB.collection('workspaces').doc('wg').collection('errlog').orderBy('t','desc').limit(15).get();
+      const rows=[];snap.forEach(d=>rows.push(d.data()));
+      box.innerHTML=rows.length?rows.map(fmt).join(''):'<p class="muted" style="padding:4px 8px">✓ No errors reported from any device.</p>';
+    }catch(e){ toast('Couldn’t read the team log — '+((e&&e.code)||'check connection')); }
+    team.disabled=false;team.textContent='👥 Check team devices';
+  };
+  const cp=el('button','btn-set','📋 Copy report');cp.title='Copies the full log — paste it to Claude to get it fixed';
+  cp.onclick=()=>{ copyOut(JSON.stringify(_errEntries(),null,1),'Error report'); };
+  const cl=el('button','btn-set','🧹 Clear');cl.onclick=()=>{ try{localStorage.removeItem(_ERRLOG_KEY);}catch(e){} toast('Cleared'); render(); };
+  row.appendChild(team);row.appendChild(cp);row.appendChild(cl);card.appendChild(row);
+  return card;
+}
+
 function viewSettings(v){
   v.appendChild(el('div','page-head',`<h2>Settings &amp; Admin</h2><p>Project info, storage, your data backup, and team logins.</p>`));
   if(isOwner())v.appendChild(aiBrainCard());
   if(isOwner())v.appendChild(ghlCard());
+  if(isOwner())v.appendChild(healthCard());
 
   const proj=el('div','card pad');proj.style.marginBottom='16px';
   proj.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📋</div><div><h3>This project</h3><small>Project 1 of your Marketing OS</small></div></div>
@@ -6163,9 +6253,10 @@ async function backupAllThumbs(btn){
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(!rec||!rec.blob){ // no local copy — try cached → cloud → Drive thumbnail → real Drive fetch
+    if(!rec||!rec.blob){ // no local copy — try cached → SMALL cloud thumb → full cloud → Drive thumbnail → real Drive fetch
       if(VTHUMB[mediaId]){img.onerror=()=>{img.style.display='none';delete VTHUMB[mediaId];};img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
-      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;return;}
+      const tn=await cloudThumbGet(mediaId); if(tn&&tn.dataUrl){VTHUMB[mediaId]=tn.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=tn.dataUrl;return;} // ~80% smaller than the full image
+      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;storeGridThumb(mediaId,c.dataUrl);return;} // self-heal: save a small thumb so this is the LAST heavy load for this photo
       const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;   // Drive-synced photo with no local blob
       if(pm&&pm.driveThumb){img.onload=()=>{img.style.display='block'};img.onerror=()=>{img.onerror=null;driveFetchInto(img,pm,mediaId);};img.src=pm.driveThumb;return;} // Google thumb 403s → fall through to a real Drive fetch
       if(pm&&pm.driveId){driveFetchInto(img,pm,mediaId);}
