@@ -5666,15 +5666,17 @@ function aiBrainCard(){
     // ── Upload brochures (PDF) ──────────────────────
     const pdfRow=el('div',''); pdfRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:2px';
     const pdfIn=el('input'); pdfIn.type='file'; pdfIn.accept='application/pdf,.pdf'; pdfIn.multiple=true; pdfIn.style.display='none';
-    const pdfBtn=el('button','btn-set','📄 Upload brochures (PDF)');
+    const pdfBtn=el('button','btn-set','📄 Upload brochures (PDF) — pick several at once');
     pdfBtn.onclick=()=>{ if(!busy)pdfIn.click(); };
     pdfIn.onchange=async()=>{
       const files=Array.prototype.slice.call(pdfIn.files||[]); pdfIn.value='';
       if(!files.length)return; if(busy)return; lock(true);
       let added=0, failed=[];
+      if(files.length>1)try{ toast('📥 Got all '+files.length+' brochures — reading them one at a time. Hang tight.'); }catch(e){}
+      setStatus('📥 Received '+files.length+' brochure'+(files.length>1?'s':'')+' — starting…');
       try{
         for(let i=0;i<files.length;i++){ const f=files[i];
-          const fname=f.name.replace(/\.pdf$/i,'').slice(0,80); const tag=' ('+(i+1)+'/'+files.length+')';
+          const fname=f.name.replace(/\.pdf$/i,'').slice(0,80); const tag=' (brochure '+(i+1)+' of '+files.length+')';
           setStatus('📄 Reading “'+f.name+'”'+tag+'…');
           try{
             const txt=await pdfToText(f);
