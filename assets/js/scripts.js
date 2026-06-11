@@ -1257,19 +1257,37 @@ function orderByStage(items){ return items.slice().sort(function(a,b){ return _s
    Drive photos live in Sebastian's private Drive — Ruth can't reach those — so without
    this she sees blanks. Runs on the approver's device, which already holds the blob
    (Drive-synced or in-app). Videos are skipped (too big until Firebase Storage). */
+/* Upload ONE video blob to public R2 storage → returns a streamable URL (or null).
+   Streams the raw bytes (no base64), so big phone videos work. Needs the MEDIA bucket. */
+async function publishVideoPublic(id,blob,mime){
+  try{
+    var r=await pTimeout(fetch('/upload-video?id='+encodeURIComponent(id),{method:'POST',headers:{'content-type':mime||'video/mp4'},body:blob}),180000,'video upload'); // big files get 3 min
+    var j=await r.json(); return (j&&j.url)?j.url:null;
+  }catch(e){ return null; }
+}
 async function publishPostMedia(post){
   if(!window.WG_FB_READY||!WG_AUTH.currentUser) return {done:0,skipped:0,failed:[]};
   let done=0, skipped=0; const failed=[];
   for(const m of postMedia(post)){
     const id=m.id; delete m.failedToPublish; delete m.skipReason;          // recompute fresh each approve
     if(!id){skipped++;continue;}
+    if(m.videoUrl){done++;continue;}                                        // video already on the public bucket
     if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
     try{ const ex=await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get(),12000,'check');
          if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published (bounded so a slow read can't stall approval)
     let rec=null; try{ rec=await fileGet(id); }catch(e){}
     if(!rec||!rec.blob){m.failedToPublish=true;m.skipReason='notsynced';skipped++;failed.push(m);continue;} // no local blob to copy
     const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||m.name||'');
-    if(isVid){m.failedToPublish=true;m.skipReason='video';skipped++;failed.push(m);continue;}              // video can't go in Firestore yet
+    if(isVid){                                                              // video → public R2 bucket (streams to every device)
+      try{ toast('📹 Uploading the video for the team — big files take a minute…'); }catch(e){}
+      const vurl=await publishVideoPublic(id,rec.blob,rec.type||'video/mp4');
+      if(vurl){
+        m.videoUrl=vurl;
+        const pm=socPool().find(x=>x.id===id); if(pm){pm.videoUrl=vurl;pm._ut=Date.now();}
+        done++; continue;
+      }
+      m.failedToPublish=true;m.skipReason='video';skipped++;failed.push(m);continue; // bucket not set up / upload failed → old behavior
+    }
     try{
       const dataUrl=await imgToWebp(rec.blob);
       const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
@@ -1601,7 +1619,7 @@ async function poolAddFiles(fileList,folder){
    - pf_ id or cloud flag  → already a Firestore cloud copy
    - driveId               → lives in Google Drive, re-syncable any time
    An f_ id with neither is an in-app upload that only made it to THIS device's cache. */
-function poolSynced(m){ if(!m)return false; if(m.cloud)return true; if(m.driveId)return true; return String(m.id||'').indexOf('pf_')===0; }
+function poolSynced(m){ if(!m)return false; if(m.cloud)return true; if(m.driveId)return true; if(m.videoUrl)return true; return String(m.id||'').indexOf('pf_')===0; }
 function isVideoItem(m){ return /\.(mp4|mov|m4v|webm)$/i.test((m&&m.name)||'')||/^video\//.test((m&&m.type)||''); }
 /* EVENTUAL SYNC: push any device-only PHOTO up to the shared cloud the moment we're online.
    Closes the gap where a photo uploaded offline / before login never reaches the backbone.
@@ -6341,6 +6359,8 @@ async function openMediaPreview(mediaId,name,list){
       if($('#mprevOv')!==ov)return; // closed while loading
       body.innerHTML='';
       if(!rec||!rec.blob){
+        const pmv=socPool().find(z=>z.id===mid)||{};
+        if(pmv.videoUrl){ const v=document.createElement('video');v.className='mprev-media';v.controls=true;v.playsInline=true;v.src=pmv.videoUrl;v.onloadeddata=relax;v.onerror=relax;body.appendChild(v);return; } // published video → streams on any device
         const c=await cloudFileGet(mid); if($('#mprevOv')!==ov)return;
         if(c&&c.dataUrl){const im=document.createElement('img');im.className='mprev-media';im.onload=relax;im.onerror=relax;im.src=c.dataUrl;body.appendChild(im);return;}
         const pm=socPool().find(z=>z.id===mid)||{};
@@ -7024,7 +7044,11 @@ async function gatherPostFiles(arr){
     try{
       const rec=await fileGet(m.id);
       if(rec&&rec.blob){ files.push(new File([rec.blob], rec.name||m.name||(isVid?'video.mp4':'photo.jpg'), {type:rec.blob.type||(isVid?'video/mp4':'image/jpeg')})); continue; }
-      if(isVid){ vid++; continue; }                                  // video lives only on the original device
+      if(isVid){
+        const vurl=m.videoUrl||(socPool().find(x=>x.id===m.id)||{}).videoUrl;   // published to the public bucket → any device can pull it
+        if(vurl){ try{ const b=await (await fetch(vurl)).blob(); files.push(new File([b], m.name||'video.mp4', {type:b.type||'video/mp4'})); continue; }catch(e){} }
+        vid++; continue;                                              // not published anywhere → only on the original device
+      }
       const c=await cloudFileGet(m.id);
       if(c&&c.dataUrl){ const b=await (await fetch(c.dataUrl)).blob(); files.push(new File([b], c.name||m.name||'photo.jpg', {type:b.type||'image/jpeg'})); }
       else miss++;
