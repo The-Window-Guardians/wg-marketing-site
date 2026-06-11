@@ -1607,7 +1607,7 @@ async function poolAddFiles(fileList,folder){
           const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
           const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
-          it.folder = isVideo ? 'Videos' : (folder||'');
+          it.folder = folder||''; // videos land in the main Content view with the photos (no separate folder)
           if(_sig)it.sig=_sig;
           addToPool(it);
           if(!isVideo){ try{ VTHUMB[rec.id]=await encodePhoto(raw); }catch(_t){} } // offline image → still cache a thumbnail
@@ -2452,7 +2452,7 @@ async function gdSyncNow(interactive){
       file=await normalizeImage(file);
       const rec=await fileAdd(file,'',S.role,'pool');
       const _isVid=/^video\//.test(f.mime||'')||/\.(mp4|mov|m4v|webm)$/i.test(f.name||'');
-      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:(_isVid?'Videos':''),addedAt:Date.now()+added}; // land in main Content (or Videos) — never a Drive subfolder name
+      const item={id:rec.id,name:rec.name,type:rec.type,status:'available',driveId:f.id,folder:'',addedAt:Date.now()+added}; // land in main Content (videos too) — never a Drive subfolder name
       if(f.loc&&typeof f.loc.latitude==='number'&&typeof f.loc.longitude==='number'){item.lat=f.loc.latitude;item.lng=f.loc.longitude;}
       if(f.time)item.taken=f.time;
       if(f.thumb)item.driveThumb=f.thumb; // Google's own thumbnail (works for HEVC video too)
@@ -6714,7 +6714,8 @@ function socLibrary(v){
 
   // ---- CONTENT POOL: tick pieces → make a post ----
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
-  const isMain=m=>(!m.folder||m.folder==='Drive')&&!isVidItem(m); // photos sitting directly in the synced folder
+  const isMain=m=>(!m.folder||m.folder==='Drive'); // photos AND videos together in the main view — videos group into jobs like any photo
+  { let _vm=0; socPool().forEach(m=>{ if(m&&m.folder==='Videos'){ m.folder=''; m._ut=Date.now(); _vm++; } }); if(_vm)commit(); } // one-time: pull old Videos-folder uploads into the main view
   // hide any photo already sitting in a draft/approved post (however it got there — generator OR a manual add),
   // so it never double-shows in its job folder. Remove it from the post and it reappears here.
   const _inDraftPost=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>x&&x.id&&_inDraftPost.add(x.id)); });
@@ -6732,7 +6733,7 @@ function socLibrary(v){
   const allAvail=poolAll; // for resolving selections when making a post
   const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='Videos'?'Your videos.':'📍 = grouped by GPS location · 📁 = a job you named. Tag photos 🔴 Before · 🟡 During · 🟢 After — tagged jobs rise to the top.';
+  const sub = POOL_SRC==='Videos'?'Your videos.':'📍 = grouped by GPS location · 📁 = a job you named · 🎬 = has video. Tag photos 🔴 Before · 🟡 During · 🟢 After. New jobs are added at the bottom.';
   poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub}</small></div></div>`;
   // controls: the area switcher (Content · Finalized · Videos · legacy)
   const ctrls=el('div','poolctrls');
@@ -6907,7 +6908,11 @@ function socLibrary(v){
     const located=rest.filter(hasLoc);
     const noloc=rest.filter(m=>!hasLoc(m));
     const groupDone=(its)=>{ var ph=its.filter(m=>!isVidItem(m)); return ph.length>0&&ph.every(m=>m.stage); }; // every photo tagged = job done → floats to top
-    Object.keys(manualMap).sort(function(a,b){return (groupDone(manualMap[b])?1:0)-(groupDone(manualMap[a])?1:0);}).forEach(function(gname){
+    // STABLE stacking order: oldest group at the top, every NEW group appears at the BOTTOM
+    // (the stack shifts up) — groups never jump around when you tag or edit.
+    const gAge=function(its){ var t=Infinity; (its||[]).forEach(function(m){ var a=m.addedAt||0; if(a&&a<t)t=a; }); return t===Infinity?0:t; };
+    const vidBadge=function(sum,items){ var vn=items.filter(isVidItem).length; if(vn){ var vb=el('span','jobdone','🎬 '+vn+' video'+(vn>1?'s':'')); vb.style.cssText='background:#eef3fb;color:#0a66c2'; sum.appendChild(vb); } }; // mark groups that hold video
+    Object.keys(manualMap).sort(function(a,b){return gAge(manualMap[a])-gAge(manualMap[b]);}).forEach(function(gname){
       const items=manualMap[gname];
       const d=el('details','jobgroup'+(groupDone(items)?' done':''));applyGroupOpen(d,'mg:'+gname, defOpen());
       const sum=el('summary','jobsum');
@@ -6918,7 +6923,8 @@ function socLibrary(v){
         star.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleStarJob(gname); rerenderCal(); };
         sum.appendChild(star);
       }
-      sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+' photo'+(items.length>1?'s':'')));
+      sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+(items.some(isVidItem)?'':' photo'+(items.length>1?'s':''))));
+      vidBadge(sum,items);
       if(isStarJob(gname))sum.appendChild(el('span','jobdone','★ AI first'));
       if(groupDone(items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
@@ -6928,7 +6934,7 @@ function socLibrary(v){
       poolCard.appendChild(d);
     });
     const clusters=clusterByLocation(located,60);
-    clusters.sort(function(a,b){return (groupDone(b.items)?1:0)-(groupDone(a.items)?1:0);}); // fully-tagged location jobs first
+    clusters.sort(function(a,b){return gAge(a.items)-gAge(b.items);}); // same stable stacking: oldest at top, new location jobs join at the bottom
     const _nameCount={};
     clusters.forEach((c,i)=>{
       const d=el('details','jobgroup'+(groupDone(c.items)?' done':''));applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), defOpen()); // remember expand state across deletes; only the first group opens by default
@@ -6936,7 +6942,8 @@ function socLibrary(v){
       const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
       if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
       const sum=el('summary','jobsum');
-      sum.appendChild(el('span','jobsum-t',`📍 ${esc(base)} · ${c.items.length} photo${c.items.length>1?'s':''}`));
+      sum.appendChild(el('span','jobsum-t',`📍 ${esc(base)} · ${c.items.length}${c.items.some(isVidItem)?'':(' photo'+(c.items.length>1?'s':''))}`));
+      vidBadge(sum,c.items);
       if(groupDone(c.items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename'; ed.onclick=(e)=>{e.preventDefault();e.stopPropagation();renameCluster(c.items,base);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(c.items));
