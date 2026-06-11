@@ -1466,6 +1466,17 @@ async function cloudThumbGet(id){
   try{ const d=await _thumbsRef(id).get(); return (d.exists&&d.data()&&d.data().dataUrl)?d.data():null; }
   catch(e){ return null; } finally { _netRelease(); }
 }
+/* DEVICE thumbnail cache (IndexedDB) — once a thumb has been seen ONCE on this device,
+   reloads show it instantly with zero network. This is what makes reopening the app feel
+   immediate instead of re-downloading every tile. */
+async function thumbCacheGet(mediaId){
+  try{ const r=await fileGet('th_'+mediaId); return (r&&r.dataUrl)?r.dataUrl:null; }catch(e){ return null; }
+}
+function thumbCachePut(mediaId,dataUrl){ // fire-and-forget; tiny records (~30-60KB)
+  try{ if(!mediaId||!dataUrl||typeof dataUrl!=='string'||dataUrl.length>900000)return;
+    db().then(function(d){ try{ d.transaction('files','readwrite').objectStore('files').put({id:'th_'+mediaId,kind:'thumb',dataUrl:dataUrl,ts:Date.now()}); }catch(e){} });
+  }catch(e){}
+}
 async function storeGridThumb(id,src){ // src = Blob OR dataURL string; silently no-ops on failure
   try{
     if(!window.WG_DB||!window.WG_AUTH||!WG_AUTH.currentUser||!id||!src||_gridThumbWrote[id])return false;
@@ -1535,16 +1546,16 @@ async function readGps(file){
 var _uplAbort=false; // set true by the Stop button so workers stop pulling new photos
 /* full-screen progress while a batch uploads. done<0 hides it. There is ALWAYS a Stop button so
    the user can never get trapped — anything already added is saved. */
-function uploadProgress(done,total){
+function uploadProgress(done,total,kind){
   var ov=document.getElementById('uplprog');
   if(done<0){ if(ov){ov.classList.remove('show');setTimeout(function(){try{ov.remove()}catch(e){}},250);} return; }
   if(!ov){ ov=el('div','uplprog');ov.id='uplprog';
-    ov.innerHTML='<div class="uplprog-box"><div class="uplprog-txt"></div><div class="uplprog-bar"><i></i></div><div class="uplprog-sub">Saving each photo — what’s done is already saved.</div><button class="uplprog-cancel" type="button">Stop / Close</button></div>';
+    ov.innerHTML='<div class="uplprog-box"><div class="uplprog-txt"></div><div class="uplprog-bar"><i></i></div><div class="uplprog-sub">Saving each one — what’s done is already saved.</div><button class="uplprog-cancel" type="button">Stop / Close</button></div>';
     document.body.appendChild(ov); setTimeout(function(){ov.classList.add('show')},10);
     ov.querySelector('.uplprog-cancel').onclick=function(){ _uplAbort=true; uploadProgress(-1); try{toast('Upload stopped — everything already added is saved.')}catch(e){} try{if(typeof rerenderCal==='function')rerenderCal();}catch(e){} };
   }
   var pct=total?Math.round(done/total*100):0;
-  ov.querySelector('.uplprog-txt').textContent='Uploading photos — '+done+' of '+total;
+  ov.querySelector('.uplprog-txt').textContent='Uploading '+(kind||'photos')+' — '+done+' of '+total;
   ov.querySelector('.uplprog-bar>i').style.width=pct+'%';
 }
 /* instant signature of an upload (name + byte size + modified time) used to skip EXACT duplicates.
@@ -1556,7 +1567,10 @@ function fileSig(file){
 async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
-  const total=files.length; _uplAbort=false; uploadProgress(0,total);
+  const isVidFile=f=>/^video\//.test(f.type)||/\.(mp4|mov|m4v|webm)$/i.test(f.name||'');
+  const vidN=files.filter(isVidFile).length;
+  const upKind=vidN===files.length?(files.length>1?'videos':'video'):vidN?'items':(files.length>1?'photos':'photo'); // say what it actually is
+  const total=files.length; _uplAbort=false; uploadProgress(0,total,upKind);
   let addedN=0, localVid=false, imgFailed=0, doneN=0, vidShared=0, vidFailed=0;
   const addToPool=function(it){ socPool().push(it); addedN++; }; // ALWAYS push to the live pool — a mid-upload cloud sync swaps the pool object, so a captured reference would silently lose photos
   // NOTE: we NO LONGER silent-skip "duplicates" on upload — that hid photos when the existing copy
@@ -1608,7 +1622,7 @@ async function poolAddFiles(fileList,folder){
         }
       }catch(e){ imgFailed++; }
       try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done (ST.pool is already live)
-      doneN++; uploadProgress(doneN,total);
+      doneN++; uploadProgress(doneN,total,upKind);
       await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
     }
   }
@@ -3719,7 +3733,7 @@ async function fileAdd(file,week,by,deliv){
 async function fileList(){const d=await db();return new Promise((res)=>{const out=[];const tx=d.transaction('files','readonly');tx.objectStore('files').openCursor().onsuccess=e=>{const c=e.target.result;if(c){const v=c.value;out.push({id:v.id,name:v.name,type:v.type,size:v.size,week:v.week,by:v.by,deliv:v.deliv||'',ts:v.ts});c.continue()}else res(out.sort((a,b)=>b.ts-a.ts))}})}
 async function filesForDeliv(key){const all=await fileList();return all.filter(f=>f.deliv===key)}
 async function fileGet(id){const d=await db();return new Promise((res)=>{d.transaction('files','readonly').objectStore('files').get(id).onsuccess=e=>res(e.target.result)})}
-async function fileDel(id){const d=await db();return new Promise((res)=>{const tx=d.transaction('files','readwrite');tx.objectStore('files').delete(id);tx.oncomplete=res})}
+async function fileDel(id){const d=await db();return new Promise((res)=>{const tx=d.transaction('files','readwrite');tx.objectStore('files').delete(id);if(String(id).indexOf('th_')!==0)tx.objectStore('files').delete('th_'+id);tx.oncomplete=res})} // also drops the cached thumbnail so deletes leave nothing behind
 function humanSize(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(0)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function fileIcon(t){if(/image/.test(t))return '🖼️';if(/pdf/.test(t))return '📕';if(/sheet|excel|csv/.test(t))return '📊';if(/word|document/.test(t))return '📝';if(/zip|compress/.test(t))return '🗜️';return '📎'}
 
@@ -6280,10 +6294,11 @@ async function backupAllThumbs(btn){
 async function thumbInto(img,mediaId){
   if(!mediaId)return;
   try{const rec=await fileGet(mediaId);
-    if(!rec||!rec.blob){ // no local copy — try cached → SMALL cloud thumb → full cloud → Drive thumbnail → real Drive fetch
+    if(!rec||!rec.blob){ // no local copy — memory → DEVICE cache (instant) → SMALL cloud thumb → full cloud → Drive thumbnail → real Drive fetch
       if(VTHUMB[mediaId]){img.onerror=()=>{img.style.display='none';delete VTHUMB[mediaId];};img.onload=()=>{img.style.display='block'};img.src=VTHUMB[mediaId];return;}
-      const tn=await cloudThumbGet(mediaId); if(tn&&tn.dataUrl){VTHUMB[mediaId]=tn.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=tn.dataUrl;return;} // ~80% smaller than the full image
-      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;storeGridThumb(mediaId,c.dataUrl);return;} // self-heal: save a small thumb so this is the LAST heavy load for this photo
+      const dc=await thumbCacheGet(mediaId); if(dc){VTHUMB[mediaId]=dc;img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=dc;return;} // on-device → zero network, works offline
+      const tn=await cloudThumbGet(mediaId); if(tn&&tn.dataUrl){VTHUMB[mediaId]=tn.dataUrl;thumbCachePut(mediaId,tn.dataUrl);img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=tn.dataUrl;return;} // ~80% smaller than the full image; cached for next reload
+      const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;thumbCachePut(mediaId,c.dataUrl);img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;storeGridThumb(mediaId,c.dataUrl);return;} // self-heal: small cloud thumb + device cache so this is the LAST heavy load for this photo
       const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;   // Drive-synced photo with no local blob
       if(pm&&pm.driveThumb){img.onload=()=>{img.style.display='block'};img.onerror=()=>{img.onerror=null;driveFetchInto(img,pm,mediaId);};img.src=pm.driveThumb;return;} // Google thumb 403s → fall through to a real Drive fetch
       if(pm&&pm.driveId){driveFetchInto(img,pm,mediaId);}
