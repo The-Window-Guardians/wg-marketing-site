@@ -1557,7 +1557,7 @@ async function poolAddFiles(fileList,folder){
   const files=Array.from(fileList||[]).filter(f=>/^(image|video)\//.test(f.type)||/\.(heic|heif|mov|jpe?g|png|webp|gif)$/i.test(f.name||''));
   if(!files.length)return 0;
   const total=files.length; _uplAbort=false; uploadProgress(0,total);
-  let addedN=0, localVid=false, imgFailed=0, doneN=0;
+  let addedN=0, localVid=false, imgFailed=0, doneN=0, vidShared=0, vidFailed=0;
   const addToPool=function(it){ socPool().push(it); addedN++; }; // ALWAYS push to the live pool — a mid-upload cloud sync swaps the pool object, so a captured reference would silently lose photos
   // NOTE: we NO LONGER silent-skip "duplicates" on upload — that hid photos when the existing copy
   // was in a job/post/another device. Everything you upload now lands; clean up with 🔍 Find duplicates.
@@ -1589,7 +1589,7 @@ async function poolAddFiles(fileList,folder){
             if(_sig)item.sig=_sig;
             addToPool(item); VTHUMB[id]=dataUrl;
           }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); if(_du)VTHUMB[rec.id]=_du; else { try{VTHUMB[rec.id]=await encodePhoto(raw);}catch(_t){} } }catch(e2){} } // cloud failed → keep a local copy AND a thumbnail so it never shows blank
-        } else { // video (or offline image) -> local
+        } else { // video (or offline image) -> local first, then videos ALSO stream up to the shared bucket
           const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
           const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()};
@@ -1597,6 +1597,14 @@ async function poolAddFiles(fileList,folder){
           if(_sig)it.sig=_sig;
           addToPool(it);
           if(!isVideo){ try{ VTHUMB[rec.id]=await encodePhoto(raw); }catch(_t){} } // offline image → still cache a thumbnail
+          if(isVideo){ // publish to the public bucket so the TEAM gets it (not just this device)
+            let vok=false;
+            try{
+              const vurl=await publishVideoPublic(rec.id,rec.blob||raw,raw.type||'video/mp4');
+              if(vurl){ it.videoUrl=vurl; it._ut=Date.now(); vidShared++; vok=true; }
+            }catch(e){}
+            if(!vok)vidFailed++;
+          }
         }
       }catch(e){ imgFailed++; }
       try{Store.save(S);}catch(e){}  // SAVE AFTER EVERY PHOTO so a mid-batch reload never loses what's done (ST.pool is already live)
@@ -1610,7 +1618,8 @@ async function poolAddFiles(fileList,folder){
   commit();                                          // final commit pushes to the team cloud
   uploadProgress(-1);
   if(addedN)setTimeout(function(){toast('✅ Added '+addedN+' to your content'+(imgFailed?(' · '+imgFailed+' had trouble'):''))},650);
-  if(localVid)setTimeout(function(){toast('📷 Photos shared with the team ✓. Heads-up: video stays on this device — for a shared video, add it to your Google Drive folder.')},700);
+  if(vidShared)setTimeout(function(){toast('🎬 '+vidShared+' video'+(vidShared>1?'s':'')+' shared with the team ✓')},700);
+  if(vidFailed)setTimeout(function(){toast('⚠️ '+vidFailed+' video'+(vidFailed>1?'s':'')+' saved on this device but didn’t reach the cloud (weak connection?). It’ll share when you approve a post with it, or re-upload on wifi.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
   return addedN;
@@ -7592,7 +7601,7 @@ function closeComposer(){const o=$('#cmpOv');if(o)o.remove();
    the fewest taps. Photos work now (free). Video lights up after
    the one-time Firebase Storage step — flip UPLOAD_VIDEO_READY.
    ============================================================ */
-var UPLOAD_VIDEO_READY = false;   // set true once cloud video storage is wired
+var UPLOAD_VIDEO_READY = true;    // R2 video storage is live — videos upload to the shared bucket
 var UPLOAD_JUST = [];             // ids added THIS session — drives the "Just added" strip
 
 function uploaderPick(accept, folder, isBA){
