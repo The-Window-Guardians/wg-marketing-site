@@ -6900,21 +6900,25 @@ function socLibrary(v){
   }else if(grouped){
     fixTownsFromZip();     // ZIP → real town name (not the township)
     absorbIntoNamedJobs(); // new GPS photos auto-join a named job at the same address
-    // accordion: exactly ONE group opens on first load (the rest collapse) → short scroll
-    let firstOpen=true; const defOpen=function(){ if(firstOpen){ firstOpen=false; return true; } return false; };
     // manual groups the user created (no GPS needed) take priority over auto GPS clustering
     const manualMap={}; avail.forEach(m=>{ if(m.cgroup){ (manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); } });
     const rest=avail.filter(m=>!m.cgroup);
     const located=rest.filter(hasLoc);
     const noloc=rest.filter(m=>!hasLoc(m));
-    const groupDone=(its)=>{ var ph=its.filter(m=>!isVidItem(m)); return ph.length>0&&ph.every(m=>m.stage); }; // every photo tagged = job done → floats to top
-    // STABLE stacking order: oldest group at the top, every NEW group appears at the BOTTOM
-    // (the stack shifts up) — groups never jump around when you tag or edit.
+    const groupDone=(its)=>{ var ph=its.filter(m=>!isVidItem(m)); return ph.length>0&&ph.every(m=>m.stage); }; // every photo tagged
+    /* ============ THE FILING SYSTEM — a fixed, predictable order ============
+       TIER 1 (top):    ✅ Ready for the AI — you titled it AND tagged every photo. Complete; the AI builds from these.
+       TIER 2 (middle): 🔧 In progress — titled but not fully tagged, or tagging started but no title yet.
+       TIER 3 (bottom): 🆕 New — fresh GPS groups, untouched; each NEW one joins at the very bottom and the stack shifts up.
+       LAST:            🗂️ Needs sorting — no GPS (texts/screenshots/videos) until you file them.
+       Inside each tier: ★ starred jobs first, then oldest first (so order is stable — nothing jumps around). */
     const gAge=function(its){ var t=Infinity; (its||[]).forEach(function(m){ var a=m.addedAt||0; if(a&&a<t)t=a; }); return t===Infinity?0:t; };
+    const anyTag=function(its){ return its.some(function(m){ return m.stage; }); };
     const vidBadge=function(sum,items){ var vn=items.filter(isVidItem).length; if(vn){ var vb=el('span','jobdone','🎬 '+vn+' video'+(vn>1?'s':'')); vb.style.cssText='background:#eef3fb;color:#0a66c2'; sum.appendChild(vb); } }; // mark groups that hold video
-    Object.keys(manualMap).sort(function(a,b){return gAge(manualMap[a])-gAge(manualMap[b]);}).forEach(function(gname){
+    const _tiered=[]; // build every group first, then place by tier
+    Object.keys(manualMap).forEach(function(gname){
       const items=manualMap[gname];
-      const d=el('details','jobgroup'+(groupDone(items)?' done':''));applyGroupOpen(d,'mg:'+gname, defOpen());
+      const d=el('details','jobgroup'+(groupDone(items)?' done':''));applyGroupOpen(d,'mg:'+gname, false);
       const sum=el('summary','jobsum');
       if(typeof isOwner==='function'&&isOwner()){ // ⭐ star this job so the AI builds it first (far left)
         const star=el('button','jobstar'+(isStarJob(gname)?' on':''), isStarJob(gname)?'★':'☆');
@@ -6931,13 +6935,13 @@ function socLibrary(v){
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
       renderGroupBody(d,items,{moveToContent:true}); // tiles match every other job (stage pills only); pull a photo out via tick → Move to Content
-      poolCard.appendChild(d);
+      _tiered.push({tier:(groupDone(items)?1:2), star:(isStarJob(gname)?1:0), age:gAge(items), node:d}); // titled+tagged = Tier 1; titled only = Tier 2
     });
     const clusters=clusterByLocation(located,60);
-    clusters.sort(function(a,b){return gAge(a.items)-gAge(b.items);}); // same stable stacking: oldest at top, new location jobs join at the bottom
+    clusters.sort(function(a,b){return gAge(a.items)-gAge(b.items);}); // stable numbering order
     const _nameCount={};
     clusters.forEach((c,i)=>{
-      const d=el('details','jobgroup'+(groupDone(c.items)?' done':''));applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), defOpen()); // remember expand state across deletes; only the first group opens by default
+      const d=el('details','jobgroup'+(groupDone(c.items)?' done':''));applyGroupOpen(d,'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), false); // remember expand state across deletes
       let base=clusterBaseName(c.items,i);
       const hasTown=!(c.items.find(m=>m&&m.cname))&&!!(c.items.find(m=>m&&m.town)); // only number auto town-names
       if(hasTown){ const k=base.toLowerCase(); _nameCount[k]=(_nameCount[k]||0)+1; if(_nameCount[k]>1)base=_nameCount[k]+' '+base; }
@@ -6949,11 +6953,20 @@ function socLibrary(v){
       sum.appendChild(peekStrip(c.items));
       d.appendChild(sum);
       renderGroupBody(d,c.items,{moveToContent:true}); // location jobs also get Select all + ↩ Move to Content
-      poolCard.appendChild(d);
+      _tiered.push({tier:(anyTag(c.items)?2:3), star:0, age:gAge(c.items), node:d}); // tagging started = Tier 2; untouched = Tier 3 (new, bottom)
     });
+    // assemble: tier → starred → oldest-first; label each tier so the filing system is visible
+    _tiered.sort(function(a,b){ return (a.tier-b.tier)||(b.star-a.star)||(a.age-b.age); });
+    const TIER_LABEL={1:'✅ Ready for the AI — titled + every photo tagged',2:'🔧 In progress — finish the title or the tags',3:'🆕 New — just came in (newest at the bottom)'};
+    let _lastTier=null, _anyOpen=false;
+    _tiered.forEach(function(g){
+      if(g.tier!==_lastTier){ _lastTier=g.tier; const h=el('div','');h.style.cssText='margin:14px 0 4px;font-weight:800;font-size:12.5px;color:var(--ink2)';h.textContent=TIER_LABEL[g.tier];poolCard.appendChild(h); }
+      poolCard.appendChild(g.node); if(g.node.open)_anyOpen=true;
+    });
+    if(_tiered.length&&!_anyOpen)_tiered[0].node.open=true; // first load: open the top group only
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
     if(noloc.length){
-      const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', defOpen());
+      const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', _tiered.length===0); // always LAST; opens by default only when there are no groups at all
       d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
       renderGroupBody(d,noloc,{newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       poolCard.appendChild(d);
