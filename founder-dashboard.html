@@ -1976,7 +1976,6 @@
 <section class="view" id="view-review">
   <div class="sub-tabs">
     <button class="active" onclick="switchSubTab(this, 'review-week')">📅 Week</button>
-    <button onclick="switchSubTab(this, 'review-money')">💵 Money</button>
   </div>
   <div id="review-week" class="sub-content">
     <div class="card">
@@ -1996,20 +1995,7 @@
       </p>
     </div>
   </div>
-  <div id="review-money" class="sub-content" style="display:none;">
-    <div class="card">
-      <h2>Monthly Money <span class="pill">End of month · with Iwona</span></h2>
-      <p style="color: var(--muted); font-size: 13px; margin-bottom: 14px;">
-        Iwona provides AP at end of each month. The deeper review (cash, AR, revenue) lives with Denise at the first-Friday Monthly Business Review.
-      </p>
-      <div id="money-rows"></div>
-      <div style="margin-top: 18px;">
-        <button class="btn btn-orange" onclick="saveMoney()">Save</button>
-        <span style="font-size: 11px; color: var(--muted); margin-left: 10px;" id="money-saved-at"></span>
-      </div>
-    </div>
-  </div>
-  <!-- Commitments moved to Work tab per Sebastian's instruction. History sub-tab also removed earlier. -->
+  <!-- Monthly Money sub-tab removed per Sebastian's instruction. Commitments live on the Work tab. -->
   <!-- Past data (state.daily, state.reflections, state.quarterlyReports) still preserved in state if ever needed. -->
 
 </section>
