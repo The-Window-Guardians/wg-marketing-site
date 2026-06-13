@@ -17397,6 +17397,7 @@ function renderProjects() {
         </div>
         <div class="controls">
           <button class="btn-icon" onclick="editProject('${p.id}')">Edit</button>
+          <button class="btn-icon" onclick="deleteProjectById('${p.id}')" title="Delete this project" style="color: var(--red);">Delete</button>
         </div>
       </div>
       ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ""}
@@ -17929,6 +17930,15 @@ function deleteProject() {
   state.projects = (state.projects || []).filter(p => p.id !== id);
   saveState();
   closeModal("modal-project");
+  renderProjects();
+  renderTeam();
+  showToast("Project deleted");
+}
+// Delete a project directly from its card (no need to open the edit modal first).
+function deleteProjectById(id) {
+  if (!confirm("Delete this project? This can't be undone.")) return;
+  state.projects = (state.projects || []).filter(p => p.id !== id);
+  saveState();
   renderProjects();
   renderTeam();
   showToast("Project deleted");
