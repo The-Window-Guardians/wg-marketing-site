@@ -1923,7 +1923,6 @@
 <section class="view" id="view-work">
   <div class="sub-tabs">
     <button class="active" onclick="switchSubTab(this, 'work-projects')">🚀 Projects</button>
-    <button onclick="switchSubTab(this, 'work-capture')">🧠 Capture</button>
     <button onclick="switchSubTab(this, 'review-scorecard')">📋 Commitments</button>
   </div>
   <div id="work-projects" class="sub-content">
@@ -1935,22 +1934,7 @@
       <div id="projects-list"></div>
     </div>
   </div>
-  <div id="work-capture" class="sub-content" style="display:none;">
-    <div class="card">
-      <h2>Brain Capture — Daily Brain Dump <button class="btn btn-orange btn-sm" onclick="openCaptureModal()">+ Capture</button></h2>
-      <p style="color: var(--text-2); font-size: 13px; margin-bottom: 10px;">
-        <strong>What this is:</strong> a holding tank for anything worth remembering during the day — a link, a document, a phrase, a half-baked idea. Drop it in 10 seconds, pick a bucket (Sales / Marketing / Operations / AI / Personal / Other), and forget about it.
-      </p>
-      <p style="color: var(--text-2); font-size: 13px; margin-bottom: 14px;">
-        <strong>Why it matters:</strong> the Saturday + Sunday Creative Blocks come back here to mine the week — that's where content angles, mailer ideas, and competitor responses come from. Without this, the creative block starts blank.
-      </p>
-      <p style="color: var(--muted); font-size: 12px; margin-bottom: 14px;">
-        Use the <strong style="color: var(--orange);">orange +</strong> floating button at the bottom-right of any tab to add one fast, anywhere in the dashboard.
-      </p>
-      <div id="capture-filter-row" style="margin-bottom: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;"></div>
-      <div id="capture-list"></div>
-    </div>
-  </div>
+  <!-- Brain Capture sub-tab removed per Sebastian's instruction. -->
   <div id="review-scorecard" class="sub-content" style="display:none;">
     <div class="card">
       <h2>My Commitments <span style="font-size: 11px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0;">Recurring obligations — what you consistently produce for the company + team</span></h2>
