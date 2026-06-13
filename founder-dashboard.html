@@ -14455,6 +14455,7 @@ function resetScorecard() {
 function renderMoney() {
   const w = getWeekly();
   const container = document.getElementById("money-rows");
+  if (!container) return; // Monthly Money sub-tab removed — safe no-op
   container.innerHTML = MONEY_FIELDS.map(f => {
     const v = w.money[f.id] ?? "";
     let input;
