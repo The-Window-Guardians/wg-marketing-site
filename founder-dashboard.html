@@ -6621,26 +6621,12 @@ function renderPersonal() {
       </div>
     </div>
 
-    <!-- ROW: Tasks (left) | Recurring & Maintenance (right) -->
+    <!-- ROW: Tasks (left) | Goals (right) — Calendar + Recurring/Maintenance removed per Sebastian's instruction -->
     <div class="grid grid-2" style="margin-top: 16px;">
       <div class="card" style="margin: 0; border-left: 4px solid var(--orange);">
         <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">✓ Tasks ${pill(tasksOpen, 'var(--orange)')}</h2>
         <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">One-off personal tasks. Click a column header to sort. Drag the ⋮⋮ handle to reorder manually.</p>
         ${safe(peRenderTasks, 'Tasks')}
-      </div>
-      <div class="card" style="margin: 0; border-left: 4px solid #d97706;">
-        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🔁 Recurring & Maintenance ${pill(recurringDueSoon, '#d97706')}</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Bills, subscriptions, water filter, oil change — anything that repeats with a real date. Mark done to advance the next date.</p>
-        ${safe(peRenderRecurring, 'Recurring')}
-      </div>
-    </div>
-
-    <!-- ROW: Calendar (left) | Goals (right) -->
-    <div class="grid grid-2" style="margin-top: 16px;">
-      <div class="card" style="margin: 0; border-left: 4px solid #0891b2;">
-        <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">📅 Calendar</h2>
-        <p style="font-size: 12px; color: var(--muted); margin-top: 14px; margin-bottom: 12px; font-style: italic;">Month view. Color dots: tasks · recurring items · goal deadlines. Click a date with items to see them.</p>
-        ${safe(peRenderCalendar, 'Calendar')}
       </div>
       <div class="card" style="margin: 0; border-left: 4px solid var(--green);">
         <h2 style="margin: 0; display: inline-flex; align-items: center; gap: 10px;">🎯 Goals ${pill(goalsActive, 'var(--green)')}</h2>
