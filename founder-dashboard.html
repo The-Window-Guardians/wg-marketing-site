@@ -3490,6 +3490,32 @@ if (typeof state._lastChange !== "number") state._lastChange = 0;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 })();
 
+// ONE-TIME: Commitments v6 — make production commitments MONTHLY (CompanyCam 12, Blogs 4,
+// Content 12, all reset on the 1st), 1:1s EVERY 2 WEEKS, add a QUARTERLY tax-prep reminder,
+// and drop the email-campaign item. Patches an existing customScorecard in place so any
+// custom items the user added are preserved. (Fresh installs use SCORECARD_METRICS directly.)
+(function commitmentsMonthly_v6(){
+  if (state._commitmentsMonthly_v6) return;
+  if (Array.isArray(state.customScorecard)) {
+    state.customScorecard = state.customScorecard.filter(m => m.id !== "sc-email");
+    const patch = {
+      "sc-portfolios":  { label: "CompanyCam portfolios sent to Bogdan", subLabel: "12 a month · resets on the 1st", type: "number", cadence: "monthly", target: 12 },
+      "sc-bogdanblogs": { label: "Blog topics handed off to Bogdan",     subLabel: "4 a month · resets on the 1st",  type: "number", cadence: "monthly", target: 4 },
+      "sc-films":       { label: "Content pieces made (films / videos)", subLabel: "12 a month · saved to Google Drive · resets on the 1st", type: "number", cadence: "monthly", target: 12 },
+      "sc-mbr":         { cadence: "monthly" },
+      "sc-teammeeting": { cadence: "monthly" },
+      "sc-1on1s":       { label: "Friday 1:1s + Tuesday Bogdan", subLabel: "Iwona · Ruth · Frank · Bogdan · resets every 2 weeks", type: "count4", cadence: "biweekly", target: 4 },
+    };
+    state.customScorecard.forEach(m => { if (patch[m.id]) Object.assign(m, patch[m.id]); });
+    if (!state.customScorecard.some(m => m.id === "sc-taxprep")) {
+      state.customScorecard.push({ id: "sc-taxprep", label: "Quarterly tax-prep w/ Denise", subLabel: "~2 weeks before the estimated-tax deadline (Apr 15 · Jun 15 · Sep 15 · Jan 15)", type: "datetime", cadence: "quarterly", weight: 8 });
+    }
+  }
+  state._commitmentsMonthly_v6 = true;
+  state._lastChange = Date.now();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+})();
+
 // ONE-TIME: Commitments v2 — drop brainstorm sessions item, convert MBR from yn → datetime.
 (function commitmentsTuneup_v2(){
   if (state._commitmentsTuneup_v2) return;
@@ -14142,7 +14168,7 @@ function renderScorecard() {
   };
 
   const renderMetric = (m) => {
-    const v = w.scorecard[m.id] ?? "";
+    const v = scoreVal(m) ?? "";
     const status = metricStatus(m, v);
     let input = "";
     // Determine if this is a check-style count (target ≤ 7 so checkboxes fit cleanly)
@@ -14207,8 +14233,10 @@ function renderScorecard() {
   };
 
   const sections = [
-    { id: "weekly",  title: "WEEKLY",  subtitle: "Editable all week. Due Tuesday 12 PM (then locks for grading)." },
-    { id: "monthly", title: "MONTHLY", subtitle: "Editable all month. Lock-in deadline: end of month." },
+    { id: "weekly",    title: "WEEKLY",        subtitle: "Editable all week. Due Tuesday 12 PM (then locks for grading)." },
+    { id: "biweekly",  title: "EVERY 2 WEEKS", subtitle: "Resets every other Friday — the 1:1 round-trip with the team." },
+    { id: "monthly",   title: "MONTHLY",       subtitle: "Accumulates all month. Resets on the 1st." },
+    { id: "quarterly", title: "QUARTERLY",     subtitle: "Resets each quarter — tax-prep runway before the deadline." },
   ];
 
   let html = "";
@@ -14218,7 +14246,7 @@ function renderScorecard() {
     // Calculate hit count for this section
     let hit = 0;
     for (const m of items) {
-      if (metricStatus(m, w.scorecard[m.id] ?? "") === "hit") hit++;
+      if (metricStatus(m, scoreVal(m) ?? "") === "hit") hit++;
     }
     html += `
     <div style="background: var(--card-soft); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 18px;">
@@ -14411,15 +14439,14 @@ function renderLateTaskBanner() {
   container.innerHTML = banners.join("");
 }
 
-function updateScore(id, val) { const w = getWeekly(); w.scorecard[id] = val; saveState(); computeGrade(); renderScorecard(); renderTodayScorecard(); }
+function updateScore(id, val) { setScoreVal(id, val); saveState(); computeGrade(); renderScorecard(); renderTodayScorecard(); }
 
 // Click-to-toggle a check dot on a count-style commitment.
 // Clicking dot #N: if N <= current, decrement to N-1 (undo). Otherwise fill up to N.
 function toggleCheckCommitment(id, index, target) {
-  const w = getWeekly();
-  const cur = Number(w.scorecard[id] || 0);
+  const cur = Number(scoreVal(id) || 0);
   const next = index <= cur ? Math.max(0, index - 1) : Math.min(target, index);
-  w.scorecard[id] = next;
+  setScoreVal(id, next);
   saveState();
   if (state.sync && state.sync.enabled) { clearTimeout(syncDebounceTimer); syncPush(); }
   computeGrade();
@@ -14428,27 +14455,23 @@ function toggleCheckCommitment(id, index, target) {
   if (next === target) showToast(`🎉 ${target} of ${target} — commitment hit`);
 }
 function updateScoreDatetime(id, field, val) {
-  const w = getWeekly();
-  const cur = w.scorecard[id];
+  const cur = scoreVal(id);
   const obj = (typeof cur === "object" && cur) ? { ...cur } : { date: "", time: "", happened: "" };
   obj[field] = val;
   // Clean up: if all empty, store empty string so it counts as blank
-  if (!obj.date && !obj.time && !obj.happened) w.scorecard[id] = "";
-  else w.scorecard[id] = obj;
+  if (!obj.date && !obj.time && !obj.happened) setScoreVal(id, "");
+  else setScoreVal(id, obj);
   saveState();
   computeGrade();
   renderScorecard();
   renderTodayScorecard();
 }
 function computeGrade() {
-  const w = getWeekly();
-  // X of Y hit — count hits across all metrics
-  const weekly = getScorecardMetrics().filter(m => m.cadence === "weekly");
-  const monthly = getScorecardMetrics().filter(m => m.cadence === "monthly");
-  const all = [...weekly, ...monthly];
+  // X of Y hit — count hits across ALL commitments, each read from its own period bucket
+  const all = getScorecardMetrics();
   let hits = 0;
   all.forEach(m => {
-    if (metricStatus(m, w.scorecard[m.id] ?? "") === "hit") hits++;
+    if (metricStatus(m, scoreVal(m) ?? "") === "hit") hits++;
   });
   const total = all.length;
   const badge = document.getElementById("grade-badge");
@@ -18665,7 +18688,9 @@ function renderEditScorecard() {
   if (!container) return;
   const metrics = getScorecardMetrics();
   const weeklyItems = metrics.filter(m => m.cadence === "weekly");
+  const biweeklyItems = metrics.filter(m => m.cadence === "biweekly");
   const monthlyItems = metrics.filter(m => m.cadence === "monthly");
+  const quarterlyItems = metrics.filter(m => m.cadence === "quarterly");
   const renderRow = (m) => {
     const realIdx = metrics.indexOf(m);
     const isNumberType = m.type === "number";
@@ -18682,9 +18707,11 @@ function renderEditScorecard() {
         <option value="datetime" ${m.type==="datetime"?"selected":""}>Date + time</option>
       </select>
       ${isNumberType ? `<input type="number" min="0" value="${m.target||""}" placeholder="Target" style="max-width: 80px;" onchange="updateScorecardItem(${realIdx}, 'target', Number(this.value)||0)" title="Numeric target">` : ""}
-      <select onchange="updateScorecardItem(${realIdx}, 'cadence', this.value)" style="max-width: 100px;" title="Cadence">
-        <option value="weekly"  ${m.cadence==="weekly"?"selected":""}>Weekly</option>
-        <option value="monthly" ${m.cadence==="monthly"?"selected":""}>Monthly</option>
+      <select onchange="updateScorecardItem(${realIdx}, 'cadence', this.value)" style="max-width: 130px;" title="Cadence">
+        <option value="weekly"    ${m.cadence==="weekly"?"selected":""}>Weekly</option>
+        <option value="biweekly"  ${m.cadence==="biweekly"?"selected":""}>Every 2 weeks</option>
+        <option value="monthly"   ${m.cadence==="monthly"?"selected":""}>Monthly</option>
+        <option value="quarterly" ${m.cadence==="quarterly"?"selected":""}>Quarterly</option>
       </select>
       <button class="btn-icon" onclick="deleteScorecardItem(${realIdx})" title="Remove this item">×</button>
     </div>`;
@@ -18692,8 +18719,12 @@ function renderEditScorecard() {
   container.innerHTML = `
     <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 4px; margin-bottom: 6px;">WEEKLY (${weeklyItems.length})</div>
     ${weeklyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No weekly items.</div>'}
+    <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 14px; margin-bottom: 6px;">EVERY 2 WEEKS (${biweeklyItems.length})</div>
+    ${biweeklyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No biweekly items.</div>'}
     <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 14px; margin-bottom: 6px;">MONTHLY (${monthlyItems.length})</div>
     ${monthlyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No monthly items.</div>'}
+    <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 14px; margin-bottom: 6px;">QUARTERLY (${quarterlyItems.length})</div>
+    ${quarterlyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No quarterly items.</div>'}
   `;
 }
 function ensureCustomScorecard() {
