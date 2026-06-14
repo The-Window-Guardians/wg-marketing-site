@@ -4330,6 +4330,9 @@ function resolveMentorWhisper(patternId) {
 
 // === RENDER ===
 function renderMentorWhispers(tab) {
+  // Disabled per Sebastian — no more "brain" mentor whisper / BROTHER nudge cards on any tab.
+  // Engine left intact below (unreachable) so this can be switched back on by removing this return.
+  return "";
   const whispers = getWhispersForTab(tab);
   if (!whispers.length) return "";
   // Mark each as "seen" (increment mentions on first surface this session)
