@@ -3019,16 +3019,18 @@ const TEAM = [
 // Always editable through the week. Deadline: Tuesday 12 PM (weekly), end of month (monthly).
 // "X of Y hit" grading — each item is binary (hit or not).
 const SCORECARD_METRICS = [
-  // WEEKLY — 4 items
-  { id: "sc-portfolios",  label: "CompanyCam portfolios sent to Bogdan", subLabel: "Due Tuesday 6 PM",      type: "number", cadence: "weekly", target: 3,  weight: 12 },
-  { id: "sc-bogdanblogs", label: "Blog topics handed off to Bogdan",     subLabel: "Due Tuesday 6 PM", type: "number", cadence: "weekly", target: 3,  weight: 12 },
-  { id: "sc-films",       label: "Films / videos made",                  subLabel: "Due Sunday 9 PM · saved to Google Drive",   type: "number", cadence: "weekly", target: 3,  weight: 10 },
-  { id: "sc-1on1s",       label: "Friday 1:1s + Tuesday Bogdan",         subLabel: "Iwona · Ruth · Frank · Bogdan", type: "count4", cadence: "weekly", target: 4, weight: 12 },
+  // MONTHLY production — accumulates all month, resets on the 1st
+  { id: "sc-portfolios",  label: "CompanyCam portfolios sent to Bogdan", subLabel: "12 a month · resets on the 1st",      type: "number", cadence: "monthly", target: 12, weight: 12 },
+  { id: "sc-bogdanblogs", label: "Blog topics handed off to Bogdan",     subLabel: "4 a month · resets on the 1st",       type: "number", cadence: "monthly", target: 4,  weight: 12 },
+  { id: "sc-films",       label: "Content pieces made (films / videos)", subLabel: "12 a month · saved to Google Drive · resets on the 1st", type: "number", cadence: "monthly", target: 12, weight: 10 },
+  { id: "sc-mbr",         label: "Monthly Business Review w/ Denise",    subLabel: "Set date + time, then mark Yes/No",   type: "datetime", cadence: "monthly", weight: 8 },
+  { id: "sc-teammeeting", label: "Monthly team meeting",                 subLabel: "Set date + time, then mark Yes/No",   type: "datetime", cadence: "monthly", weight: 8 },
 
-  // MONTHLY — 3 items
-  { id: "sc-email",       label: "Email marketing campaign sent to Bogdan", subLabel: "Due last Tuesday of every month",     type: "yn",       cadence: "monthly", weight: 8 },
-  { id: "sc-mbr",         label: "Monthly Business Review w/ Denise",        subLabel: "Set date + time, then mark Yes/No",  type: "datetime", cadence: "monthly", weight: 8 },
-  { id: "sc-teammeeting", label: "Monthly team meeting",                     subLabel: "Set date + time, then mark Yes/No", type: "datetime", cadence: "monthly", weight: 8 },
+  // EVERY 2 WEEKS — resets every other Friday
+  { id: "sc-1on1s",       label: "Friday 1:1s + Tuesday Bogdan",         subLabel: "Iwona · Ruth · Frank · Bogdan · resets every 2 weeks", type: "count4", cadence: "biweekly", target: 4, weight: 12 },
+
+  // QUARTERLY — resets each quarter
+  { id: "sc-taxprep",     label: "Quarterly tax-prep w/ Denise",         subLabel: "~2 weeks before the estimated-tax deadline (Apr 15 · Jun 15 · Sep 15 · Jan 15)", type: "datetime", cadence: "quarterly", weight: 8 },
 ];
 
 const MONEY_FIELDS = [
@@ -3807,6 +3809,51 @@ function getWeekly() {
 function getSchedule() { return state.customSchedule || DEFAULT_SCHEDULE; }
 function getRoutine() { return state.customRoutine || DEFAULT_ROUTINE; }
 function getScorecardMetrics() { return state.customScorecard || SCORECARD_METRICS; }
+function getMetricById(id) { return getScorecardMetrics().find(m => m.id === id); }
+
+// ---- Commitment period buckets ----------------------------------------------
+// Each commitment accumulates in a bucket keyed to its cadence's CURRENT period
+// and naturally "resets" when the period rolls over (the next period is a fresh
+// empty bucket). Weekly stays in the existing state.weekly[wk].scorecard store
+// (which also holds the separate call-counters), so weekly behaviour is unchanged.
+function monthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-M${pad(d.getMonth()+1)}`; // resets on the 1st
+}
+function biweekKey() {
+  // Two-week blocks anchored to a fixed Friday epoch (Fri 2026-01-02). The 1:1
+  // round-trip with the team resets every OTHER Friday.
+  const epoch = new Date(2026, 0, 2);
+  const now = new Date();
+  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const period = Math.floor((today0 - epoch) / 86400000 / 14);
+  return `BW${period}`;
+}
+function quarterKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-Q${Math.floor(d.getMonth()/3)+1}`; // Q1..Q4
+}
+// Returns the storage object a commitment's value lives in, based on its cadence.
+function getScoreBucketFor(cadence) {
+  if (cadence === "monthly")   { state.scMonthly   = state.scMonthly   || {}; const k = monthKey();   if (!state.scMonthly[k])   state.scMonthly[k]   = {}; return state.scMonthly[k]; }
+  if (cadence === "biweekly")  { state.scBiweekly  = state.scBiweekly  || {}; const k = biweekKey();  if (!state.scBiweekly[k])  state.scBiweekly[k]  = {}; return state.scBiweekly[k]; }
+  if (cadence === "quarterly") { state.scQuarterly = state.scQuarterly || {}; const k = quarterKey(); if (!state.scQuarterly[k]) state.scQuarterly[k] = {}; return state.scQuarterly[k]; }
+  return getWeekly().scorecard; // weekly (default) — also where the call-counters live
+}
+function _metricCadence(idOrM) {
+  if (typeof idOrM === "object" && idOrM) return idOrM.cadence || "weekly";
+  const m = getMetricById(idOrM);
+  return (m && m.cadence) || "weekly"; // unknown ids (e.g. call-counters) stay weekly
+}
+// Read/write a commitment value, routed to the correct period bucket by cadence.
+function scoreVal(idOrM) {
+  const id = (typeof idOrM === "object" && idOrM) ? idOrM.id : idOrM;
+  return getScoreBucketFor(_metricCadence(idOrM))[id];
+}
+function setScoreVal(idOrM, val) {
+  const id = (typeof idOrM === "object" && idOrM) ? idOrM.id : idOrM;
+  getScoreBucketFor(_metricCadence(idOrM))[id] = val;
+}
 function getDecisions() {
   const all = [...DEFAULT_DECISIONS, ...(state.customDecisions || [])];
   return all;
