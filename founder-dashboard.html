@@ -7492,7 +7492,6 @@ function peRenderTasks() {
         <button class="btn btn-orange" onclick="peAddTask()">Add</button>
       </div>
       ${newCatChips}
-      ${getAIKey && getAIKey() ? '<div style="font-size: 10.5px; color: var(--muted); margin-top: 6px; padding-left: 2px;">✨ AI polishes grammar/concision automatically after add.</div>' : ''}
     </div>
   `;
 
@@ -7624,25 +7623,8 @@ function peAddTask(forToday) {
   saveState();
   renderPersonal();
   showToast("Task added");
-
-  // AUTO-POLISH — fire-and-forget AI grammar/concision pass (same as Today's task add)
-  if (typeof getAIKey === "function" && getAIKey() && typeof aiPolishText === "function") {
-    (async () => {
-      try {
-        const polished = await aiPolishText(task.text, "task");
-        if (polished && polished !== task.text) {
-          const live = (state.personalTasks || []).find(x => x.id === task.id);
-          if (live) {
-            live.originalText = live.text;
-            live.text = polished;
-            saveState();
-            renderPersonal();
-            showToast("✨ Polished");
-          }
-        }
-      } catch (e) { console.warn("[pe auto-polish] skipped:", e.message); }
-    })();
-  }
+  // Auto-polish removed per Sebastian — no AI fires automatically from the Personal tab.
+  // (The ✨ button on a task row still polishes on demand if you want it.)
 }
 
 function peToggleTask(id, done) {
