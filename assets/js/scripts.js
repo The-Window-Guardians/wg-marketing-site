@@ -1213,6 +1213,9 @@ function ghlWebhookUrl(){ return (ST&&typeof ST.ghlWebhook==='string')?ST.ghlWeb
 // Publish ONE post photo to public R2 storage → returns a fetchable URL (for GHL/Facebook). null if hosting isn't set up.
 async function publishImagePublic(id){
   try{
+    // Already a public R2 image (streamed up at add-time)? Reuse it — no re-encode, no re-upload.
+    var pm=(typeof socPool==='function')?socPool().find(function(x){return x.id===id;}):null;
+    if(pm&&pm.imgUrl)return pm.imgUrl;
     var b=await mediaToB64(id,1280); if(!b||!b.data)return null;       // decent resolution for social
     var r=await fetch('/publish-image',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,mime:b.mediaType,data:b.data})});
     var j=await r.json(); return (j&&j.url)?j.url:null;
@@ -1262,6 +1265,15 @@ function orderByStage(items){ return items.slice().sort(function(a,b){ return _s
 async function publishVideoPublic(id,blob,mime){
   try{
     var r=await pTimeout(fetch('/upload-video?id='+encodeURIComponent(id),{method:'POST',headers:{'content-type':mime||'video/mp4'},body:blob}),180000,'video upload'); // big files get 3 min
+    var j=await r.json(); return (j&&j.url)?j.url:null;
+  }catch(e){ return null; }
+}
+// Stream a photo's RAW bytes straight to R2 (no base64) → public /img URL, or null if hosting
+// isn't reachable. Binary streaming is ~33% fewer bytes than base64 + far lighter on phone memory,
+// which is the single biggest mobile-upload win. Returns null fast so the caller can fall back.
+async function streamImageToR2(id,blob,mime){
+  try{
+    var r=await pTimeout(fetch('/upload-image?id='+encodeURIComponent(id),{method:'POST',headers:{'content-type':mime||'image/webp'},body:blob}),60000,'image upload');
     var j=await r.json(); return (j&&j.url)?j.url:null;
   }catch(e){ return null; }
 }
@@ -1453,7 +1465,7 @@ async function cloudFileGet(id){
   var cols = id.indexOf('hf_')===0?['hfiles']:id.indexOf('pf_')===0?['poolfiles']:['poolfiles','hfiles'];
   await _netAcquire();
   try{
-    for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()&&d.data().dataUrl)return d.data(); }catch(e){} }
+    for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()){ const dt=d.data(); if(dt.dataUrl)return dt; if(dt.imgUrl)return Object.assign({},dt,{dataUrl:dt.imgUrl}); } }catch(e){} } // R2 photos expose imgUrl → hand it back as dataUrl so every img-src/download consumer just works
     return null;
   } finally { _netRelease(); }
 }
@@ -1591,10 +1603,35 @@ async function poolAddFiles(fileList,folder){
       try{
         if(!isImg && window.WG_FB_READY && WG_AUTH.currentUser) localVid=true;
         if(isImg && window.WG_FB_READY && WG_AUTH.currentUser){
-          let _du=null; // the encoded thumbnail — reused so EVERY outcome (cloud OR fallback) has a visible image
+          let _du=null; // a thumbnail dataURL — reused so EVERY outcome (cloud OR fallback) has a visible image
+          // GPS read + encode are independent — run GPS in parallel so EXIF parsing never sits in front.
+          const _gpsP=pTimeout(readGps(raw),8000,'gps').catch(function(){return null;}); // optional — never let it stall
+          let r2ok=false;
+          // ===== FAST PATH: encode to a binary blob (full quality) and STREAM it to R2 =====
           try{
-            let geo=null; try{ geo=await pTimeout(readGps(raw),8000,'gps'); }catch(_g){ geo=null; } // GPS is optional — never let it stall
+            const blob=await encodePhotoBlob(raw);                                  // 1600px @ 0.82, async toBlob (no main-thread block)
+            const mime=(blob&&blob._mime)||'image/webp';
+            const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
+            const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+            const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
+            const imgUrl=await streamImageToR2(id,blob,mime);                        // raw bytes → R2 (null if hosting unreachable)
+            if(imgUrl){
+              const geo=await _gpsP;
+              // tiny Firestore doc (URL only, no base64) → fast write, no 1 MB cap
+              await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,imgUrl:imgUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 25000, 'upload');
+              storeGridThumb(id,blob);                                              // light 560px grid thumb so every device loads fast
+              try{ VTHUMB[id]=URL.createObjectURL(blob); }catch(_v){ VTHUMB[id]=imgUrl; } // instant local display
+              const item={id:id,name:name,type:mime,status:'available',cloud:true,imgUrl:imgUrl,addedAt:Date.now()};
+              if(geo){item.lat=geo.lat;item.lng=geo.lng;}
+              if(folder)item.folder=folder;
+              if(_sig)item.sig=_sig;
+              addToPool(item); r2ok=true;
+            }
+          }catch(e){ /* fall through to the legacy Firestore path below */ }
+          // ===== FALLBACK: legacy base64-in-Firestore path (unchanged) — runs only if R2 was unreachable =====
+          if(!r2ok){ try{
             const dataUrl=await encodePhoto(raw); _du=dataUrl; // native decode first (iOS does HEIC), JS lib only as fallback
+            const geo=await _gpsP;
             const mime=dataUrl.slice(5,(dataUrl.indexOf(';')+0)||13)||'image/jpeg';
             const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
@@ -1606,7 +1643,7 @@ async function poolAddFiles(fileList,folder){
             if(folder)item.folder=folder;
             if(_sig)item.sig=_sig;
             addToPool(item); VTHUMB[id]=dataUrl;
-          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); if(_du)VTHUMB[rec.id]=_du; else { try{VTHUMB[rec.id]=await encodePhoto(raw);}catch(_t){} } }catch(e2){} } // cloud failed → keep a local copy AND a thumbnail so it never shows blank
+          }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); if(_du)VTHUMB[rec.id]=_du; else { try{VTHUMB[rec.id]=await encodePhoto(raw);}catch(_t){} } }catch(e2){} } } // cloud failed → keep a local copy AND a thumbnail so it never shows blank
         } else { // video (or offline image) -> local first, then videos ALSO stream up to the shared bucket
           const f=await pTimeout(normalizeImage(raw),12000,'convert'); const rec=await fileAdd(f,'',S.role,'pool');
           const isVideo=/^video\//.test(raw.type)||/\.(mp4|mov|m4v|webm)$/i.test(raw.name||'');
@@ -1630,7 +1667,12 @@ async function poolAddFiles(fileList,folder){
       await new Promise(function(r){setTimeout(r,0);}); // yield: keeps the UI responsive + eases memory on phones
     }
   }
-  const CONC=Math.min(3, files.length); // 3 at a time — overlaps upload+encode without exhausting phone memory
+  // Scale parallelism to the device: phones/low-memory stay at 3 (memory-safe), while desktops
+  // with more cores + RAM push to 6 so more photos upload+encode at once. Never exceed file count.
+  const _isPhone=/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'');
+  const _cores=(navigator.hardwareConcurrency||4), _mem=(navigator.deviceMemory||4);
+  const _maxConc=_isPhone?3:(_cores>=8&&_mem>=8?6:_cores>=4?4:3);
+  const CONC=Math.min(_maxConc, files.length); // overlaps upload+encode without exhausting memory
   await Promise.all(Array.from({length:CONC}, function(){ return uploadWorker(); }));
   if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
@@ -3486,6 +3528,35 @@ function imgToWebp(file){
     img.onerror=function(){ fail(new Error('decode failed')); };
     img.src=url;
   });
+}
+// Encode a photo to a BINARY blob (async toBlob — never blocks the main thread like toDataURL does,
+// which is the mobile-jank killer). Higher quality than the Firestore path (1600px @ 0.82, no 1 MB cap
+// and no multi-pass shrink loop) yet still ~½ MB → fast to stream on mobile data. Returns the blob.
+function imgToBlob(file,maxPx,quality){
+  return new Promise(function(resolve,reject){
+    var url=URL.createObjectURL(file), img=new Image(), settled=false;
+    function fail(err){ if(settled)return; settled=true; clearTimeout(tmr); try{URL.revokeObjectURL(url)}catch(e){} reject(err); }
+    function ok(b){ if(settled)return; settled=true; clearTimeout(tmr); try{URL.revokeObjectURL(url)}catch(e){} resolve(b); }
+    var tmr=setTimeout(function(){ fail(new Error('decode timeout')); }, 9000);
+    img.onload=function(){
+      try{
+        var w=img.naturalWidth,h=img.naturalHeight,M=maxPx||1600;
+        if(!w||!h){return fail(new Error('empty image'));}
+        if(w>M||h>M){ if(w>=h){h=Math.round(h*M/w);w=M;} else {w=Math.round(w*M/h);h=M;} }
+        var mime=canEncodeWebp()?'image/webp':'image/jpeg';
+        var c=document.createElement('canvas');c.width=w;c.height=h;var ctx=c.getContext('2d');
+        if(mime==='image/jpeg'){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);} // jpeg has no alpha
+        ctx.drawImage(img,0,0,w,h);
+        c.toBlob(function(b){ if(!b)return fail(new Error('encode failed')); try{b._mime=mime;}catch(e){} ok(b); }, mime, (quality||0.82));
+      }catch(e){ fail(e); }
+    };
+    img.onerror=function(){ fail(new Error('decode failed')); };
+    img.src=url;
+  });
+}
+async function encodePhotoBlob(raw){
+  try{ return await imgToBlob(raw,1600,0.82); }                                 // native decode (fast on iOS)
+  catch(e){ const norm=await pTimeout(normalizeImage(raw),12000,'convert'); return await imgToBlob(norm,1600,0.82); } // JS HEIC fallback, time-bounded
 }
 function hfRef(){return WG_DB.collection('workspaces').doc('wg').collection('hfiles');}
 async function hfAdd(key,file){
