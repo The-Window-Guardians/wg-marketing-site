@@ -2893,7 +2893,9 @@ async function mediaToB64(id,maxPx){
     if(!src){ try{ var rec=await fileGet(id); if(rec&&rec.blob){ src=URL.createObjectURL(rec.blob); revoke=true; } }catch(e){} }
     if(!src){ try{ var c=await cloudFileGet(id); if(c&&c.dataUrl)src=c.dataUrl; }catch(e){} }
     if(!src)return null;
-    var img=await new Promise(function(res,rej){ var im=new Image(); im.onload=function(){res(im);}; im.onerror=rej; im.src=src; });
+    // For http(s) sources (R2 photos), request CORS so drawing to a canvas never taints it — our
+    // /img route sends Access-Control-Allow-Origin:* so this works even from a custom domain.
+    var img=await new Promise(function(res,rej){ var im=new Image(); if(/^https?:/i.test(src))im.crossOrigin='anonymous'; im.onload=function(){res(im);}; im.onerror=rej; im.src=src; });
     var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; if(!w||!h){ if(revoke)try{URL.revokeObjectURL(src)}catch(e){} return null; }
     var sc=Math.min(1,maxPx/Math.max(w,h)), cw=Math.max(1,Math.round(w*sc)), ch=Math.max(1,Math.round(h*sc));
     var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch);
