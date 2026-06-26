@@ -1609,9 +1609,15 @@ async function poolAddFiles(fileList,folder){
           let r2ok=false;
           // ===== FAST PATH: encode to a binary blob (full quality) and STREAM it to R2 =====
           try{
-            const blob=await encodePhotoBlob(raw);                                  // 1600px @ 0.82, async toBlob (no main-thread block)
-            const mime=(blob&&blob._mime)||'image/webp';
-            const ext=mime==='image/webp'?'webp':mime==='image/png'?'png':'jpg';
+            // QUALITY-FIRST: a browser-displayable original (JPEG/PNG/WebP/GIF) under the R2 cap is
+            // uploaded UNTOUCHED — zero re-encode, zero quality loss. Only HEIC/odd formats get
+            // converted (browsers can't show HEIC), and then at full resolution + near-lossless quality.
+            const _isHeic=/hei[cf]/i.test(raw.type||'')||/\.hei[cf]$/i.test(raw.name||'');
+            const _displayable=/^image\/(jpe?g|png|webp|gif)$/i.test(raw.type||'')||/\.(jpe?g|png|webp|gif)$/i.test(raw.name||'');
+            let blob, mime;
+            if(!_isHeic && _displayable && raw.size && raw.size<=24000000){ blob=raw; mime=(raw.type||'image/jpeg'); } // lossless original — exact camera bytes
+            else { blob=await encodePhotoBlob(raw); mime=(blob&&blob._mime)||'image/jpeg'; }                          // HEIC/odd → full-res high-quality convert
+            const ext=/png/.test(mime)?'png':/webp/.test(mime)?'webp':/gif/.test(mime)?'gif':'jpg';
             const id='pf_'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
             const name=String(raw.name||'photo').replace(/\.[^.]+$/,'')+'.'+ext;
             const imgUrl=await streamImageToR2(id,blob,mime);                        // raw bytes → R2 (null if hosting unreachable)
@@ -1619,8 +1625,11 @@ async function poolAddFiles(fileList,folder){
               const geo=await _gpsP;
               // tiny Firestore doc (URL only, no base64) → fast write, no 1 MB cap
               await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).set({name:name,type:mime,imgUrl:imgUrl,by:(WG_AUTH.currentUser.email||''),at:Date.now()}), 25000, 'upload');
-              storeGridThumb(id,blob);                                              // light 560px grid thumb so every device loads fast
-              try{ VTHUMB[id]=URL.createObjectURL(blob); }catch(_v){ VTHUMB[id]=imgUrl; } // instant local display
+              // Light 560px grid thumb for instant + cross-device grid loads (the FULL-res image stays in R2,
+              // loaded only on full-screen view). Never put the multi-MB original in VTHUMB — the grid would crawl.
+              try{ const _th=await blobToThumb(blob,560); if(_th){ VTHUMB[id]=_th; thumbCachePut(id,_th); } }catch(_t){}
+              if(!VTHUMB[id]) VTHUMB[id]=imgUrl;
+              storeGridThumb(id,blob);                                              // cloud grid thumb so every device loads light
               const item={id:id,name:name,type:mime,status:'available',cloud:true,imgUrl:imgUrl,addedAt:Date.now()};
               if(geo){item.lat=geo.lat;item.lng=geo.lng;}
               if(folder)item.folder=folder;
@@ -3557,8 +3566,8 @@ function imgToBlob(file,maxPx,quality){
   });
 }
 async function encodePhotoBlob(raw){
-  try{ return await imgToBlob(raw,1600,0.82); }                                 // native decode (fast on iOS)
-  catch(e){ const norm=await pTimeout(normalizeImage(raw),12000,'convert'); return await imgToBlob(norm,1600,0.82); } // JS HEIC fallback, time-bounded
+  try{ return await imgToBlob(raw,4096,0.92); }                                 // full resolution, near-lossless (native decode, fast on iOS)
+  catch(e){ const norm=await pTimeout(normalizeImage(raw),12000,'convert'); return await imgToBlob(norm,4096,0.92); } // JS HEIC fallback, time-bounded
 }
 function hfRef(){return WG_DB.collection('workspaces').doc('wg').collection('hfiles');}
 async function hfAdd(key,file){
