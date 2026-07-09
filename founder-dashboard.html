@@ -3578,7 +3578,10 @@ if (typeof state._lastChange !== "number") state._lastChange = 0;
 
 // Auto-create recurring Bogdan team tasks from scorecard items so Sebastian sees them
 // in the team task list, not just buried in the scorecard.
+// DISABLED per Sebastian (fresh-start) — these auto-generated tasks (tied to the old commitment
+// structure) kept re-appearing and defeated a clean slate. Remove the early return to bring back.
 (function recurringBogdanTasks(){
+  return;
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 1=Mon
   function pad2(n){ return n < 10 ? "0"+n : ""+n; }
