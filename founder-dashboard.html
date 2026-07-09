@@ -3475,6 +3475,45 @@ if (typeof state._lastChange !== "number") state._lastChange = 0;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 })();
 
+// ONE-TIME: FRESH START — Sebastian asked to clear everything he entered so he can start clean.
+// Wipes: all tasks, all commitment values, the commitments list (he'll add new ones), and the
+// SOP calendar/schedule (his real Google Calendar fills it via Settings). KEEPS: Team cards,
+// Projects, Customers, and every feature/tab. A full backup is saved to state._freshStartBackup_v1
+// first, so nothing is truly lost — it can be restored by copying those fields back.
+(function freshStart_v1(){
+  if (state._freshStart_v1) return;
+  try {
+    state._freshStartBackup_v1 = {
+      at: Date.now(),
+      myTasks:        JSON.parse(JSON.stringify(state.myTasks || [])),
+      customScorecard:JSON.parse(JSON.stringify(state.customScorecard || null)),
+      scMonthly:      JSON.parse(JSON.stringify(state.scMonthly || {})),
+      scBiweekly:     JSON.parse(JSON.stringify(state.scBiweekly || {})),
+      scQuarterly:    JSON.parse(JSON.stringify(state.scQuarterly || {})),
+      weekly:         JSON.parse(JSON.stringify(state.weekly || {})),
+      customSchedule: JSON.parse(JSON.stringify(state.customSchedule || null)),
+    };
+  } catch (e) { /* backup best-effort; proceed with the reset regardless */ }
+  // Tasks → empty (feature kept)
+  state.myTasks = [];
+  // Commitments → empty list + cleared values across every period bucket (he adds new ones)
+  state.customScorecard = [];
+  state.scMonthly = {};
+  state.scBiweekly = {};
+  state.scQuarterly = {};
+  // Clear commitment + call-counter values held in the weekly buckets, keep the buckets' shape
+  if (state.weekly && typeof state.weekly === "object") {
+    Object.keys(state.weekly).forEach(k => { if (state.weekly[k]) state.weekly[k].scorecard = {}; });
+  }
+  // SOP calendar/schedule → empty (truthy so it doesn't fall back to the built-in SOP);
+  // the real Google Calendar populates this once its iCal link is added in Settings.
+  state.customSchedule = {};
+  state._freshStart_v1 = true;
+  state._lastChange = Date.now();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  console.log("[WG] Fresh start applied — tasks/commitments/schedule cleared (backup in state._freshStartBackup_v1).");
+})();
+
 // ONE-TIME: Commitments v2 — drop brainstorm sessions item, convert MBR from yn → datetime.
 (function commitmentsTuneup_v2(){
   if (state._commitmentsTuneup_v2) return;
