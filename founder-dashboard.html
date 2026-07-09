@@ -1984,46 +1984,8 @@
 <!-- Quick Ref removed — printable guide on Desktop handles this. -->
 
 <!-- ============ MASS LEADS (Lead Channels) ============ -->
-<section class="view" id="view-leadchannels">
-  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; gap: 14px; flex-wrap: wrap;">
-    <div>
-      <h2 style="font-size: 18px; color: var(--navy); margin: 0; font-family: 'Poppins', sans-serif; font-weight: 700;">📡 MASS Leads</h2>
-      <div style="font-size: 12px; color: var(--muted); margin-top: 4px; max-width: 700px;">
-        Lead Channels — your ongoing lead-generation systems. Each channel has documents (templates, scripts, briefs), an outreach sequence (email → call → proposal), and a list of targets you're working through. Different from Projects (one-off): Lead Channels are recurring engines.
-      </div>
-    </div>
-    <button class="btn btn-orange" onclick="openLeadChannelModal()">+ New Lead Channel</button>
-  </div>
-
-  <!-- HOA Playbook Library — source-of-truth docs for delegation -->
-  <details class="card" id="hoa-playbook-card" style="margin-bottom: 16px; border-left: 4px solid var(--sky); background: linear-gradient(180deg, #f0f9ff 0%, white 60%);">
-    <summary style="cursor: pointer; padding: 4px 0; outline: none; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 14px;">
-      <div>
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <span style="font-size: 20px; font-weight: 800; color: var(--navy); font-family: 'Poppins', sans-serif;">📚 HOA Playbook Library</span>
-          <span style="background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;">4 DOCS · STORED HERE</span>
-        </div>
-        <div style="font-size: 13px; color: var(--text-2); margin-top: 6px;">Your real HOA outreach docs — Email Sequence, Mailer, Phone Script, Board Proposal. Copy/paste/download to share when delegating to Ruth, Bogdan, or your Growth Manager.</div>
-      </div>
-      <div style="font-size: 11px; color: var(--sky); font-weight: 700; letter-spacing: 0.3px;">CLICK TO COLLAPSE ▲</div>
-    </summary>
-    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
-      <div id="playbook-tabs" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-        <button class="btn btn-sm playbook-tab-btn" data-doc="email" onclick="switchPlaybookTab('email')" style="background: var(--navy); color: white;">📧 Email Sequence</button>
-        <button class="btn btn-sm playbook-tab-btn" data-doc="mailer" onclick="switchPlaybookTab('mailer')">✉ Mailer Letter</button>
-        <button class="btn btn-sm playbook-tab-btn" data-doc="phone" onclick="switchPlaybookTab('phone')">📞 Phone Script + Call Guide</button>
-        <button class="btn btn-sm playbook-tab-btn" data-doc="proposal" onclick="switchPlaybookTab('proposal')">📄 Board Proposal Template</button>
-      </div>
-      <div id="playbook-actions" style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;"></div>
-      <div style="background: #ecfeff; border: 1px solid #67e8f9; border-radius: 6px; padding: 7px 12px; margin-bottom: 10px; font-size: 12px; color: #0e7490;">
-        <strong>💡 To customize wording:</strong> click the green <strong>✏ EDIT TEXT</strong> button above, or just click anywhere on the document below to start editing. Your changes save permanently and survive reloads.
-      </div>
-      <div id="playbook-content" onclick="handlePlaybookContentClick(event)" title="Click anywhere to edit" style="background: #fafafa; border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; max-height: 600px; overflow-y: auto; font-family: 'Inter', 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.6; color: var(--text); cursor: text;"></div>
-    </div>
-  </details>
-
-  <div id="lead-channels-list"></div>
-</section>
+<!-- MASS Leads tab removed per Sebastian (fresh-start) -->
+<section class="view" id="view-leadchannels" style="display:none;"></section>
 
 <!-- ============ SETTINGS ============ -->
 <section class="view" id="view-settings">
