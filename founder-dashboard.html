@@ -9692,13 +9692,13 @@ function renderNorthStar() {
   if (!ribbon) return;
   const ns = state.northStar;
   if (!ns || !ns.target) {
+    // No nag when unset (fresh start) — hide the ribbon entirely until a target is set.
     ribbon.className = "north-star-ribbon empty";
-    ribbon.innerHTML = `
-      <span style="font-size: 13px;">🎯 No North Star set — what's your ONE quarterly target?</span>
-      <button class="edit" onclick="openNorthStarModal()">Set Target →</button>
-    `;
+    ribbon.innerHTML = "";
+    ribbon.style.display = "none";
     return;
   }
+  ribbon.style.display = "";
   ribbon.className = "north-star-ribbon";
   const pct = ns.target > 0 ? Math.min(100, Math.round((ns.current / ns.target) * 100)) : 0;
   const unit = ns.unit || "";
@@ -12038,7 +12038,6 @@ function renderFounderWidget() {
         <div style="font-size: 14px; color: var(--text); font-weight: 600;">${big3Done} of 3 done</div>
         <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">${isEveningCheckInOpen() ? "Evening check-in is open — log when ready." : `Evening check-in unlocks at 7 PM (in ${timeUntilCheckIn()}).`}</div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="switchTo('personal')">Personal tab →</button>
     </div>
   `;
 }
@@ -12360,7 +12359,7 @@ function renderNowChips() {
   const chips = [
     chip("🎯 Big 3", big3Done, 3),
     chip("📞 PC", pc, 11, null, "switchTo('today'); setTimeout(()=>{ const el=document.getElementById('call-counters'); if(el)el.scrollIntoView({behavior:'smooth',block:'center'}); }, 100);"),
-    chip("🏘️ HOA", hoa, 6, null, "switchTo('leadchannels')"),
+    chip("🏘️ HOA", hoa, 6),
     dueCount > 0 ? chip("✅ Due", dueCount, 0, "#fee2e2") : "",
     approvalCount > 0 ? chip("⏳ Approve", approvalCount, 0, "#fed7aa", "switchTo('team')") : "",
   ].filter(Boolean);
@@ -13387,6 +13386,9 @@ function aiQuickPrompt(text) {
 
 // Dynamic Red Flags — only shows flags that are actually firing
 function computeRedFlags() {
+  // Red flags disabled per Sebastian (fresh-start dashboard) — no alert flags fire.
+  // Delete this early return to bring the automatic red-flag detection back.
+  return [];
   const flags = [];
   const now = Date.now();
   // Stale approvals
