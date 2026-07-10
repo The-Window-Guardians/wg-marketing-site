@@ -6678,6 +6678,8 @@ let POOL_Q=''; // content library search text
 let POOL_KIND='all'; // content filter: all | photos | videos
 let POOL_GROUP='off'; // off | job (group by location)
 let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
+let POOL_VIEW=(function(){try{return localStorage.getItem('wg_pool_view')||'gallery';}catch(e){return 'gallery';}})(); // gallery (cover tiles) | list (accordions)
+let GALLERY_OPEN=null; // key of the job opened from the gallery grid (null = show the grid)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
 /* Lazy-load: only run an expensive thumbnail fetch once its cell scrolls near view. Keeps the
    content library snappy on phones with hundreds of photos. Falls back to immediate if no IO. */
@@ -6843,8 +6845,18 @@ function socLibrary(v){
   q.oninput=()=>{ POOL_Q=(q.value||'').toLowerCase().trim();
     poolCard.querySelectorAll('.poolcell').forEach(function(cell){ var hay=cell.dataset.search||''; cell.style.display=(!POOL_Q||hay.indexOf(POOL_Q)>=0)?'':'none'; });
     poolCard.querySelectorAll('details.jobgroup').forEach(function(g){ var any=Array.prototype.some.call(g.querySelectorAll('.poolcell'),function(c){return c.style.display!=='none';}); g.style.display=(!POOL_Q||any)?'':'none'; });
+    poolCard.querySelectorAll('.exptile').forEach(function(t){ var hay=(t.textContent||'').toLowerCase(); t.style.display=(!POOL_Q||hay.indexOf(POOL_Q)>=0)?'':'none'; }); // gallery tiles filter by name too
   };
   ctrls.appendChild(q);
+  // Gallery / List view toggle (grouped photo views only)
+  if(grouped && POOL_SRC!=='Videos'){
+    const tog=el('div','viewtog');
+    const gB=el('button',POOL_VIEW==='gallery'?'on':'','▦ Gallery');
+    const lB=el('button',POOL_VIEW==='list'?'on':'','☰ List');
+    gB.onclick=()=>{POOL_VIEW='gallery';GALLERY_OPEN=null;try{localStorage.setItem('wg_pool_view','gallery');}catch(e){}rerenderCal();};
+    lB.onclick=()=>{POOL_VIEW='list';GALLERY_OPEN=null;try{localStorage.setItem('wg_pool_view','list');}catch(e){}rerenderCal();};
+    tog.appendChild(gB);tog.appendChild(lB);ctrls.appendChild(tog);
+  }
   poolCard.appendChild(ctrls);
   // one-tap: move EVERYTHING in this sub-folder into main Content
   if(POOL_SRC!=='main' && avail.length && typeof isOwner==='function' && isOwner()){
@@ -7023,7 +7035,7 @@ function socLibrary(v){
       sum.appendChild(peekStrip(items));
       d.appendChild(sum);
       renderGroupBody(d,items,{moveToContent:true}); // tiles match every other job (stage pills only); pull a photo out via tick → Move to Content
-      _tiered.push({tier:(groupDone(items)?1:2), star:(isStarJob(gname)?1:0), age:gAge(items), node:d}); // titled+tagged = Tier 1; titled only = Tier 2
+      _tiered.push({tier:(groupDone(items)?1:2), star:(isStarJob(gname)?1:0), age:gAge(items), node:d, key:'mg:'+gname, label:gname, kind:'named', items:items}); // titled+tagged = Tier 1; titled only = Tier 2
     });
     const clusters=clusterByLocation(located,60);
     clusters.sort(function(a,b){return gAge(a.items)-gAge(b.items);}); // stable numbering order
@@ -7041,25 +7053,67 @@ function socLibrary(v){
       sum.appendChild(peekStrip(c.items));
       d.appendChild(sum);
       renderGroupBody(d,c.items,{moveToContent:true}); // location jobs also get Select all + ↩ Move to Content
-      _tiered.push({tier:(anyTag(c.items)?2:3), star:0, age:gAge(c.items), node:d}); // tagging started = Tier 2; untouched = Tier 3 (new, bottom)
+      _tiered.push({tier:(anyTag(c.items)?2:3), star:0, age:gAge(c.items), node:d, key:'loc:'+(c.lat||0).toFixed(3)+','+(c.lng||0).toFixed(3), label:base, kind:'loc', items:c.items}); // tagging started = Tier 2; untouched = Tier 3 (new, bottom)
     });
     // assemble: tier → starred → oldest-first; label each tier so the filing system is visible
     _tiered.sort(function(a,b){ return (a.tier-b.tier)||(b.star-a.star)||(a.age-b.age); });
-    const TIER_LABEL={1:'✅ Ready for the AI — titled + every photo tagged',2:'🔧 In progress — finish the title or the tags',3:'🆕 New — just came in (newest at the bottom)'};
-    let _lastTier=null, _anyOpen=false;
-    _tiered.forEach(function(g){
-      if(g.tier!==_lastTier){ _lastTier=g.tier; const h=el('div','');h.style.cssText='margin:14px 0 4px;font-weight:800;font-size:12.5px;color:var(--ink2)';h.textContent=TIER_LABEL[g.tier];poolCard.appendChild(h); }
-      poolCard.appendChild(g.node); if(g.node.open)_anyOpen=true;
-    });
-    if(_tiered.length&&!_anyOpen)_tiered[0].node.open=true; // first load: open the top group only
     setTimeout(function(){try{enrichLocations();}catch(e){}},400); // fill in town/ZIP names in the background
+    // Build the "Needs sorting" group node (captured, not yet placed) so it can appear in BOTH views.
+    let needGroup=null;
     if(noloc.length){
-      const d=el('details','jobgroup needsort');applyGroupOpen(d,'needsort', _tiered.length===0); // always LAST; opens by default only when there are no groups at all
-      d.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
-      renderGroupBody(d,noloc,{newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
-      poolCard.appendChild(d);
+      const dN=el('details','jobgroup needsort');applyGroupOpen(dN,'needsort', _tiered.length===0); // always LAST; opens by default only when there are no groups at all
+      dN.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
+      renderGroupBody(dN,noloc,{newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
+      needGroup={key:'needsort', label:'Needs sorting', kind:'needsort', items:noloc, star:0, node:dN};
     }
-    if(!clusters.length&&!noloc.length)poolCard.innerHTML+=`<p class="muted">Nothing to group here.</p>`;
+    const allGroups=_tiered.concat(needGroup?[needGroup]:[]); // every job, for the Gallery grid
+    const grpIcon=g=> g.kind==='named'?'📁' : g.kind==='needsort'?'🗂️' : '📍';
+    // a cover tile for one job (Gallery view) — its first photo + label + count
+    const makeTile=function(g){
+      const t=el('button','exptile');
+      const cover=el('div','exptile-cover');
+      const img=el('img');const first=g.items&&g.items[0];
+      if(first){ img.addEventListener('load',()=>img.style.display='block'); if(VTHUMB[first.id])img.src=VTHUMB[first.id]; else thumbInto(img,first.id); }
+      cover.appendChild(img);
+      cover.appendChild(el('span','ph', grpIcon(g)));
+      cover.appendChild(el('span','kindpill', g.kind==='named'?'titled':g.kind==='needsort'?'needs sorting':'location'));
+      cover.appendChild(el('span','cntbadge', String((g.items||[]).length)));
+      if(g.star)cover.appendChild(el('span','expstar','★'));
+      if((g.items||[]).some(isVidItem))cover.appendChild(el('span','poolplay','▶'));
+      t.appendChild(cover);
+      const meta=el('div','exptile-meta');
+      meta.appendChild(el('div','t',esc(g.kind==='needsort'?'Needs sorting':g.label)));
+      const _n=(g.items||[]).length;
+      meta.appendChild(el('div','s',_n+' photo'+(_n===1?'':'s')));
+      t.appendChild(meta);
+      t.onclick=()=>{ GALLERY_OPEN=g.key; rerenderCal(); };
+      return t;
+    };
+    if(POOL_VIEW==='gallery'){
+      const open = GALLERY_OPEN && allGroups.find(g=>g.key===GALLERY_OPEN);
+      if(open){
+        const back=el('button','btn-set backexp','← All jobs');back.style.cssText='margin:6px 0 10px';
+        back.onclick=()=>{GALLERY_OPEN=null;rerenderCal();};
+        poolCard.appendChild(back);
+        open.node.open=true;              // opened from a tile → show it expanded
+        poolCard.appendChild(open.node);
+      } else {
+        if(GALLERY_OPEN)GALLERY_OPEN=null; // stale (deleted job) → fall back to the grid
+        if(!allGroups.length){ poolCard.appendChild(el('p','muted','Nothing here yet — upload some photos above.')); }
+        else { const grid=el('div','expgrid'); allGroups.forEach(g=>grid.appendChild(makeTile(g))); poolCard.appendChild(grid); }
+      }
+    } else {
+      // LIST view — tier headers + accordions (the existing filing layout, unchanged)
+      const TIER_LABEL={1:'✅ Ready for the AI — titled + every photo tagged',2:'🔧 In progress — finish the title or the tags',3:'🆕 New — just came in (newest at the bottom)'};
+      let _lastTier=null, _anyOpen=false;
+      _tiered.forEach(function(g){
+        if(g.tier!==_lastTier){ _lastTier=g.tier; const h=el('div','');h.style.cssText='margin:14px 0 4px;font-weight:800;font-size:12.5px;color:var(--ink2)';h.textContent=TIER_LABEL[g.tier];poolCard.appendChild(h); }
+        poolCard.appendChild(g.node); if(g.node.open)_anyOpen=true;
+      });
+      if(_tiered.length&&!_anyOpen)_tiered[0].node.open=true; // first load: open the top group only
+      if(needGroup)poolCard.appendChild(needGroup.node);
+    }
+    if(!_tiered.length&&!noloc.length)poolCard.appendChild(el('p','muted','Nothing to group here.'));
   }else{
     const grid=el('div','poolgrid');
     avail.forEach(m=>grid.appendChild(buildCell(m)));

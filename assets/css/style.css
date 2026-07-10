@@ -586,6 +586,25 @@ details.jobgroup.done>summary{background:#f1faf4}
 /* "add to a job" button on no-location tiles */
 .addtojob{position:absolute;left:4px;bottom:4px;right:4px;border:none;border-radius:8px;background:var(--navy);color:#fff;font-size:10.5px;font-weight:700;padding:5px 4px;cursor:pointer}
 .addtojob:hover{background:var(--orange)}
+/* ---- Gallery view (cover tiles) — ported from the personal app ---- */
+.viewtog{display:inline-flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;flex:0 0 auto}
+.viewtog button{border:none;background:var(--card);padding:7px 12px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;line-height:1}
+.viewtog button.on{background:var(--orange);color:#fff}
+.expgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:10px}
+.exptile{display:flex;flex-direction:column;text-align:left;background:var(--card);border:1px solid var(--line2);border-radius:14px;overflow:hidden;cursor:pointer;padding:0;transition:.15s;font-family:inherit}
+.exptile:hover{border-color:var(--orange);transform:translateY(-2px);box-shadow:0 6px 18px #0000001a}
+.exptile:active{transform:scale(.99)}
+.exptile-cover{position:relative;aspect-ratio:4/3;background:#e9edf3;overflow:hidden}
+.exptile-cover img{width:100%;height:100%;object-fit:cover;display:none}
+.exptile-cover .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:30px;opacity:.5}
+.exptile-cover .kindpill{position:absolute;top:7px;left:7px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:7px;background:#111111cc;color:#fff;text-transform:capitalize;letter-spacing:.02em}
+.exptile-cover .cntbadge{position:absolute;bottom:7px;right:7px;font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:#111111cc;color:#fff}
+.exptile-cover .expstar{position:absolute;top:6px;right:8px;font-size:15px;color:#f5a623;text-shadow:0 1px 3px #0006}
+.exptile-cover .poolplay{position:absolute;left:7px;bottom:7px;background:#111111cc;color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px}
+.exptile-meta{padding:9px 11px 11px}
+.exptile-meta .t{font-size:14.5px;font-weight:800;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exptile-meta .s{font-size:12px;color:var(--muted);margin-top:1px}
+.backexp{font-weight:700}
 /* job picker modal */
 .jobpick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line2);background:var(--bg);border-radius:11px;padding:8px 11px;margin-top:8px;cursor:pointer;font-size:14px;font-weight:700;color:var(--ink)}
 .jobpick:hover{border-color:var(--orange);background:var(--orange-soft)}
