@@ -6680,6 +6680,7 @@ let POOL_GROUP='off'; // off | job (group by location)
 let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
 let POOL_VIEW=(function(){try{return localStorage.getItem('wg_pool_view')||'gallery';}catch(e){return 'gallery';}})(); // gallery (cover tiles) | list (accordions)
 let GALLERY_OPEN=null; // key of the job opened from the gallery grid (null = show the grid)
+let _galleryJustOpened=false; // scroll to the opened job only right after a tile tap (not on background re-renders)
 /* Sebastian's home: coach → add content → content pool (select → make a post) → posts */
 /* Lazy-load: only run an expensive thumbnail fetch once its cell scrolls near view. Keeps the
    content library snappy on phones with hundreds of photos. Falls back to immediate if no IO. */
@@ -7086,7 +7087,7 @@ function socLibrary(v){
       const _n=(g.items||[]).length;
       meta.appendChild(el('div','s',_n+' photo'+(_n===1?'':'s')));
       t.appendChild(meta);
-      t.onclick=()=>{ GALLERY_OPEN=g.key; rerenderCal(); };
+      t.onclick=()=>{ GALLERY_OPEN=g.key; _galleryJustOpened=true; rerenderCal(); };
       return t;
     };
     if(POOL_VIEW==='gallery'){
@@ -7097,6 +7098,8 @@ function socLibrary(v){
         poolCard.appendChild(back);
         open.node.open=true;              // opened from a tile → show it expanded
         poolCard.appendChild(open.node);
+        // jump to the opened job so it isn't rendered below the fold at the bottom of the page
+        if(_galleryJustOpened){ _galleryJustOpened=false; setTimeout(function(){ try{ (document.querySelector('.backexp')||back).scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){} }, 60); }
       } else {
         if(GALLERY_OPEN)GALLERY_OPEN=null; // stale (deleted job) → fall back to the grid
         if(!allGroups.length){ poolCard.appendChild(el('p','muted','Nothing here yet — upload some photos above.')); }
