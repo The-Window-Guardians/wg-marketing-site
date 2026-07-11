@@ -1264,9 +1264,162 @@ function orderByStage(items){ return items.slice().sort(function(a,b){ return _s
    Streams the raw bytes (no base64), so big phone videos work. Needs the MEDIA bucket. */
 async function publishVideoPublic(id,blob,mime){
   try{
-    var r=await pTimeout(fetch('/upload-video?id='+encodeURIComponent(id),{method:'POST',headers:{'content-type':mime||'video/mp4'},body:blob}),180000,'video upload'); // big files get 3 min
+    mime=mime||(blob&&blob.type)||'video/mp4';
+    var sz=(blob&&blob.size)||0;
+    // Cloudflare rejects a single request body over ~100MB with a 413. Small videos take the
+    // fast one-shot path; anything bigger MUST go multipart or it can never reach the cloud.
+    if(sz && sz>90*1024*1024){ return await publishVideoMultipart(id,blob,mime); }
+    var r=await pTimeout(fetch('/upload-video?action=single&id='+encodeURIComponent(id),{method:'POST',headers:{'content-type':mime},body:blob}),180000,'video upload'); // small files get 3 min
+    if(!r.ok) return await publishVideoMultipart(id,blob,mime);   // unexpected 413/5xx → fall back to chunked
     var j=await r.json(); return (j&&j.url)?j.url:null;
   }catch(e){ return null; }
+}
+// Chunked upload for big videos: split into 40MB parts (under Cloudflare's 100MB cap, over R2's
+// 5MB-per-part minimum), upload each, then ask the server to stitch them together in the bucket.
+async function publishVideoMultipart(id,blob,mime){
+  try{
+    var CHUNK=40*1024*1024;
+    var cr=await pTimeout(fetch('/upload-video?action=create&id='+encodeURIComponent(id)+'&mime='+encodeURIComponent(mime||'video/mp4'),{method:'POST'}),30000,'video create');
+    if(!cr.ok) return null; var cj=await cr.json(); if(!cj||!cj.key||!cj.uploadId) return null;
+    var key=cj.key, uploadId=cj.uploadId, parts=[], total=Math.ceil(blob.size/CHUNK);
+    try{
+      for(var i=0;i<total;i++){
+        var chunk=blob.slice(i*CHUNK, Math.min(blob.size,(i+1)*CHUNK));
+        var pr=await pTimeout(fetch('/upload-video?action=part&key='+encodeURIComponent(key)+'&uploadId='+encodeURIComponent(uploadId)+'&part='+(i+1),{method:'POST',headers:{'content-type':'application/octet-stream'},body:chunk}),180000,'video part');
+        if(!pr.ok) throw new Error('part '+(i+1)+' http '+pr.status);
+        var pj=await pr.json(); if(!pj||!pj.etag) throw new Error('part '+(i+1)+' no etag');
+        parts.push({partNumber:i+1, etag:pj.etag});
+      }
+    }catch(ePart){
+      try{ await fetch('/upload-video?action=abort&key='+encodeURIComponent(key)+'&uploadId='+encodeURIComponent(uploadId),{method:'POST'}); }catch(_a){}
+      return null;
+    }
+    var co=await pTimeout(fetch('/upload-video?action=complete&key='+encodeURIComponent(key)+'&uploadId='+encodeURIComponent(uploadId),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({parts:parts})}),60000,'video complete');
+    if(!co.ok) return null; var coj=await co.json(); return (coj&&coj.url)?coj.url:null;
+  }catch(e){ return null; }
+}
+/* ============================================================
+   HEVC → H.264 in-browser transcode (ffmpeg.wasm)
+   iPhones record HEVC (H.265); desktop Chrome/Edge/Firefox have no decoder for it,
+   so those videos won't play inline. ffmpeg.wasm ships its OWN H.265 software decoder,
+   so it converts on ANY machine. We make a 720p H.264 "preview proxy", cache it in R2
+   (m.previewUrl) so it's instant forever after, and keep the full-quality original untouched.
+   ============================================================ */
+var _ffmpeg=null, _ffmpegLoading=null;
+function _loadScriptOnce(src){ return new Promise(function(res,rej){ if(document.querySelector('script[data-src="'+src+'"]'))return res(); var s=document.createElement('script'); s.src=src; s.setAttribute('data-src',src); s.onload=function(){res();}; s.onerror=function(){rej(new Error('load '+src));}; document.head.appendChild(s); }); }
+// the 30MB core wasm is split into <25MB parts (Cloudflare Pages per-file cap) — fetch both, rejoin, blob-ify
+async function _ffmpegWasmBlobURL(base){
+  var parts=['v12-core.esm.wasm.000','v12-core.esm.wasm.001'], bufs=[];
+  for(var i=0;i<parts.length;i++){ var r=await fetch(base+parts[i]); if(!r.ok)throw new Error('wasm part '+parts[i]+' '+r.status); bufs.push(new Uint8Array(await r.arrayBuffer())); }
+  var total=0; bufs.forEach(function(b){ total+=b.length; });
+  var all=new Uint8Array(total), off=0; bufs.forEach(function(b){ all.set(b,off); off+=b.length; });
+  return URL.createObjectURL(new Blob([all],{type:'application/wasm'}));
+}
+async function loadFFmpeg(){
+  if(_ffmpeg && _ffmpeg.loaded) return _ffmpeg;
+  if(_ffmpegLoading) return _ffmpegLoading;
+  _ffmpegLoading=(async function(){
+    var base=location.origin+'/assets/vendor/ffmpeg/';        // FULL url — the lib resolves a bare /path against file:// inside its blob worker and fails
+    if(!(window.FFmpegWASM&&window.FFmpegWASM.FFmpeg)) await _loadScriptOnce(base+'v12-ffmpeg.js');
+    if(!(window.FFmpegUtil&&window.FFmpegUtil.toBlobURL)) await _loadScriptOnce(base+'v12-util.js');
+    var toBlobURL=window.FFmpegUtil.toBlobURL;
+    var coreURL=await toBlobURL(base+'v12-core.esm.js','text/javascript');  // ESM core — the worker is a module worker, so it imports (not importScripts) the core
+    var wasmURL=await _ffmpegWasmBlobURL(base);
+    var ff=new window.FFmpegWASM.FFmpeg();
+    await ff.load({ classWorkerURL: base+'v12-worker.js', coreURL: coreURL, wasmURL: wasmURL });  // single-thread 0.12 core: NO SharedArrayBuffer, runs on a normal (non-isolated) page → Firebase untouched
+    _ffmpeg=ff; return ff;
+  })();
+  try{ return await _ffmpegLoading; } finally { _ffmpegLoading=null; }
+}
+// Transcode a video Blob to a 720p H.264 MP4 Blob. onProgress(ratio 0..1).
+async function transcodeToH264(blob,onProgress){
+  var ff=await loadFFmpeg();
+  var fetchFile=window.FFmpegUtil.fetchFile;
+  var t=Date.now().toString(36);
+  var inN='in_'+t+(/webm/i.test(blob.type)?'.webm':/mp4/i.test(blob.type)?'.mp4':'.mov');
+  var outN='out_'+t+'.mp4';
+  var ph=null;
+  if(onProgress){ ph=function(e){ try{ onProgress(Math.max(0,Math.min(1,(e&&e.progress)||0))); }catch(_e){} }; try{ ff.on('progress',ph); }catch(e){} }
+  try{
+    await ff.writeFile(inN, await fetchFile(blob));
+    // cap the long edge at 720, H.264 high-compat + AAC, faststart so it plays/streams immediately.
+    await ff.exec(['-i',inN,'-vf',"scale=-2:'min(720,ih)'",'-c:v','libx264','-preset','veryfast','-crf','27','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart',outN]);
+    var data=await ff.readFile(outN);
+    try{ await ff.deleteFile(inN); await ff.deleteFile(outN); }catch(e){}
+    return new Blob([data.buffer||data],{type:'video/mp4'});
+  } finally { if(ph){ try{ ff.off('progress',ph); }catch(e){} } }
+}
+// Ensure a pool video has a desktop-playable proxy: convert (from local blob or the cloud
+// original), upload to R2, stamp m.previewUrl, and grab a real grid thumbnail from the H.264 copy.
+var _proxyBusy={};
+async function ensurePlayableProxy(m,onProgress){
+  if(!m||!m.id) return null;
+  if(m.previewUrl) return m.previewUrl;
+  if(_proxyBusy[m.id]) return null;          // already converting this one
+  _proxyBusy[m.id]=true;
+  try{
+    var blob=null; try{ var rec=await fileGet(m.id); if(rec&&rec.blob)blob=rec.blob; }catch(e){}
+    if(!blob && m.videoUrl){ try{ var r=await fetch(m.videoUrl); if(r.ok)blob=await r.blob(); }catch(e){} } // pull the original from the cloud if it lives on another device
+    if(!blob) return null;
+    var mp4=await transcodeToH264(blob,onProgress);
+    if(!mp4||!mp4.size) return null;
+    var url=await publishVideoPublic('prev'+String(m.id).replace(/[^a-z0-9]/gi,''), mp4, 'video/mp4');
+    if(!url) return null;
+    m.previewUrl=url; m._ut=Date.now();
+    try{ var poster=await videoThumb(mp4); if(poster){ VTHUMB[m.id]=poster; storeGridThumb(m.id,poster); } }catch(e){} // desktop CAN decode the H.264 proxy → real thumbnail
+    try{ commit(); if(typeof render==='function')render(); }catch(e){}
+    return url;
+  }catch(e){ return null; }
+  finally{ delete _proxyBusy[m.id]; }
+}
+/* Shared video player for the full-screen preview. Tries a proxy/local/cloud source; if the
+   browser can't decode it (HEVC on desktop), shows the poster + a one-click "Make it play"
+   button that converts once and plays the cached copy. */
+async function mountVideoPlayer(body, relax, ov, pm, nm, localBlob){
+  body.innerHTML='';
+  var wrap=el('div'); wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px'; body.appendChild(wrap);
+  var stillOpen=function(){ return $('#mprevOv')===ov; };
+  var known=!!pm.previewUrl, primary=null;
+  if(pm.previewUrl){ primary=pm.previewUrl; }
+  else if(localBlob){ primary=URL.createObjectURL(localBlob); _mprevUrl=primary; }
+  else if(pm.videoUrl){ primary=pm.videoUrl; }
+  var vid=document.createElement('video'); vid.className='mprev-media'; vid.controls=true; vid.playsInline=true; vid.autoplay=true; if(primary)vid.src=primary;
+  if(!primary)vid.style.display='none';
+  wrap.appendChild(vid);
+  var dl=el('button','btn-set','⬇ Download original'); dl.onclick=function(){ var a=document.createElement('a'); a.href=pm.videoUrl||primary; a.download=nm||'video'; a.click(); };
+  if(known){ vid.onloadeddata=relax; wrap.appendChild(dl); relax(); return; }
+  var handled=false;
+  var offerConvert=async function(){
+    if(handled||!stillOpen())return; handled=true;
+    try{vid.pause()}catch(e){} vid.style.display='none';
+    var poster=VTHUMB[pm.id]; if(!poster){ try{ var th=await cloudThumbGet(pm.id); if(th&&th.dataUrl)poster=th.dataUrl; }catch(e){} }
+    if(!stillOpen())return;
+    var ph=el('div'); ph.style.cssText='position:relative;display:inline-block';
+    if(poster){ var pim=document.createElement('img'); pim.className='mprev-media'; pim.src=poster; ph.appendChild(pim);
+      var pbd=el('div',''); pbd.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:62px;height:62px;border-radius:50%;background:#000000a6;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;pointer-events:none'; pbd.textContent='▶'; ph.appendChild(pbd); }
+    wrap.insertBefore(ph,vid);
+    var note=el('div'); note.style.cssText='color:#fff;opacity:.92;font-size:12.5px;max-width:540px;text-align:center;line-height:1.5'; note.innerHTML='This is an iPhone <b>HEVC</b> video — desktop browsers can’t play it directly. Convert it once and it plays here forever. (Your full-quality original stays safe in the cloud.)';
+    var conv=el('button','btn'); conv.style.cssText='font-weight:700;font-size:14px;padding:10px 16px'; conv.textContent='▶ Make it play on this computer';
+    var bar=el('div'); bar.style.cssText='display:none;width:280px;height:9px;border-radius:5px;background:#ffffff26;overflow:hidden';
+    var fill=el('div'); fill.style.cssText='height:100%;width:0;background:var(--orange,#ff7a00);transition:width .25s'; bar.appendChild(fill);
+    var stat=el('div'); stat.style.cssText='color:#fff;opacity:.9;font-size:12px;display:none;text-align:center';
+    conv.onclick=async function(){
+      if(!localBlob && !pm.videoUrl){ stat.style.display='block'; stat.textContent='The original isn’t on this device — open the app where you uploaded it, then convert.'; return; }
+      conv.style.display='none'; bar.style.display='block'; stat.style.display='block'; stat.textContent='Loading the converter (first run downloads it once)…';
+      try{
+        var url=await ensurePlayableProxy(pm, function(rt){ fill.style.width=Math.round(rt*100)+'%'; stat.textContent='Converting… '+Math.round(rt*100)+'%  (one time only)'; });
+        if(!stillOpen())return;
+        if(!url){ bar.style.display='none'; conv.style.display=''; conv.textContent='↻ Try again'; stat.textContent='Couldn’t convert (the clip may be very large). You can still download it below.'; return; }
+        ph.style.display='none'; note.style.display='none'; bar.style.display='none'; stat.style.display='none';
+        vid.style.display=''; vid.src=url; vid.load(); try{ await vid.play(); }catch(e){}
+      }catch(e){ bar.style.display='none'; conv.style.display=''; conv.textContent='↻ Try again'; stat.textContent='Couldn’t convert. You can still download it below.'; }
+    };
+    wrap.appendChild(note); wrap.appendChild(conv); wrap.appendChild(bar); wrap.appendChild(stat); wrap.appendChild(dl);
+    relax();
+  };
+  vid.onerror=offerConvert;
+  setTimeout(function(){ if(!handled && !vid.videoWidth) offerConvert(); }, 1800);
+  relax();
 }
 // Stream a photo's RAW bytes straight to R2 (no base64) → public /img URL, or null if hosting
 // isn't reachable. Binary streaming is ~33% fewer bytes than base64 + far lighter on phone memory,
@@ -1685,12 +1838,14 @@ async function poolAddFiles(fileList,folder){
   await Promise.all(Array.from({length:CONC}, function(){ return uploadWorker(); }));
   if(addedN)logActivity('added '+addedN+' item'+(addedN>1?'s':'')+' to content');
   commit();                                          // final commit pushes to the team cloud
+  if(typeof render==='function')render();            // clear the "syncing video…" badge without a manual refresh
   uploadProgress(-1);
   if(addedN)setTimeout(function(){toast('✅ Added '+addedN+' to your content'+(imgFailed?(' · '+imgFailed+' had trouble'):''))},650);
   if(vidShared)setTimeout(function(){toast('🎬 '+vidShared+' video'+(vidShared>1?'s':'')+' shared with the team ✓')},700);
   if(vidFailed)setTimeout(function(){toast('⚠️ '+vidFailed+' video'+(vidFailed>1?'s':'')+' saved on this device but didn’t reach the cloud (weak connection?). It’ll share when you approve a post with it, or re-upload on wifi.')},700);
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
+  if(vidFailed)setTimeout(function(){try{backfillLocalVideos();}catch(e){}},4000); // auto-retry stranded videos a few seconds later
   return addedN;
 }
 /* Is this content safely on the shared backbone (so every device + the team can see it)?
@@ -1725,7 +1880,37 @@ async function backfillLocalPhotos(){
   if(done){ commit(); if(typeof render==='function')render(); }
   return done;
 }
-if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} }); }
+/* Videos that never reached the cloud (weak signal, added before the cloud-video path existed, or a
+   >100MB clip that used to 413) stay stuck "syncing" forever — backfillLocalPhotos skips videos.
+   This auto-retries them on load + when back online, streams to R2 (multipart if big), sets videoUrl,
+   and clears the grid badge. Needs a LOCAL blob (can't re-push from another device). */
+var _backfillingVid=false;
+async function backfillLocalVideos(){
+  if(_backfillingVid||!window.WG_FB_READY||!WG_AUTH.currentUser)return 0;
+  _backfillingVid=true; let done=0;
+  try{
+    const pending=socPool().filter(m=>m&&isVideoItem(m)&&!poolSynced(m)&&String(m.id||'').indexOf('f_')===0);
+    for(const m of pending){
+      try{
+        const rec=await fileGet(m.id); if(!rec||!rec.blob)continue;                 // no local copy here → nothing to push
+        await _vidGateGlobal();
+        let vurl=null; try{ vurl=await publishVideoPublic(m.id,rec.blob,rec.type||m.type||'video/mp4'); }finally{ _vidReleaseGlobal(); }
+        if(vurl){ m.videoUrl=vurl; m._ut=Date.now(); done++;
+          try{ if(!VTHUMB[m.id]){ const _p=await videoThumb(rec.blob); if(_p){VTHUMB[m.id]=_p; storeGridThumb(m.id,_p);} } }catch(_t){} // ensure a poster too
+          socPosts().forEach(function(p){ (Array.isArray(p.media)?p.media:[]).forEach(function(pm){ if(pm.id===m.id&&pm.failedToPublish&&pm.skipReason==='notsynced'){ delete pm.failedToPublish; delete pm.skipReason; } }); });
+        }
+      }catch(e){ /* leave it device-only; retry next online/sync */ }
+    }
+  }catch(e){}
+  _backfillingVid=false;
+  if(done){ commit(); if(typeof render==='function')render(); }
+  return done;
+}
+/* small standalone gate so backfill never fires more than 2 big video uploads at once */
+var _vgActive=0, _vgQ=[];
+function _vidGateGlobal(){ return new Promise(function(res){ if(_vgActive<2){_vgActive++;res();} else _vgQ.push(res); }); }
+function _vidReleaseGlobal(){ _vgActive=Math.max(0,_vgActive-1); const n=_vgQ.shift(); if(n){_vgActive++;n();} }
+if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} }); }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id)){m.status=status;m._ut=Date.now();}});} // bump _ut so a status change (used/available/posted) can't be reverted by a stale cloud copy
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
@@ -3454,7 +3639,7 @@ async function fbSyncStart(){
     }, function(err){ _fbSync.on=false; if(_fbSync.unsub){try{_fbSync.unsub()}catch(e){}_fbSync.unsub=null;} }); // stop quietly if the session ends
     if(typeof render==='function')render();
     if(typeof ensureSyncPill==='function')ensureSyncPill();
-    setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} },1200); // push any device-only photos to the backbone now that we're online
+    setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} },1200); // push any device-only photos + videos to the backbone now that we're online
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
 /* Manual one-shot pull — for Ruth's "Check for new posts" button when she's been
@@ -6472,7 +6657,7 @@ async function openMediaPreview(mediaId,name,list){
       body.innerHTML='';
       if(!rec||!rec.blob){
         const pmv=socPool().find(z=>z.id===mid)||{};
-        if(pmv.videoUrl){ const v=document.createElement('video');v.className='mprev-media';v.controls=true;v.playsInline=true;v.src=pmv.videoUrl;v.onloadeddata=relax;v.onerror=relax;body.appendChild(v);return; } // published video → streams on any device
+        if(pmv.videoUrl){ await mountVideoPlayer(body, relax, ov, pmv, nm, null); return; } // published video → HEVC-aware player (plays H.264 proxy, else convert-once / download)
         const c=await cloudFileGet(mid); if($('#mprevOv')!==ov)return;
         if(c&&c.dataUrl){const im=document.createElement('img');im.className='mprev-media';im.onload=relax;im.onerror=relax;im.src=c.dataUrl;body.appendChild(im);return;}
         const pm=socPool().find(z=>z.id===mid)||{};
@@ -6493,16 +6678,8 @@ async function openMediaPreview(mediaId,name,list){
       }
       const isVid=/^video\//.test(rec.type||'')||/\.(mp4|mov|m4v|webm)$/i.test(nm||'');
       if(isVid){
-        const url=URL.createObjectURL(rec.blob);_mprevUrl=url;
-        const wrap=el('div');wrap.style.cssText='display:flex;flex-direction:column;align-items:center;gap:12px';
-        const vid=document.createElement('video');vid.src=url;vid.controls=true;vid.autoplay=true;vid.playsInline=true;vid.className='mprev-media';
-        const note=el('div');note.style.cssText='color:#fff;opacity:.9;font-size:12.5px;max-width:540px;text-align:center;display:none';
-        note.innerHTML='This looks like an iPhone <b>HEVC .mov</b> — desktop Chrome can’t preview that format. It still posts perfectly (watch it on your phone, or download it below). Instagram &amp; Facebook handle it natively.';
-        const dl=el('button','btn-set','⬇ Download to watch');dl.onclick=()=>{const a=document.createElement('a');a.href=url;a.download=nm||'video';a.click();};
-        vid.onerror=()=>{note.style.display='block'};
-        setTimeout(()=>{if(!vid.videoWidth)note.style.display='block'},2000);
-        wrap.appendChild(vid);wrap.appendChild(note);wrap.appendChild(dl);
-        body.appendChild(wrap);relax();
+        const pmv=socPool().find(z=>z.id===mid)||{id:mid};
+        await mountVideoPlayer(body, relax, ov, pmv, nm, rec.blob); // HEVC-aware: plays H.264, else convert-once (ffmpeg.wasm) + download original
       }else{
         var iblob=rec.blob;
         if(/hei[cf]/i.test(rec.type||'')||/\.hei[cf]$/i.test(nm||'')){ try{ const lib=await loadHeicLib(); if(lib){ const out=await lib({blob:rec.blob,toType:'image/jpeg',quality:0.9}); iblob=Array.isArray(out)?out[0]:out; } }catch(e){} }
@@ -6890,7 +7067,7 @@ function socLibrary(v){
     if(isVid)cell.appendChild(el('span','poolplay','▶'));
     // backbone status — so Sebastian can see what's shared vs still only on this device
     if(!poolSynced(m)){
-      if(isVid){ const lb=el('span','localbadge vid','📵 device only — add to Drive to share'); lb.title='Video is too big for the cloud. Put it in your Google Drive folder to share it.'; cell.appendChild(lb); }
+      if(isVid){ const lb=el('span','localbadge vid','☁️ syncing video…'); lb.title='Saved here — streaming to the cloud so the team can see it. Clears automatically once it lands (retries on wifi).'; cell.appendChild(lb); }
       else { const lb=el('span','localbadge','⏳ syncing…'); lb.title='Saved here — uploading to the team backbone. Will turn shared automatically.'; cell.appendChild(lb); }
     }
     const ck=el('span','poolck','✓');

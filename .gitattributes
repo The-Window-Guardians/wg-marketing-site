@@ -1,0 +1,6 @@
+# ffmpeg.wasm vendored assets — keep BINARY so git never applies CRLF/text conversion.
+# The split core wasm parts (.000/.001) get corrupted by line-ending conversion, which
+# silently breaks video playback in production even though it works locally.
+assets/vendor/ffmpeg/** binary
+*.wasm binary
+*.wasm.* binary
