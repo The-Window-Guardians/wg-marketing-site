@@ -1937,6 +1937,22 @@
       <h2>My Commitments <span style="font-size: 11px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0;">Recurring obligations — what you consistently produce for the company + team</span></h2>
       <p style="font-size: 12px; color: var(--muted); margin-top: -6px; margin-bottom: 14px;">Editable all week. <strong>Due Tuesday 12 PM</strong> — that's when the week locks for grading. Each commitment is binary — delivered or not. Items tagged to a team member also surface as tasks on their team card.</p>
 
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;">
+        <button class="btn btn-orange btn-sm" onclick="addScorecardItem('weekly', true)">+ Add commitment</button>
+        <button class="btn btn-ghost btn-sm" id="work-scorecard-edit-toggle" onclick="toggleWorkScorecardEditor()">✎ Edit commitments</button>
+      </div>
+      <div id="work-scorecard-editor" style="display: none; background: var(--card-soft); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+        <p style="font-size: 12px; color: var(--muted); margin-bottom: 10px;">Full control per commitment: name, sub-label, how it's scored (number / yes-no / check circles / date+time), target, cadence, owner, and ⏸ pause. Paused items keep their history but drop out of the week view and the grade. Changes save instantly.</p>
+        <div id="edit-scorecard-list-work"></div>
+        <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="addScorecardItem('weekly', true)">+ Weekly</button>
+          <button class="btn btn-ghost btn-sm" onclick="addScorecardItem('biweekly', true)">+ Every 2 weeks</button>
+          <button class="btn btn-ghost btn-sm" onclick="addScorecardItem('monthly', true)">+ Monthly</button>
+          <button class="btn btn-ghost btn-sm" onclick="addScorecardItem('quarterly', true)">+ Quarterly</button>
+          <button class="btn btn-ghost btn-sm" style="margin-left: auto;" onclick="resetScorecardToDefault()" title="Wipe customizations and restore the default commitments list">↺ Restore defaults</button>
+        </div>
+      </div>
+
       <div id="scorecard-sections"></div>
 
       <div style="margin-top: 18px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--border);">
@@ -13536,6 +13552,7 @@ function renderCommitmentsBanner() {
   let openCount = 0;
   let totalCount = 0;
   metrics.forEach(m => {
+    if (m.paused) return;
     // Only count items due this week (weekly) or this month (monthly)
     if (m.cadence !== "weekly" && m.cadence !== "monthly") return;
     totalCount++;
@@ -14210,7 +14227,7 @@ function renderScorecard() {
     <div style="display: flex; align-items: center; gap: 14px; padding: 16px; background: white; border: 1px solid var(--border); ${accentStyle} border-radius: 10px; margin-bottom: 10px; transition: all 0.18s ease;" onmouseover="this.style.boxShadow='0 4px 12px rgba(5, 17, 46, 0.08)'; this.style.transform='translateY(-1px)';" onmouseout="this.style.boxShadow='none'; this.style.transform='translateY(0)';">
       <span style="${dotStyle(status)}" title="${status}"></span>
       <div style="flex: 1; min-width: 0;">
-        <div style="font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3;">${escapeHtml(m.label)}</div>
+        <div style="font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3;">${escapeHtml(m.label)}${m.owner ? ` <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.5px; background: var(--navy); color: white; padding: 2px 7px; border-radius: 20px; vertical-align: 2px; margin-left: 6px;">${escapeHtml(m.owner.toUpperCase())}</span>` : ""}</div>
         ${sub}
       </div>
       <div style="text-align: right; flex-shrink: 0;">
@@ -14229,7 +14246,7 @@ function renderScorecard() {
 
   let html = "";
   for (const sec of sections) {
-    const items = getScorecardMetrics().filter(m => m.cadence === sec.id);
+    const items = getScorecardMetrics().filter(m => m.cadence === sec.id && !m.paused);
     if (!items.length) continue;
     // Calculate hit count for this section
     let hit = 0;
@@ -14456,7 +14473,7 @@ function updateScoreDatetime(id, field, val) {
 }
 function computeGrade() {
   // X of Y hit — count hits across ALL commitments, each read from its own period bucket
-  const all = getScorecardMetrics();
+  const all = getScorecardMetrics().filter(m => !m.paused);
   let hits = 0;
   all.forEach(m => {
     if (metricStatus(m, scoreVal(m) ?? "") === "hit") hits++;
@@ -18672,8 +18689,9 @@ function addRoutineItem() {
 // SETTINGS — Edit Scorecard
 // ============================================================
 function renderEditScorecard() {
-  const container = document.getElementById("edit-scorecard-list");
-  if (!container) return;
+  const settingsContainer = document.getElementById("edit-scorecard-list");
+  const workContainer = document.getElementById("edit-scorecard-list-work");
+  if (!settingsContainer && !workContainer) return;
   const metrics = getScorecardMetrics();
   const weeklyItems = metrics.filter(m => m.cadence === "weekly");
   const biweeklyItems = metrics.filter(m => m.cadence === "biweekly");
@@ -18683,7 +18701,7 @@ function renderEditScorecard() {
     const realIdx = metrics.indexOf(m);
     const isNumberType = m.type === "number";
     return `
-    <div class="editable-row" style="flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; background: white; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;">
+    <div class="editable-row" style="flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px; background: white; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;${m.paused ? " opacity: 0.55;" : ""}">
       <input type="text" value="${escapeHtml(m.label || "")}" placeholder="Label" style="flex: 1 1 220px; min-width: 180px;" onchange="updateScorecardItem(${realIdx}, 'label', this.value)">
       <input type="text" value="${escapeHtml(m.subLabel || "")}" placeholder="Sub-label (optional)" style="flex: 1 1 180px; min-width: 140px; font-size: 12px;" onchange="updateScorecardItem(${realIdx}, 'subLabel', this.value)">
       <select onchange="updateScorecardItem(${realIdx}, 'type', this.value)" style="max-width: 130px;" title="Input type">
@@ -18701,10 +18719,19 @@ function renderEditScorecard() {
         <option value="monthly"   ${m.cadence==="monthly"?"selected":""}>Monthly</option>
         <option value="quarterly" ${m.cadence==="quarterly"?"selected":""}>Quarterly</option>
       </select>
+      <select onchange="updateScorecardItem(${realIdx}, 'owner', this.value)" style="max-width: 110px;" title="Who owns this commitment — tagged items show a chip on the scorecard">
+        <option value=""       ${!m.owner?"selected":""}>Me</option>
+        <option value="Iwona"  ${m.owner==="Iwona"?"selected":""}>Iwona</option>
+        <option value="Ruth"   ${m.owner==="Ruth"?"selected":""}>Ruth</option>
+        <option value="Bogdan" ${m.owner==="Bogdan"?"selected":""}>Bogdan</option>
+        <option value="Frank"  ${m.owner==="Frank"?"selected":""}>Frank</option>
+        <option value="Denise" ${m.owner==="Denise"?"selected":""}>Denise</option>
+      </select>
+      <button class="btn-icon" onclick="updateScorecardItem(${realIdx}, 'paused', ${m.paused ? "false" : "true"})" title="${m.paused ? "Resume — shows on the scorecard and counts toward the grade again" : "Pause — hides from the scorecard and grade until resumed"}">${m.paused ? "▶" : "⏸"}</button>
       <button class="btn-icon" onclick="deleteScorecardItem(${realIdx})" title="Remove this item">×</button>
     </div>`;
   };
-  container.innerHTML = `
+  const editorHtml = `
     <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 4px; margin-bottom: 6px;">WEEKLY (${weeklyItems.length})</div>
     ${weeklyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No weekly items.</div>'}
     <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 14px; margin-bottom: 6px;">EVERY 2 WEEKS (${biweeklyItems.length})</div>
@@ -18714,6 +18741,15 @@ function renderEditScorecard() {
     <div style="font-size: 11px; color: var(--muted); letter-spacing: 1.2px; font-weight: 700; margin-top: 14px; margin-bottom: 6px;">QUARTERLY (${quarterlyItems.length})</div>
     ${quarterlyItems.map(renderRow).join("") || '<div style="font-size: 12px; color: var(--muted); font-style: italic;">No quarterly items.</div>'}
   `;
+  if (settingsContainer) settingsContainer.innerHTML = editorHtml;
+  if (workContainer) workContainer.innerHTML = editorHtml;
+}
+function toggleWorkScorecardEditor() {
+  const ed = document.getElementById("work-scorecard-editor");
+  if (!ed) return;
+  const showing = ed.style.display !== "none";
+  ed.style.display = showing ? "none" : "block";
+  if (!showing) renderEditScorecard();
 }
 function ensureCustomScorecard() {
   if (!state.customScorecard) state.customScorecard = JSON.parse(JSON.stringify(SCORECARD_METRICS));
@@ -18738,7 +18774,7 @@ function deleteScorecardItem(i) {
   renderEditScorecard();
   renderScorecard();
 }
-function addScorecardItem(cadence) {
+function addScorecardItem(cadence, fromWorkPage) {
   ensureCustomScorecard();
   const newId = "sc-custom-" + Date.now();
   state.customScorecard.push({
@@ -18749,8 +18785,14 @@ function addScorecardItem(cadence) {
     cadence: cadence || "weekly",
     target: 1,
     weight: 5,
+    owner: "",
+    paused: false,
   });
   saveState();
+  if (fromWorkPage) {
+    const ed = document.getElementById("work-scorecard-editor");
+    if (ed) ed.style.display = "block";
+  }
   renderEditScorecard();
   renderScorecard();
 }
