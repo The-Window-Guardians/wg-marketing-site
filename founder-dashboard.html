@@ -9837,18 +9837,30 @@ function renderFocusLadder() {
   // Personal growth focus lives on Founder tab, separately.
   const focus = state.focusBusiness || { week: "", month: "", quarter: "" };
   const empty = "Click to set";
-  const card = (color, emoji, label, value, onclickFn) => `
+  // Live calendar context — which quarter / month / week / day we're actually in right now.
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3) + 1;
+  const mondayOfWeek = new Date(now);
+  mondayOfWeek.setDate(now.getDate() - ((now.getDay() + 6) % 7)); // back up to Monday
+  const periodQuarter = `Q${q} ${now.getFullYear()}`;
+  const periodMonth   = now.toLocaleDateString("en-US", { month: "long" });
+  const periodWeek    = "Wk of " + mondayOfWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const periodToday   = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const card = (color, emoji, label, period, value, onclickFn) => `
     <div style="background: ${color}15; border-left: 4px solid ${color}; border-radius: 8px; padding: 12px 14px; cursor: pointer; transition: background 0.15s, transform 0.15s;" onclick="${onclickFn}" onmouseover="this.style.background='${color}25';" onmouseout="this.style.background='${color}15';" title="Click to edit">
-      <div style="font-size: 11px; letter-spacing: 0.8px; font-weight: 700; color: ${color}; margin-bottom: 6px;">${emoji} ${label}</div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+        <div style="font-size: 11px; letter-spacing: 0.8px; font-weight: 700; color: ${color};">${emoji} ${label}</div>
+        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; color: ${color}; background: ${color}22; padding: 2px 8px; border-radius: 999px; white-space: nowrap;">${period}</div>
+      </div>
       <div style="font-size: 13px; color: var(--text); font-weight: 500; line-height: 1.4;">${value ? escapeHtml(value) : `<span style="color: var(--muted); font-style: italic;">${empty}</span>`}</div>
     </div>`;
   const d = getDaily();
   const big3Display = d.outcome ? d.outcome : "";
   container.innerHTML =
-    card("var(--orange)", "🎯", "QUARTER",                focus.quarter, "openFocusModal('quarter', 'business')") +
-    card("var(--navy)",   "🗓️", "MONTH",                  focus.month,   "openFocusModal('month', 'business')") +
-    card("var(--sky)",    "📍", "WEEK",                   focus.week,    "openFocusModal('week', 'business')") +
-    card("var(--green)",  "✅", "TODAY — Big One",         big3Display,   "document.getElementById('daily-outcome').focus(); document.getElementById('daily-outcome').scrollIntoView({behavior:'smooth', block:'center'});");
+    card("var(--orange)", "🎯", "QUARTER",                periodQuarter, focus.quarter, "openFocusModal('quarter', 'business')") +
+    card("var(--navy)",   "🗓️", "MONTH",                  periodMonth,   focus.month,   "openFocusModal('month', 'business')") +
+    card("var(--sky)",    "📍", "WEEK",                   periodWeek,    focus.week,    "openFocusModal('week', 'business')") +
+    card("var(--green)",  "✅", "TODAY — Big One",         periodToday,   big3Display,   "document.getElementById('daily-outcome').focus(); document.getElementById('daily-outcome').scrollIntoView({behavior:'smooth', block:'center'});");
 }
 
 // Inline-edit modal for the Focus Ladder. Scope = 'business' (Today) or 'personal' (Founder).
