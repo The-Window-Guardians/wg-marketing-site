@@ -10255,7 +10255,7 @@ function parseICS(text) {
       } else if (/^SUMMARY:/.test(line)) {
         event.title = line.substring(8).replace(/\\,/g, ",").replace(/\\n/g, " ").replace(/\\\\/g, "\\");
       } else if (/^LOCATION:/.test(line)) {
-        event.location = line.substring(9);
+        event.location = line.substring(9).replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\n/g, " ").replace(/\\\\/g, "\\");
       }
     }
     if (event.start && event.title) events.push({
@@ -10547,9 +10547,16 @@ function renderCalendarStatus() {
   if (urlInput && state.calendar.url) urlInput.value = state.calendar.url;
   if (status && state.calendar.events.length) status.textContent = `✓ ${state.calendar.events.length} events synced · ${state.calendar.lastFetch}`;
 }
+// After 9 PM the "Today's Calendar" card pivots to TOMORROW so you can prep the next day.
+function calendarViewDate() {
+  const d = new Date();
+  if (d.getHours() >= 21) d.setDate(d.getDate() + 1);
+  return d;
+}
+function isShowingTomorrow() { return new Date().getHours() >= 21; }
 function getTodayCalendarEvents() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const anchor = calendarViewDate();
+  const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
   const end = new Date(start.getTime() + 24*3600000);
   return (state.calendar.events || []).filter(e => {
     const t = new Date(e.start);
