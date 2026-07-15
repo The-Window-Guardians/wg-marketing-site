@@ -2196,18 +2196,16 @@
     </p>
 
     <div style="background: var(--sky-soft); padding: 14px; border-radius: 8px; margin-bottom: 14px;">
-      <div style="font-size: 12px; font-weight: 700; color: var(--navy); letter-spacing: 0.5px; margin-bottom: 8px;">OPTION A — LIVE SYNC (recommended)</div>
-      <ol style="font-size: 13px; padding-left: 20px; line-height: 1.7;">
-        <li>Open Google Calendar → click your calendar → <strong>Settings and sharing</strong></li>
-        <li>Scroll to <strong>"Integrate calendar"</strong></li>
-        <li>Copy the <strong>"Secret address in iCal format"</strong> (long URL ending in .ics)</li>
-        <li>Paste it below + click Save</li>
-      </ol>
+      <div style="font-size: 12px; font-weight: 700; color: var(--navy); letter-spacing: 0.5px; margin-bottom: 8px;">OPTION A — LIVE SYNC WITH RECURRING EVENTS (recommended)</div>
+      <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
+        Shows your real events <strong>including repeating meetings</strong> (Friday 1:1s, Tuesday Bogdan). Full 5-minute one-time setup is in
+        <strong>SETUP_LIVE_CALENDAR.md</strong> — it's in this dashboard's folder. When you finish, paste the web-app link (ends in <strong>/exec</strong>) below and click Save.
+      </p>
       <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px;">
-        <input type="text" id="cal-ical-url" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics">
+        <input type="text" id="cal-ical-url" placeholder="Paste your /exec link (or an iCal .ics link)">
         <button class="btn btn-orange" onclick="saveCalendarUrl()">Save</button>
       </div>
-      <p style="font-size: 11px; color: var(--muted); margin-top: 8px;">Uses a CORS proxy to fetch. If it fails, use Option B.</p>
+      <p style="font-size: 11px; color: var(--muted); margin-top: 8px;">Have a plain iCal <strong>.ics</strong> link instead? It works here too — but repeating meetings may not show. The setup guide is the reliable way.</p>
     </div>
 
     <div style="background: var(--card-soft); padding: 14px; border-radius: 8px;">
@@ -20503,6 +20501,10 @@ setInterval(() => {
     if (state.calendar && state.calendar.url && typeof refreshCalendar === "function") refreshCalendar();
   } catch(e) { console.warn("[calendar auto-refresh]", e); }
 }, 300000);
+// On open: sync once immediately so today's real events appear without waiting.
+try {
+  if (state.calendar && state.calendar.url && typeof refreshCalendar === "function") refreshCalendar();
+} catch(e) { console.warn("[calendar initial sync]", e); }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && state.calendar && state.calendar.url && typeof refreshCalendar === "function") {
     refreshCalendar();
