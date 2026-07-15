@@ -9848,11 +9848,11 @@ function renderFocusLadder() {
   const periodToday   = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const card = (color, emoji, label, period, value, onclickFn) => `
     <div style="background: ${color}15; border-left: 4px solid ${color}; border-radius: 8px; padding: 12px 14px; cursor: pointer; transition: background 0.15s, transform 0.15s;" onclick="${onclickFn}" onmouseover="this.style.background='${color}25';" onmouseout="this.style.background='${color}15';" title="Click to edit">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
-        <div style="font-size: 11px; letter-spacing: 0.8px; font-weight: 700; color: ${color};">${emoji} ${label}</div>
-        <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; color: ${color}; background: ${color}22; padding: 2px 8px; border-radius: 999px; white-space: nowrap;">${period}</div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px;">
+        <div style="font-size: 14px; letter-spacing: 0.8px; font-weight: 800; color: ${color};">${emoji} ${label}</div>
+        <div style="font-size: 16px; font-weight: 800; letter-spacing: 0.3px; color: white; background: ${color}; padding: 6px 14px; border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 6px ${color}55;">${period}</div>
       </div>
-      <div style="font-size: 13px; color: var(--text); font-weight: 500; line-height: 1.4;">${value ? escapeHtml(value) : `<span style="color: var(--muted); font-style: italic;">${empty}</span>`}</div>
+      <div style="font-size: 16px; color: var(--text); font-weight: 600; line-height: 1.4;">${value ? escapeHtml(value) : `<span style="color: var(--muted); font-style: italic;">${empty}</span>`}</div>
     </div>`;
   const d = getDaily();
   const big3Display = d.outcome ? d.outcome : "";
