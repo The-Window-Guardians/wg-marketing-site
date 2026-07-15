@@ -1978,7 +1978,7 @@
     <div class="card">
       <h2>This Week's Appointments <span style="font-size: 11px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0;">Real meetings + scheduled events</span></h2>
       <p style="color: var(--muted); font-size: 13px; margin-bottom: 14px;">
-        Recurring appointments only. Your daily routine (8 AM personal hour, 9 AM triage, 12–4 PM sales, etc.) lives on the Today tab. Once Bogdan wires up Google Calendar sync, real GCal events will also flow in here.
+        Recurring appointments only. Your daily routine (8 AM personal hour, 9 AM triage, 12–4 PM sales, etc.) lives on the Today tab. Your live Google Calendar is embedded just below this card.
         <button class="btn-icon" style="margin-left: 8px;" onclick="switchTo('settings')">Edit schedule →</button>
       </p>
       <div class="week-grid" id="week-grid"></div>
@@ -1990,6 +1990,24 @@
       <p style="font-size: 11px; color: var(--muted); font-style: italic; margin-top: 12px;">
         <strong>This week's anchors:</strong> Tuesday 7 PM Bogdan Weekly · Friday 1:1s (9:30 Iwona · 11 Ruth · 12 Frank · 1 past-customer calls · 2 HOA) · Sunday 10 AM CompanyCam Curation · Sunday 9 PM Reflection
       </p>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <h2>📆 Live Google Calendar</h2>
+      <p style="color: var(--muted); font-size: 13px; margin-bottom: 10px;">
+        Your real calendar, live. It shows as long as Chrome is signed into the Google account below. Blank box? Open calendar.google.com in another tab, sign in, come back and hit ↻ Reload.
+      </p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+        <input type="text" id="gcal-email-input" placeholder="Calendar account email" style="flex: 1 1 260px; min-width: 220px;">
+        <select id="gcal-mode" style="max-width: 120px;" title="Calendar view">
+          <option value="WEEK">Week</option>
+          <option value="MONTH">Month</option>
+          <option value="AGENDA">Agenda</option>
+        </select>
+        <button class="btn btn-orange btn-sm" onclick="saveGcalSettings()">Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('gcal-frame').src = document.getElementById('gcal-frame').src;">↻ Reload</button>
+      </div>
+      <iframe id="gcal-frame" style="width: 100%; height: 620px; border: 1px solid var(--border); border-radius: 10px; background: white;" frameborder="0" scrolling="no"></iframe>
     </div>
   </div>
   <!-- Monthly Money sub-tab removed per Sebastian's instruction. Commitments live on the Work tab. -->
@@ -18751,6 +18769,33 @@ function toggleWorkScorecardEditor() {
   ed.style.display = showing ? "none" : "block";
   if (!showing) renderEditScorecard();
 }
+
+// ============================================================
+// LIVE GOOGLE CALENDAR EMBED (Review → Week)
+// ============================================================
+function renderGcal() {
+  const frame = document.getElementById("gcal-frame");
+  if (!frame) return;
+  const email = (state.gcalEmail || "seba@windowguardians.com").trim();
+  const mode = state.gcalMode || "WEEK";
+  const src = "https://calendar.google.com/calendar/embed?src=" + encodeURIComponent(email) +
+    "&ctz=America%2FNew_York&mode=" + mode + "&wkst=1&showTitle=0&showPrint=0&showTz=0&showCalendars=0";
+  if (frame.getAttribute("src") !== src) frame.setAttribute("src", src);
+  const input = document.getElementById("gcal-email-input");
+  if (input && !input.value) input.value = email;
+  const sel = document.getElementById("gcal-mode");
+  if (sel) sel.value = mode;
+}
+function saveGcalSettings() {
+  const input = document.getElementById("gcal-email-input");
+  const sel = document.getElementById("gcal-mode");
+  if (input && input.value.trim()) state.gcalEmail = input.value.trim();
+  if (sel) state.gcalMode = sel.value;
+  saveState();
+  renderGcal();
+  showToast("Calendar updated");
+}
+(function initGcal(){ try { renderGcal(); } catch(e) {} })();
 function ensureCustomScorecard() {
   if (!state.customScorecard) state.customScorecard = JSON.parse(JSON.stringify(SCORECARD_METRICS));
 }
