@@ -6940,7 +6940,7 @@ function revealPhoto(id){
 function socLibrary(v){
   const cw=currentWeek();
   const wk=cw?cw.id:(WEEKS[0]&&WEEKS[0].id)||1;
-  v.appendChild(actionCenterCard());
+  const _actionCard=actionCenterCard(); let _coachCard=null;   // held — appended BELOW Add-content so uploading is the first thing in reach
 
   // coach
   if(cw){
@@ -6951,7 +6951,7 @@ function socLibrary(v){
       const act=el('button','btn-set primary',sug.type==='approve'?'Review & approve →':'Finish this one →');
       act.onclick=()=>openComposer(sug.post.id);ai.appendChild(act);
     }
-    v.appendChild(ai);
+    _coachCard=ai;
   }
 
   // ---- ADD CONTENT (regular photos · before/after · video · optional Drive) ----
@@ -7002,7 +7002,9 @@ function socLibrary(v){
     g3.onclick=async()=>{const o=g3.textContent;g3.disabled=true;g3.textContent='🪄 Working…';try{await buildMyWeek(3);}catch(e){}g3.disabled=false;g3.textContent=o;};
     aiRow.appendChild(g1);aiRow.appendChild(g3);add.appendChild(aiRow);
   }
-  v.appendChild(add);
+  v.appendChild(add);                       // Add content first — the #1 job is above the fold now
+  v.appendChild(_actionCard);               // then "what needs you now"
+  if(_coachCard)v.appendChild(_coachCard);  // then the coach
   gdAutoResume();
 
   // ---- CONTENT POOL: tick pieces → make a post ----
@@ -7069,10 +7071,10 @@ function socLibrary(v){
   }
 
   const makeBtn=el('button','btn-set primary');makeBtn.style.marginTop='12px';
-  let delBtn=null;
+  let delBtn=null, _selbar=null;
   const dlSelBtn=el('button','btn-set');dlSelBtn.style.cssText='margin:12px 0 0 8px';dlSelBtn.style.display='none';
   dlSelBtn.onclick=()=>{ const sel=allAvail.filter(m=>POOL_SEL.has(m.id)); if(!sel.length)return; downloadMediaItems(sel.map(m=>({id:m.id,name:m.name,type:m.type})),dlSelBtn); };
-  const updateMakeBtn=()=>{makeBtn.textContent=`＋ Make a post from ${POOL_SEL.size} selected`;makeBtn.style.display=POOL_SEL.size?'':'none';dlSelBtn.textContent=`⬇ Download ${POOL_SEL.size}`;dlSelBtn.style.display=POOL_SEL.size?'':'none';if(delBtn){delBtn.textContent=`🗑 Delete ${POOL_SEL.size} forever`;delBtn.style.display=POOL_SEL.size?'':'none';}};
+  const updateMakeBtn=()=>{makeBtn.textContent=`＋ Make a post from ${POOL_SEL.size} selected`;makeBtn.style.display=POOL_SEL.size?'':'none';dlSelBtn.textContent=`⬇ Download ${POOL_SEL.size}`;dlSelBtn.style.display=POOL_SEL.size?'':'none';if(delBtn){delBtn.textContent=`🗑 Delete ${POOL_SEL.size} forever`;delBtn.style.display=POOL_SEL.size?'':'none';}if(_selbar)_selbar.style.display=POOL_SEL.size?'flex':'none';};
   const buildCell=(m,sel,onToggle)=>{
     sel=sel||POOL_SEL; onToggle=onToggle||updateMakeBtn;
     const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
@@ -7336,9 +7338,11 @@ function socLibrary(v){
   };
   const blank=el('button','btn-set','＋ Blank post');blank.style.cssText='margin:12px 0 0 8px';
   blank.onclick=()=>openComposer(newPost(wk),true);
-  poolCard.appendChild(makeBtn); // cross-group selection bar — hidden until you tick photos in one or more jobs
-  poolCard.appendChild(dlSelBtn); // download the ticked content (one or many) — zip on desktop, share sheet on phone
   poolCard.appendChild(blank);
+  // Sticky action bar — the selection CTAs ride at the bottom of the screen the instant you tick a photo (no scroll to the end of a long library)
+  _selbar=el('div','selbar');_selbar.style.display='none';
+  makeBtn.style.margin='0';dlSelBtn.style.margin='0';
+  _selbar.appendChild(makeBtn);_selbar.appendChild(dlSelBtn);
   if(typeof isOwner==='function'&&isOwner()){
     delBtn=el('button','btn-set danger');delBtn.style.cssText='margin:12px 0 0 8px';delBtn.style.display='none';delBtn.textContent='🗑 Delete forever';
     delBtn.onclick=async()=>{
@@ -7351,7 +7355,7 @@ function socLibrary(v){
       if(!await uiConfirm('Delete '+n+' selected item'+(n>1?'s':'')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;
       const ids=del.map(m=>m.id);POOL_SEL.clear();poolDeleteItems(ids);
     };
-    if(!grouped)poolCard.appendChild(delBtn); // grouped views use each group's own Delete
+    if(!grouped){delBtn.style.margin='0';_selbar.appendChild(delBtn);} // grouped views use each group's own Delete
     const dupBtn=el('button','btn-set','🔍 Find duplicates');dupBtn.style.cssText='margin:12px 0 0 8px';
     dupBtn.onclick=()=>openDuplicateScanner();
     poolCard.appendChild(dupBtn);
@@ -7361,6 +7365,7 @@ function socLibrary(v){
       poolCard.appendChild(auditBtn);
     }
   }
+  poolCard.appendChild(_selbar);   // the sticky selection bar goes last so it pins to the bottom of the viewport
   updateMakeBtn();
   v.appendChild(poolCard);
 
@@ -7593,12 +7598,14 @@ function readyCard(p){
   };
   const copyAll=el('button','btn-set primary','📋 Copy caption + hashtags');copyAll.title='Copies the caption and hashtags together, ready to paste';
   copyAll.onclick=()=>copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags');
-  const ig=el('button','btn-set','📷 Instagram');ig.title='Open Instagram to paste + post';
-  ig.onclick=()=>window.open('https://www.instagram.com/','_blank','noopener');
-  const fb=el('button','btn-set','📘 Facebook');fb.title='Open Facebook to paste + post';
-  fb.onclick=()=>window.open('https://www.facebook.com/','_blank','noopener');
-  const bs=el('button','btn-set','🗂 Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
-  bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
+  // Copy the caption+hashtags FIRST, then open the channel — one tap instead of two (and the toast confirms it copied)
+  const _copyGo=(url)=>{ try{ copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags'); }catch(e){} window.open(url,'_blank','noopener'); };
+  const ig=el('button','btn-set','📷 Instagram');ig.title='Copies the caption, then opens Instagram to paste';
+  ig.onclick=()=>_copyGo('https://www.instagram.com/');
+  const fb=el('button','btn-set','📘 Facebook');fb.title='Copies the caption, then opens Facebook to paste';
+  fb.onclick=()=>_copyGo('https://www.facebook.com/');
+  const bs=el('button','btn-set','🗂 Business Suite');bs.title='Copies the caption, then opens Business Suite (post to FB + IG in one place)';
+  bs.onclick=()=>_copyGo('https://business.facebook.com/latest/home');
   // 🏷️ Tag reminder — the one thing she must do by hand on every post
   const rem=el('div','rcremind');
   if(p.platform==='li'){
@@ -7608,7 +7615,7 @@ function readyCard(p){
     rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
     rem.innerHTML='🏷️ <b>Before you post — tag Sebastian:</b> on <b>Instagram</b> tag <b>@Sebastianaadolf</b>, and on <b>Facebook</b> tag <b>Sebastian Adolf</b>. Do it on every post.';
   }
-  const liBtn=el('button','btn-set','💼 Open LinkedIn');liBtn.title='Open the Window Guardians LinkedIn page to paste + post';liBtn.onclick=()=>window.open('https://www.linkedin.com/company/window-guardians/','_blank','noopener');
+  const liBtn=el('button','btn-set','💼 Open LinkedIn');liBtn.title='Copies the caption, then opens the WG LinkedIn page to paste';liBtn.onclick=()=>_copyGo('https://www.linkedin.com/company/window-guardians/');
   foot.appendChild(copyAll);foot.appendChild(dlb);
   if(p.platform==='li'){ foot.appendChild(liBtn); } else { foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs); }
   foot.appendChild(done);
@@ -7667,7 +7674,7 @@ function openComposer(idOrPost,isNew){
   tf0.appendChild(tseg);b.appendChild(tf0);
 
   // category segmented
-  const pf=el('div','cmp-field');pf.innerHTML='<label>Category</label>';
+  const pf=el('div','cmp-field');pf.innerHTML="<label>What's this about?</label>";
   const seg=el('div','seg');
   SOC_PILLARS.forEach(pl=>{const btn=el('button','seg-b'+(p.pillar===pl.id?' on':''),`${pl.icon} ${pl.t}`);btn.dataset.pid=pl.id;btn.onclick=()=>{p.pillar=pl.id;seg.querySelectorAll('.seg-b').forEach(x=>x.classList.remove('on'));btn.classList.add('on');scheduleDraft();};seg.appendChild(btn)});
   pf.appendChild(seg);b.appendChild(pf);
@@ -7833,10 +7840,10 @@ function openComposer(idOrPost,isNew){
   const caBest=el('button','btn-set ai-draft primary','✨ Best');caBest.title='AI reads the photos and picks the strongest angle + vibe. ~1¢';
   const caTeach=el('button','btn-set ai-draft','💡 Teach');caTeach.title='Expert tip / "did you know" — builds trust. ~1¢';
   const caProduct=el('button','btn-set ai-draft','🔧 Product / Install');caProduct.title='Centers on your product + the quality of the install (features, craftsmanship, warranty). ~1¢';
-  // 🔥 Bold at 3 escalating strengths — each one generates immediately (no separate dial)
-  const caBoldMild=el('button','btn-set ai-draft','🔥 Bold');caBoldMild.title='Witty, edgy, scroll-stopping. ~1¢';
-  const caBold=el('button','btn-set ai-draft','😈 Bolder');caBold.title='Cranked up — more swagger + a wilder angle. ~1¢';
-  const caBoldMax=el('button','btn-set ai-draft','💥 Unhinged');caBoldMax.title='Full chaos — absurd + fearless, still clean. ~1¢';
+  // Punchy at 3 escalating strengths — each one generates immediately (no separate dial)
+  const caBoldMild=el('button','btn-set ai-draft','🔥 Punchy');caBoldMild.title='Witty, edgy, scroll-stopping. ~1¢';
+  const caBold=el('button','btn-set ai-draft','💪 Bolder');caBold.title='Cranked up — more swagger + a wilder angle. ~1¢';
+  const caBoldMax=el('button','btn-set ai-draft','💥 Boldest');caBoldMax.title='Maximum swagger — fearless, still clean. ~1¢';
   // AUTO: empty caption box = fresh idea; if you've typed a caption, the AI builds on YOUR words. (No toggle.)
   let aiBusy=false;
   const ALLB=[caBest,caTeach,caProduct,caBoldMild,caBold,caBoldMax];
@@ -8263,6 +8270,8 @@ function enterApp(){
     else if(allowed.indexOf(activeProgram())<0){ const home=(PROGRAMS[allowed[0]]||{}).home; if(home&&currentFile()!==home){location.href=home;return;} }
   }
   ensureLogoutBtn(); ensurePwBtn(); ensureSyncPill(); ensureTourBtn();
+  // Posters (Ruth) don't need the owner's admin chrome — hide Export/Import/Reset/Print so her bar is clean and a team-wipe Reset isn't a mis-tap away. (Owner keeps them, even when viewing-as-Ruth.)
+  if(typeof amPoster==='function' && amPoster()){ ['btnExport','btnImport','btnReset','btnPrint'].forEach(function(id){ var b=document.getElementById(id); if(b)b.style.display='none'; }); }
   buildNav();render();
   if(typeof maybeRunTour==='function')maybeRunTour();
 }
@@ -8284,7 +8293,8 @@ function buildNav(){
 function buildMob(){
   const m=$('#mobnav');if(!m)return;m.innerHTML='';
   const cur=currentFile();
-  navItems().filter(n=>!n.sec&&navVisible(n)).forEach(n=>{const a=el('a',cur===n.file?'active':'',n.label);
+  // native bottom-tab style: icon over label (mirrors the desktop sidebar's icons, which mobile was dropping)
+  navItems().filter(n=>!n.sec&&navVisible(n)).forEach(n=>{const a=el('a',cur===n.file?'active':'',`<span class="ic">${n.ic||'•'}</span><span class="lb">${esc(n.label)}</span>`);
     a.setAttribute('href',n.file);m.appendChild(a)});
 }
 /* Program switcher — the topbar project pill with a native <select>, styled to
