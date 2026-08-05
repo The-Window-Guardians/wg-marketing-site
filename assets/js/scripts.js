@@ -2168,6 +2168,31 @@ function openContentAudit(){
     rf.innerHTML='<label>♻ Restore deleted photos (from Drive)</label><p class="muted">Nothing to restore — no Drive-sourced photos are currently deleted. (Phone-uploaded photos can’t be restored after the Undo window; re-upload from your camera roll.)</p>';
   }
   b.appendChild(rf);
+  // ↩ Switching social accounts: send every already-posted post back to the Ready-to-post queue so the
+  //    whole back catalogue can be re-published to a NEW Instagram/Facebook. Keeps photos + captions.
+  var postedN=socPosts().filter(function(p){return p.status==='posted';}).length;
+  var qf=el('div','cmp-field');qf.style.marginTop='12px';
+  if(postedN>0){
+    qf.innerHTML='<label>↩ New social account — re-queue posted</label><p class="muted">Send all <b>'+postedN+'</b> already-posted post'+(postedN>1?'s':'')+' back to the <b>Ready-to-post queue</b> so they can be published again to a new Instagram/Facebook account. Keeps every photo, video, and caption, and re-enables “Send to GoHighLevel.”</p>';
+    var qb=el('button','btn-set primary','↩ Re-queue '+postedN+' posted post'+(postedN>1?'s':''));
+    qb.onclick=async function(){
+      if(!await uiConfirm('Send all '+postedN+' posted post'+(postedN>1?'s':'')+' back to the Ready-to-post queue for a new account? Every photo and caption is kept — nothing is deleted.',{title:'Re-queue for new account?',confirmText:'Re-queue all'}))return;
+      var n=0;
+      socPosts().forEach(function(p){
+        if(p.status!=='posted')return;
+        p.status='approved'; delete p.sentToGhl; delete p.postedAt; p._ut=Date.now();   // back to the ready queue + let it be sent again
+        (p.media||[]).forEach(function(m){ var pm=socPool().find(function(x){return x.id===m.id;}); if(pm&&pm.status==='posted'){ pm.status='used'; pm.purged=false; pm._ut=Date.now(); } }); // un-archive its media
+        n++;
+      });
+      commit(); closeComposer();
+      if(typeof render==='function')render();
+      toast('↩ '+n+' post'+(n>1?'s':'')+' back in the Ready-to-post queue ✓');
+    };
+    qf.appendChild(qb);
+  } else {
+    qf.innerHTML='<label>↩ New social account — re-queue posted</label><p class="muted">No posted posts yet — nothing to re-queue.</p>';
+  }
+  b.appendChild(qf);
   var bf=el('div','cmp-field');bf.style.marginTop='12px';
   if(s.baFolder||s.baJobs){
     bf.innerHTML='<label>Old Before / After folder</label><p class="muted">Import your '+s.baFolder+' photo'+(s.baFolder!==1?'s':'')+(s.baJobs?(' + '+s.baJobs+' saved job'+(s.baJobs>1?'s':'')):'')+' into Content — they keep their Before/After stage tag and stay location-tracked. Undoable.</p>';
