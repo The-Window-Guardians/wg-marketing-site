@@ -3395,7 +3395,7 @@ function postGaps(p){
   if(!postMedia(p).length)g.push('media');
   if(!(p.caption||'').trim())g.push('caption');
   if(p&&p.platform!=='li' && !(p.hashtags||'').trim())g.push('hashtags'); // LinkedIn posts don't need a hashtag stack — never block approve on it
-  if(!Object.values(p.platforms||{}).some(Boolean))g.push('platform');
+  if(!(p.platform||'').trim() && !Object.values(p.platforms||{}).some(Boolean))g.push('platform'); // accept the current single `platform` field (composer was simplified from a `platforms` multi-select) — this was silently blocking every Approve
   // date is intentionally optional — post any day, just stay consistent
   return g;
 }
