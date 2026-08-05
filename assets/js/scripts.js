@@ -7355,7 +7355,7 @@ function socLibrary(v){
       if(!await uiConfirm('Delete '+n+' selected item'+(n>1?'s':'')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;
       const ids=del.map(m=>m.id);POOL_SEL.clear();poolDeleteItems(ids);
     };
-    if(!grouped){delBtn.style.margin='0';_selbar.appendChild(delBtn);} // grouped views use each group's own Delete
+    delBtn.style.margin='0';_selbar.appendChild(delBtn); // Delete rides in the reachable bottom bar in EVERY view (groups still have their own too)
     const dupBtn=el('button','btn-set','🔍 Find duplicates');dupBtn.style.cssText='margin:12px 0 0 8px';
     dupBtn.onclick=()=>openDuplicateScanner();
     poolCard.appendChild(dupBtn);
