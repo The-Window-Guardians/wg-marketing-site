@@ -203,7 +203,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
   .cols-2,.cols-3,.cols-4{grid-template-columns:1fr}
   .mobnav{display:flex!important}
   body{padding-bottom:calc(62px + env(safe-area-inset-bottom,0px))} /* clear the fixed bottom tab bar */
-  .selbar{bottom:calc(62px + env(safe-area-inset-bottom,0px))} /* float the selection bar just above the bottom nav */
+  body .selbar{bottom:calc(62px + env(safe-area-inset-bottom,0px));padding-bottom:10px} /* float the selection bar just above the bottom nav (body-scoped so it beats the base .selbar bottom:0) */
 }
 .sec-title{display:flex;align-items:center;gap:10px;margin:0 0 12px}
 .sec-title .chip{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px}
