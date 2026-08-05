@@ -7599,15 +7599,14 @@ function readyCard(p){
   fb.onclick=()=>window.open('https://www.facebook.com/','_blank','noopener');
   const bs=el('button','btn-set','🗂 Business Suite');bs.title='Post to Facebook + Instagram (and answer DMs) in one place';
   bs.onclick=()=>window.open('https://business.facebook.com/latest/home','_blank','noopener');
-  // 📍 Location reminder — the one thing she must do by hand for the native pin
-  const locTown=((typeof effectiveTown==='function'?effectiveTown(p):'')||p.town||'').trim();
+  // 🏷️ Tag reminder — the one thing she must do by hand on every post
   const rem=el('div','rcremind');
   if(p.platform==='li'){
     rem.style.cssText='background:#eef3fb;border:1px solid #0a66c2;border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
-    rem.innerHTML='💼 <b>Post to the Window Guardians LinkedIn company page</b> (not a personal profile). Copy the caption and hashtags, attach the photo, and post. No location tag needed on LinkedIn.';
+    rem.innerHTML='💼 <b>Post to the Window Guardians LinkedIn company page</b> (not a personal profile). Copy the caption and hashtags, attach the photo, and post.';
   } else {
     rem.style.cssText='background:var(--orange-soft,#fff3e6);border:1px solid var(--orange,#e8852e);border-radius:9px;padding:9px 12px;margin:6px 0 2px;font-size:13px;color:var(--ink);line-height:1.4';
-    rem.innerHTML='📍 <b>Before you post:</b> tap <b>Add location</b> in the app to '+(locTown?('<b>'+esc(locTown)+', PA</b>'):'the job’s town')+'. (This is the local-reach boost, do it every time.)';
+    rem.innerHTML='🏷️ <b>Before you post — tag Sebastian:</b> on <b>Instagram</b> tag <b>@Sebastianaadolf</b>, and on <b>Facebook</b> tag <b>Sebastian Adolf</b>. Do it on every post.';
   }
   const liBtn=el('button','btn-set','💼 Open LinkedIn');liBtn.title='Open the Window Guardians LinkedIn page to paste + post';liBtn.onclick=()=>window.open('https://www.linkedin.com/company/window-guardians/','_blank','noopener');
   foot.appendChild(copyAll);foot.appendChild(dlb);
