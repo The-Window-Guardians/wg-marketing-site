@@ -57,7 +57,9 @@ button{font-family:inherit;cursor:pointer}
 a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible,[role="button"]:focus-visible{outline:3px solid var(--orange);outline-offset:2px;border-radius:6px}
 @media (max-width:560px){
   /* Keep the navy top bar to ONE slim row on phones (was wrapping to 2-3 rows and eating the screen) */
-  .topbar{gap:8px;padding:6px 10px;flex-wrap:nowrap;overflow-x:auto}
+  .topbar{gap:8px;padding:6px 10px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap}
+  .topbar>*{flex-shrink:0} /* don't let items squeeze + wrap their text vertically — keep them full-width and scroll sideways instead */
+  .topbar .spacer{flex:1 1 auto} /* the empty spacer stays the only flexible element */
   .tb-btn{padding:6px 9px;font-size:12px}
   .tb-sync{padding:5px 8px;font-size:11px}
   .brand small{display:none}
