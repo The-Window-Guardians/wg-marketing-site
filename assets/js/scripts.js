@@ -1216,7 +1216,7 @@ async function publishImagePublic(id){
     // Already a public R2 image (streamed up at add-time)? Reuse it — no re-encode, no re-upload.
     var pm=(typeof socPool==='function')?socPool().find(function(x){return x.id===id;}):null;
     if(pm&&pm.imgUrl)return pm.imgUrl;
-    var b=await mediaToB64(id,1280); if(!b||!b.data)return null;       // decent resolution for social
+    var b=await mediaToB64(id,4096,{full:true}); if(!b||!b.data)return null;   // FULL resolution @ q0.92 — social gets the real photo, never the grid thumbnail
     var r=await fetch('/publish-image',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,mime:b.mediaType,data:b.data})});
     var j=await r.json(); return (j&&j.url)?j.url:null;
   }catch(e){ return null; }
@@ -1636,13 +1636,24 @@ var _NET_MAX=5, _netActive=0, _netQueue=[];
 function _netAcquire(){ return new Promise(function(res){ if(_netActive<_NET_MAX){ _netActive++; res(); } else { _netQueue.push(res); } }); }
 function _netRelease(){ if(_netQueue.length){ var r=_netQueue.shift(); r(); } else { _netActive=Math.max(0,_netActive-1); } }
 /* fetch a cloud-stored media file (WebP) by id — social pool photos (pf_) or handoff photos (hf_) */
-async function cloudFileGet(id){
+/* opts.full = the caller needs the REAL photo (download / publish), not a preview. Some records in
+   `poolfiles` are only 560px backfilled thumbnails (thumbBackfill:true, written for Drive imports
+   whose full-res never reached R2). Those are fine for the grid but must not masquerade as the
+   original — with opts.full we prefer a true full-res record (imgUrl = R2 original) and, if only a
+   thumb exists, we still return it but stamp isThumb so the caller can warn instead of silently
+   handing over a small file. */
+async function cloudFileGet(id,opts){
   if(!window.WG_DB||!id)return null;
+  opts=opts||{};
   var cols = id.indexOf('hf_')===0?['hfiles']:id.indexOf('pf_')===0?['poolfiles']:['poolfiles','hfiles'];
   await _netAcquire();
   try{
-    for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()){ const dt=d.data(); if(dt.dataUrl)return dt; if(dt.imgUrl)return Object.assign({},dt,{dataUrl:dt.imgUrl}); } }catch(e){} } // R2 photos expose imgUrl → hand it back as dataUrl so every img-src/download consumer just works
-    return null;
+    var thumbOnly=null;
+    for(const c of cols){ try{ const d=await WG_DB.collection('workspaces').doc('wg').collection(c).doc(id).get(); if(d.exists&&d.data()){ const dt=d.data();
+      if(dt.imgUrl)return Object.assign({},dt,{dataUrl:dt.imgUrl});                    // R2 original — always the best source
+      if(dt.dataUrl){ if(opts.full && dt.thumbBackfill){ if(!thumbOnly)thumbOnly=Object.assign({},dt,{isThumb:true}); continue; } return dt; }
+    } }catch(e){} } // R2 photos expose imgUrl → hand it back as dataUrl so every img-src/download consumer just works
+    return thumbOnly;   // only a preview-sized copy exists; flagged so downloads can say so
   } finally { _netRelease(); }
 }
 /* ---- GRID THUMBNAILS: a separate `thumbs` collection of SMALL (560px) copies.
@@ -1827,6 +1838,10 @@ async function poolAddFiles(fileList,folder){
             if(geo){item.lat=geo.lat;item.lng=geo.lng;}
             if(folder)item.folder=folder;
             if(_sig)item.sig=_sig;
+            // R2 was unreachable, so what we just stored is a REDUCED copy. Keep the untouched
+            // original on this device and flag it, so backfillFullRes can upload the real photo
+            // later (on wifi) instead of the full-res being lost forever. — HD preservation
+            try{ const _rec=await fileAdd(raw,'',S.role,'pool'); if(_rec&&_rec.id){ item.fullLocalId=_rec.id; item.lowres=true; } }catch(_fr){}
             addToPool(item); VTHUMB[id]=dataUrl;
           }catch(e){ imgFailed++; try{ const f=await normalizeImage(raw); const rec=await fileAdd(f,'',S.role,'pool'); const it={id:rec.id,name:rec.name,type:rec.type,status:'available',addedAt:Date.now()}; if(folder)it.folder=folder; if(_sig)it.sig=_sig; addToPool(it); if(_du)VTHUMB[rec.id]=_du; else { try{VTHUMB[rec.id]=await encodePhoto(raw);}catch(_t){} } }catch(e2){} } } // cloud failed → keep a local copy AND a thumbnail so it never shows blank
         } else { // video (or offline image) -> local first, then videos ALSO stream up to the shared bucket
@@ -1929,6 +1944,37 @@ async function backfillLocalVideos(){
   if(done){ commit(); if(typeof render==='function')render(); }
   return done;
 }
+/* HD REPAIR: photos added while R2 was unreachable were stored as a reduced copy, with the
+   untouched original parked on the device (item.lowres + item.fullLocalId). As soon as there's a
+   real connection, push the ORIGINAL to R2 and switch the item over to it, so the library, the
+   downloads and anything published all become true full quality again. Runs quietly, capped. */
+var _fullResBusy=false;
+async function backfillFullRes(maxN){
+  try{
+    if(_fullResBusy)return 0;
+    if(!window.WG_FB_READY||!WG_AUTH.currentUser||!navigator.onLine)return 0;
+    _fullResBusy=true;
+    var cap=maxN||6, fixed=0;
+    var pending=socPool().filter(function(m){ return m&&m.lowres&&m.fullLocalId&&!m.imgUrl; });
+    for(var i=0;i<pending.length && fixed<cap;i++){
+      var m=pending[i];
+      try{
+        var rec=await fileGet(m.fullLocalId); if(!rec||!rec.blob)continue;      // original gone from this device
+        var blob=rec.blob, mime=rec.type||m.type||'image/jpeg';
+        var disp=/^image\/(jpe?g|png|webp|gif)$/i.test(mime);
+        if(!disp || blob.size>24000000){ blob=await encodePhotoBlob(rec.blob); mime=(blob&&blob._mime)||'image/jpeg'; }  // HEIC/huge → full-res 4096@0.92
+        if(!blob)continue;
+        var url=await streamImageToR2(m.id, blob, mime);
+        if(!url)continue;                                                       // still no R2 — try again next pass
+        m.imgUrl=url; delete m.lowres; m._ut=Date.now(); fixed++;
+        try{ await WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(m.id).set({name:m.name||'photo.jpg',type:mime,imgUrl:url,by:(WG_AUTH.currentUser.email||''),at:Date.now()},{merge:true}); }catch(e){}
+      }catch(e){ /* leave it; retry next pass */ }
+    }
+    if(fixed){ try{ commit(); if(typeof render==='function')render(); }catch(e){} }
+    return fixed;
+  }catch(e){ return 0; }
+  finally{ _fullResBusy=false; }
+}
 /* Can THIS browser genuinely DECODE this video? canPlayType() lies about HEVC (Chrome reports
    "maybe" for video/mp4 then fails), so we probe for real — metadata only, never the whole clip.
    Returns true (plays) / false (cannot decode) / null (unknown: offline, slow, timed out).
@@ -1975,7 +2021,7 @@ async function backfillVideoProxies(maxN){
 var _vgActive=0, _vgQ=[];
 function _vidGateGlobal(){ return new Promise(function(res){ if(_vgActive<2){_vgActive++;res();} else _vgQ.push(res); }); }
 function _vidReleaseGlobal(){ _vgActive=Math.max(0,_vgActive-1); const n=_vgQ.shift(); if(n){_vgActive++;n();} }
-if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} }); }
+if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} try{backfillFullRes();}catch(e){} }); }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id)){m.status=status;m._ut=Date.now();}});} // bump _ut so a status change (used/available/posted) can't be reverted by a stale cloud copy
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
@@ -3170,12 +3216,19 @@ function captionImprove(p){
 /* VISION: turn a pool photo into a small base64 JPEG so Claude can actually SEE it.
    Downscaled to ~maxPx so the upload + token cost stay tiny (~a few hundred tokens/photo).
    Pulls from the in-memory thumb cache first, then the local blob, then the cloud copy. */
-async function mediaToB64(id,maxPx){
-  maxPx=maxPx||640;
+/* opts.full = this is going OUT to the world (published to FB/IG/GHL), so quality matters:
+   NEVER start from the small grid thumbnail (VTHUMB holds a 560px copy — publishing that put a
+   soft ~560px image on social), always prefer the full-res original, and encode at q0.92.
+   Without opts.full this stays the cheap path used for AI vision + previews. */
+async function mediaToB64(id,maxPx,opts){
+  maxPx=maxPx||640; opts=opts||{};
+  var wantFull=!!opts.full, q=wantFull?0.92:0.8;
   try{
-    var src=(typeof VTHUMB!=='undefined'&&VTHUMB[id])?VTHUMB[id]:null, revoke=false;
+    var src=null, revoke=false;
+    if(!wantFull && typeof VTHUMB!=='undefined' && VTHUMB[id]) src=VTHUMB[id];         // cheap path only
     if(!src){ try{ var rec=await fileGet(id); if(rec&&rec.blob){ src=URL.createObjectURL(rec.blob); revoke=true; } }catch(e){} }
-    if(!src){ try{ var c=await cloudFileGet(id); if(c&&c.dataUrl)src=c.dataUrl; }catch(e){} }
+    if(!src){ try{ var c=await cloudFileGet(id, wantFull?{full:true}:null); if(c&&c.dataUrl)src=c.dataUrl; }catch(e){} }
+    if(!src && wantFull && typeof VTHUMB!=='undefined' && VTHUMB[id]) src=VTHUMB[id];  // last resort so publishing never hard-fails
     if(!src)return null;
     // For http(s) sources (R2 photos), request CORS so drawing to a canvas never taints it — our
     // /img route sends Access-Control-Allow-Origin:* so this works even from a custom domain.
@@ -3183,7 +3236,7 @@ async function mediaToB64(id,maxPx){
     var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; if(!w||!h){ if(revoke)try{URL.revokeObjectURL(src)}catch(e){} return null; }
     var sc=Math.min(1,maxPx/Math.max(w,h)), cw=Math.max(1,Math.round(w*sc)), ch=Math.max(1,Math.round(h*sc));
     var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch);
-    var durl=cv.toDataURL('image/jpeg',0.8);
+    var durl=cv.toDataURL('image/jpeg',q);
     if(revoke)try{URL.revokeObjectURL(src)}catch(e){}
     return { mediaType:'image/jpeg', data:durl.slice(durl.indexOf(',')+1) };
   }catch(e){ return null; }
@@ -3730,6 +3783,7 @@ async function fbSyncStart(){
     if(typeof render==='function')render();
     if(typeof ensureSyncPill==='function')ensureSyncPill();
     setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} },1200); // push any device-only photos + videos to the backbone now that we're online
+    setTimeout(function(){ try{backfillFullRes();}catch(e){} },6000);       // repair any photo that had to be saved small on a weak signal — push the real original up now
     setTimeout(function(){ try{backfillVideoProxies();}catch(e){} },20000); // then quietly pre-build H.264 copies for any video this browser can't play (desktop only) — so they're ready BEFORE anyone opens them
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
@@ -7500,7 +7554,7 @@ function viewCalendar(v){return viewSocialDashboard(v);}
 /* Load EVERY photo on a post into real File objects (local blob first, else the cloud copy).
    Returns {files, miss, vid}: miss = photos not synced to this device yet, vid = videos (can't sync). */
 async function gatherPostFiles(arr){
-  const files=[]; let miss=0,vid=0;
+  const files=[]; let miss=0,vid=0,lowres=0;   // lowres = only a preview-sized copy existed on this device
   for(const m of (arr||[])){
     const isVid=m.skipReason==='video'||/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
     try{
@@ -7511,12 +7565,13 @@ async function gatherPostFiles(arr){
         if(vurl){ try{ const b=await (await fetch(vurl)).blob(); files.push(new File([b], m.name||'video.mp4', {type:b.type||'video/mp4'})); continue; }catch(e){} }
         vid++; continue;                                              // not published anywhere → only on the original device
       }
-      const c=await cloudFileGet(m.id);
-      if(c&&c.dataUrl){ const b=await (await fetch(c.dataUrl)).blob(); files.push(new File([b], c.name||m.name||'photo.jpg', {type:b.type||'image/jpeg'})); }
+      const c=await cloudFileGet(m.id,{full:true});   // the real photo, never a 560px preview record
+      if(c&&c.dataUrl){ const b=await (await fetch(c.dataUrl)).blob(); files.push(new File([b], c.name||m.name||'photo.jpg', {type:b.type||'image/jpeg'})); if(c.isThumb)lowres++; }
       else miss++;
     }catch(e){ miss++; }
   }
-  return {files:files, miss:miss, vid:vid};
+  if(lowres){ try{ toast('⚠ '+lowres+' photo'+(lowres>1?'s':'')+' downloaded as a preview copy — open the app on the device that has the original for full quality.'); }catch(e){} }
+  return {files:files, miss:miss, vid:vid, lowres:lowres};
 }
 /* Tiny dependency-free ZIP writer (STORE method — images are already compressed).
    Bundling all photos into ONE file is the only reliable desktop download: a single
