@@ -6940,19 +6940,7 @@ function revealPhoto(id){
 function socLibrary(v){
   const cw=currentWeek();
   const wk=cw?cw.id:(WEEKS[0]&&WEEKS[0].id)||1;
-  const _actionCard=actionCenterCard(); let _coachCard=null;   // held — appended BELOW Add-content so uploading is the first thing in reach
-
-  // coach
-  if(cw){
-    const sug=aiSuggest(cw.id);
-    const ai=el('div','card pad aibox');
-    ai.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🧭</div><div><h3>Your Social Media Coach</h3><small>Tells you where you stand · the AI that writes captions lives inside each post</small></div></div><p class="ai-msg">${sug.msg}</p>`;
-    if(sug.type==='finish'||sug.type==='approve'){
-      const act=el('button','btn-set primary',sug.type==='approve'?'Review & approve →':'Finish this one →');
-      act.onclick=()=>openComposer(sug.post.id);ai.appendChild(act);
-    }
-    _coachCard=ai;
-  }
+  const _actionCard=actionCenterCard();   // held — appended BELOW Add-content so uploading is the first thing in reach
 
   // ---- ADD CONTENT (regular photos · before/after · video · optional Drive) ----
   const add=el('div','card pad');add.style.marginTop='12px';
@@ -7004,7 +6992,6 @@ function socLibrary(v){
   }
   v.appendChild(add);                       // Add content first — the #1 job is above the fold now
   v.appendChild(_actionCard);               // then "what needs you now"
-  if(_coachCard)v.appendChild(_coachCard);  // then the coach
   gdAutoResume();
 
   // ---- CONTENT POOL: tick pieces → make a post ----
