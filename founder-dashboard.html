@@ -2035,7 +2035,7 @@
       <div style="font-size: 13px; line-height: 1.7; color: var(--text-2);">
         <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Today</strong> — your daily home base. North Star ribbon · Focus Ladder · <strong>Right Now</strong> + <strong>Big 3</strong> · AI bar · <strong>Today's Routine</strong> (live time-aware playbook) + <strong>Today's Calendar</strong> (real appointments only) · <strong>Today's Tasks</strong> (deadline = today) · <strong>My Weekly Sales Activity</strong> (call counters) · <strong>My Tasks &amp; Reminders</strong> (future + undated master list). Scroll top → bottom = morning → evening.</div>
         <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Founder</strong> — you as a person. Mantra · Focus areas · Founder Score · Evening Check-in habits (unlock 7 PM) · history of your score.</div>
-        <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Team</strong> — every team member has a card. Each card shows: what they own, projects they own, your tasks for them, cadence. Add freelancers via the "+ Add Team Member" tile. The "+ Add ask for [Name]" button on each card is how you put a task on their card. All team-tied tasks also appear in "All Team Tasks" at the bottom.</div>
+        <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Team</strong> — every team member has a card. Each card shows: what they own, projects they own, your tasks for them, cadence. Add freelancers via the "+ Add Team Member" tile. The "+ Add task for [Name]" button on each card is how you put a task on their card. All team-tied tasks also appear in "All Team Tasks" at the bottom.</div>
         <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Customers</strong> — Pipeline (GHL) + Customer Journey (Signed → Measured → Awaiting Approval → Ordered → Installed → Reviewed).</div>
         <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Work</strong> — Projects (with subtasks + assigned members) + Capture (brain dump for ideas, competitor sightings, customer stories).</div>
         <div style="margin-bottom: 10px;"><strong style="color: var(--navy);">Review</strong> — Week grid · Money (monthly AP + gross) · <strong>Commitments</strong> (recurring weekly + monthly obligations to your team).</div>
@@ -2085,7 +2085,7 @@
       <h3 style="font-size: 14px; color: var(--orange); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px;">THE GOLDEN RULES</h3>
       <ul style="font-size: 13px; line-height: 1.7; color: var(--text-2); padding-left: 20px;">
         <li><strong>Tasks bucket #1 — yours:</strong> Today tab → split into "Today's Tasks" (anything with a deadline of today) + "My Tasks &amp; Reminders" (future + undated). Personal todos only.</li>
-        <li><strong>Tasks bucket #2 — team-tied:</strong> Team tab → on each member's card via "+ Add ask for [Name]". Also rolled up at the bottom of Team tab in "All Team Tasks."</li>
+        <li><strong>Tasks bucket #2 — team-tied:</strong> Team tab → on each member's card via "+ Add task for [Name]". Also rolled up at the bottom of Team tab in "All Team Tasks."</li>
         <li><strong>The AI Companion (💬 button bottom-left):</strong> ask anything, dictate tasks, request a daily debrief or a quarterly report. It can add tasks, projects, customers, decisions, and habits via natural language.</li>
         <li><strong>North Star</strong> = quarterly target — the orange ribbon at top of every tab.</li>
         <li><strong>Capture</strong> = brain dump. Anytime you see/hear/think something worth keeping. Saturday's Creative Block pulls from this so you never start blank.</li>
@@ -13912,7 +13912,7 @@ function removeFreelance(id) {
 
 async function quickAddTeamAsk(who) {
   const displayName = who.charAt(0).toUpperCase() + who.slice(1);
-  const text = prompt(`Add a task for ${displayName} — what do they need from you?\n\nTip: include a deadline ("by Friday", "tomorrow", "next week") and it'll auto-detect.`);
+  const text = await askTaskTextModal(displayName);
   if (!text || !text.trim()) return;
   if (!state.myTasks) state.myTasks = [];
 
@@ -14062,7 +14062,7 @@ function renderTeam() {
       </details>
 
       <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        <button class="btn btn-orange btn-sm" onclick="quickAddTeamAsk('${key}')">+ Add ask for ${t.name}</button>
+        <button class="btn btn-orange btn-sm" onclick="quickAddTeamAsk('${key}')">+ Add task for ${t.name}</button>
         <button class="btn btn-sm" style="background: var(--navy); color: white; border-color: var(--navy);" onclick="openProjectModal('${t.name}')">+ Add project for ${t.name}</button>
       </div>
 
@@ -14147,7 +14147,7 @@ function renderAllTeamTasks() {
 
   // Render all four containers
   renderInto(coreTodayContainer, coreToday, 'No core team tasks due today or overdue. ✓ Clean — your team has room to think.');
-  renderInto(coreContainer, coreMaster, 'No remaining core team tasks. Use the "+ Add ask for [Name]" buttons on each Core team card to add one.');
+  renderInto(coreContainer, coreMaster, 'No remaining core team tasks. Use the "+ Add task for [Name]" buttons on each Core team card to add one.');
   renderInto(secondaryTodayContainer, secondaryToday, 'No secondary team tasks due today or overdue.');
   renderInto(secondaryContainer, secondaryMaster, 'No remaining secondary team tasks. Add a freelancer/contractor + assign them a task.');
 }
@@ -18558,6 +18558,31 @@ function closeModal(id) { document.getElementById(id).classList.remove("show"); 
 //   cancelled === true  → user backed out entirely (don't add task)
 // ============================================================
 window._deadlineAskResolve = null;
+// On-brand text input for adding a team task — replaces the native prompt() so it matches the app.
+function askTaskTextModal(displayName) {
+  return new Promise((resolve) => {
+    const titleEl = document.getElementById("team-task-title");
+    const inp = document.getElementById("team-task-input");
+    if (titleEl) titleEl.textContent = `Add a task for ${displayName}`;
+    if (inp) inp.value = "";
+    _syncTeamTaskBtn();
+    openModal("modal-team-task");
+    setTimeout(() => { if (inp) inp.focus(); }, 60);
+    window._teamTaskResolve = resolve;
+  });
+}
+function _syncTeamTaskBtn() {
+  const inp = document.getElementById("team-task-input");
+  const btn = document.getElementById("team-task-add-btn");
+  if (!btn) return;
+  const has = inp && inp.value.trim().length > 0;
+  btn.disabled = !has; btn.style.opacity = has ? "1" : "0.5"; btn.style.cursor = has ? "pointer" : "not-allowed";
+}
+function resolveTeamTask(val) {
+  closeModal("modal-team-task");
+  const r = window._teamTaskResolve; window._teamTaskResolve = null;
+  if (r) r((val && val.trim()) ? val.trim() : null);
+}
 function askDeadlineModal(taskText, fuzzyPhrase, opts) {
   opts = opts || {};
   return new Promise((resolve) => {
