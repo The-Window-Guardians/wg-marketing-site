@@ -13371,12 +13371,11 @@ function renderMyTasks() {
   const isPipelineTier = (t) => t.category === "pipeline";
   const isDueToday = (t) => deadlineStatus(t.deadline) === "today";
 
-  // SPLIT TODAY OFF FIRST — tasks due today show up top in "Today's Tasks Due".
-  // EXCEPTION: Lead/Customer tasks due today appear in BOTH Today's Tasks Due AND the Lead/Customer column.
-  // Non-Lead/Customer tasks due today appear ONLY in Today's Tasks Due (not in All Tasks).
-  const dueTodayList = allPersonal.filter(isDueToday);
+  // Lead/Customer (pipeline) tasks live ONLY in the Lead/Customer column — never in Today's Tasks Due
+  // or All Tasks. Everything else due today shows in Today's Tasks Due (and not in All Tasks).
+  const dueTodayList = allPersonal.filter(t => isDueToday(t) && !isPipelineTier(t));
   const allTasksList = allPersonal.filter(t => !isPipelineTier(t) && !isDueToday(t));
-  const pipelineTasksList = allPersonal.filter(t => isPipelineTier(t));  // includes today's lead/customer
+  const pipelineTasksList = allPersonal.filter(t => isPipelineTier(t));  // the ONE home for Lead/Customer tasks
 
   // SORT BY SOONEST-DUE FIRST (overdue at top → today → soon → future → no-deadline at end)
   const sortBySoonestDue = (a, b) => {
