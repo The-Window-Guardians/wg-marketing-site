@@ -6877,7 +6877,7 @@ function ruthQueue(v){
 }
 let POOL_SEL=new Set();
 let POOL_Q=''; // content library search text
-let POOL_KIND='all'; // content filter: all | photos | videos
+let POOL_KIND=(function(){try{return localStorage.getItem('wg_pool_kind')||'all';}catch(e){return 'all';}})(); // content filter: all | photos | videos
 let POOL_GROUP='off'; // off | job (group by location)
 let POOL_SRC='main'; // which Drive source: main folder vs a subfolder (e.g. Before/After)
 let POOL_VIEW=(function(){try{return localStorage.getItem('wg_pool_view')||'gallery';}catch(e){return 'gallery';}})(); // gallery (cover tiles) | list (accordions)
@@ -7011,7 +7011,9 @@ function socLibrary(v){
   const validSrc={main:1}; subfolders.forEach(f=>validSrc[f]=1);
   if(!validSrc[POOL_SRC])POOL_SRC='main';
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
-  const avail=srcItems;
+  // media-type filter (Both · Photos · Videos). The legacy "Videos" folder always shows all its videos.
+  const avail = (POOL_KIND==='all' || POOL_SRC==='Videos') ? srcItems
+              : srcItems.filter(m => POOL_KIND==='videos' ? isVidItem(m) : !isVidItem(m));
   const allAvail=poolAll; // for resolving selections when making a post
   const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
@@ -7040,6 +7042,17 @@ function socLibrary(v){
     poolCard.querySelectorAll('.exptile').forEach(function(t){ var hay=(t.textContent||'').toLowerCase(); t.style.display=(!POOL_Q||hay.indexOf(POOL_Q)>=0)?'':'none'; }); // gallery tiles filter by name too
   };
   ctrls.appendChild(q);
+  // media-type filter: Both · 📷 Photos · 🎬 Videos (counts from this area, before the filter). Hidden in the legacy Videos folder.
+  if(POOL_SRC!=='Videos'){
+    const _nPh=srcItems.filter(m=>!isVidItem(m)).length;
+    const _nVi=srcItems.filter(m=>isVidItem(m)).length;
+    const ktog=el('div','viewtog kindtog');
+    const mkK=(val,label)=>{const b=el('button',POOL_KIND===val?'on':'',label);b.onclick=()=>{POOL_KIND=val;try{localStorage.setItem('wg_pool_kind',val);}catch(e){}GALLERY_OPEN=null;rerenderCal();};return b;};
+    ktog.appendChild(mkK('all','Both'));
+    ktog.appendChild(mkK('photos','📷 Photos'+(_nPh?' ('+_nPh+')':'')));
+    ktog.appendChild(mkK('videos','🎬 Videos'+(_nVi?' ('+_nVi+')':'')));
+    ctrls.appendChild(ktog);
+  }
   // Gallery / List view toggle (grouped photo views only)
   if(grouped && POOL_SRC!=='Videos'){
     const tog=el('div','viewtog');
@@ -7307,7 +7320,7 @@ function socLibrary(v){
       if(_tiered.length&&!_anyOpen)_tiered[0].node.open=true; // first load: open the top group only
       if(needGroup)poolCard.appendChild(needGroup.node);
     }
-    if(!_tiered.length&&!noloc.length)poolCard.appendChild(el('p','muted','Nothing to group here.'));
+    if(!_tiered.length&&!noloc.length)poolCard.appendChild(el('p','muted', POOL_KIND==='videos'?'No videos in this view — tap “Both” above, or add a video.':POOL_KIND==='photos'?'No photos in this view — tap “Both” above, or add photos.':'Nothing to group here.'));
   }else{
     const grid=el('div','poolgrid');
     avail.forEach(m=>grid.appendChild(buildCell(m)));
