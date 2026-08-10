@@ -1398,27 +1398,50 @@ async function mountVideoPlayer(body, relax, ov, pm, nm, localBlob){
     if(poster){ var pim=document.createElement('img'); pim.className='mprev-media'; pim.src=poster; ph.appendChild(pim);
       var pbd=el('div',''); pbd.style.cssText='position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:62px;height:62px;border-radius:50%;background:#000000a6;color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;pointer-events:none'; pbd.textContent='▶'; ph.appendChild(pbd); }
     wrap.insertBefore(ph,vid);
-    var note=el('div'); note.style.cssText='color:#fff;opacity:.92;font-size:12.5px;max-width:540px;text-align:center;line-height:1.5'; note.innerHTML='This is an iPhone <b>HEVC</b> video — desktop browsers can’t play it directly. Convert it once and it plays here forever. (Your full-quality original stays safe in the cloud.)';
-    var conv=el('button','btn'); conv.style.cssText='font-weight:700;font-size:14px;padding:10px 16px'; conv.textContent='▶ Make it play on this computer';
+    var note=el('div'); note.style.cssText='color:#fff;opacity:.92;font-size:12.5px;max-width:540px;text-align:center;line-height:1.5';
     var bar=el('div'); bar.style.cssText='display:none;width:280px;height:9px;border-radius:5px;background:#ffffff26;overflow:hidden';
     var fill=el('div'); fill.style.cssText='height:100%;width:0;background:var(--orange,#ff7a00);transition:width .25s'; bar.appendChild(fill);
     var stat=el('div'); stat.style.cssText='color:#fff;opacity:.9;font-size:12px;display:none;text-align:center';
-    conv.onclick=async function(){
-      if(!localBlob && !pm.videoUrl){ stat.style.display='block'; stat.textContent='The original isn’t on this device — open the app where you uploaded it, then convert.'; return; }
-      conv.style.display='none'; bar.style.display='block'; stat.style.display='block'; stat.textContent='Loading the converter (first run downloads it once)…';
+    // No original reachable on this device (not local, never finished syncing) → can't convert here.
+    if(!localBlob && !pm.videoUrl){
+      note.innerHTML='This iPhone <b>HEVC</b> video hasn’t finished syncing yet. Open the app on the phone that recorded it (on wifi) so it uploads — then it plays here automatically.';
+      wrap.appendChild(note); wrap.appendChild(dl); relax(); return;
+    }
+    // AUTO-CONVERT on view — no button to click. Convert once, cache as m.previewUrl so it
+    // plays instantly for EVERYONE (every device) from then on. Original stays full-quality for download.
+    note.innerHTML='Getting this iPhone <b>HEVC</b> video ready to play here — <b>one time only</b>. Your full-quality original stays safe in the cloud.';
+    var runConvert=async function(){
+      bar.style.display='block'; fill.style.width='0'; stat.style.display='block'; stat.textContent='Loading the converter (first run downloads it once)…';
       try{
         var url=await ensurePlayableProxy(pm, function(rt){ fill.style.width=Math.round(rt*100)+'%'; stat.textContent='Converting… '+Math.round(rt*100)+'%  (one time only)'; });
         if(!stillOpen())return;
-        if(!url){ bar.style.display='none'; conv.style.display=''; conv.textContent='↻ Try again'; stat.textContent='Couldn’t convert (the clip may be very large). You can still download it below.'; return; }
+        if(!url) throw new Error('convert-failed');
         ph.style.display='none'; note.style.display='none'; bar.style.display='none'; stat.style.display='none';
         vid.style.display=''; vid.src=url; vid.load(); try{ await vid.play(); }catch(e){}
-      }catch(e){ bar.style.display='none'; conv.style.display=''; conv.textContent='↻ Try again'; stat.textContent='Couldn’t convert. You can still download it below.'; }
+      }catch(e){
+        bar.style.display='none'; fill.style.width='0'; stat.style.display='block';
+        stat.innerHTML='Couldn’t convert automatically (the clip may be very large). Download the original below, or ';
+        var retry=el('button','btn-set','↻ Try again'); retry.style.cssText='margin-left:4px;padding:4px 10px'; retry.onclick=function(){ stat.textContent=''; runConvert(); };
+        stat.appendChild(retry);
+      }
     };
-    wrap.appendChild(note); wrap.appendChild(conv); wrap.appendChild(bar); wrap.appendChild(stat); wrap.appendChild(dl);
+    wrap.appendChild(note); wrap.appendChild(bar); wrap.appendChild(stat); wrap.appendChild(dl);
+    runConvert();
     relax();
   };
   vid.onerror=offerConvert;
-  setTimeout(function(){ if(!handled && !vid.videoWidth) offerConvert(); }, 1800);
+  // Backstop for the silent-stall case (some browsers give no onerror for HEVC — just a black frame).
+  // Only fire when the video is genuinely NOT progressing: no frame, nothing buffered, and the network
+  // is idle/dead (networkState 2 = still downloading → it's merely slow, so leave it alone and never
+  // waste a transcode on a good clip). Re-checks once more before giving up.
+  var _stallTries=0;
+  var stallCheck=function(){
+    if(handled||!stillOpen())return;
+    var progressing = vid.videoWidth>0 || vid.readyState>=1 || (vid.buffered&&vid.buffered.length>0) || vid.networkState===2;
+    if(progressing){ if(++_stallTries<2){ setTimeout(stallCheck,5000); } return; }  // slow but alive → wait, then stop nagging
+    offerConvert();
+  };
+  setTimeout(stallCheck, 4000);
   relax();
 }
 // Stream a photo's RAW bytes straight to R2 (no base64) → public /img URL, or null if hosting
@@ -1905,6 +1928,48 @@ async function backfillLocalVideos(){
   _backfillingVid=false;
   if(done){ commit(); if(typeof render==='function')render(); }
   return done;
+}
+/* Can THIS browser genuinely DECODE this video? canPlayType() lies about HEVC (Chrome reports
+   "maybe" for video/mp4 then fails), so we probe for real — metadata only, never the whole clip.
+   Returns true (plays) / false (cannot decode) / null (unknown: offline, slow, timed out).
+   We only ever transcode on an explicit false, so a bad network never triggers pointless work. */
+function _canDecodeVideoUrl(url,ms){
+  return new Promise(function(res){
+    var v=document.createElement('video'), done=false;
+    var fin=function(val){ if(done)return; done=true; try{ v.removeAttribute('src'); v.load(); }catch(e){} res(val); };
+    v.preload='metadata'; v.muted=true; v.playsInline=true;
+    v.onloadedmetadata=function(){ fin(v.videoWidth>0?true:false); };
+    v.onerror=function(){ fin(false); };                 // real decode failure (HEVC on desktop)
+    setTimeout(function(){ fin(null); }, ms||12000);      // timed out → unknown, do NOT transcode
+    try{ v.src=url; v.load(); }catch(e){ fin(false); }
+  });
+}
+/* Background pass: pre-build the H.264 proxy for any cloud video this browser can't decode, so a
+   video is ALREADY playable the moment someone opens it (no waiting, no button). Runs on desktop
+   only — phones decode HEVC natively and transcoding there just burns battery. Sequential + capped
+   so it never hogs the machine; each result is cached in R2 (m.previewUrl) and shared with everyone. */
+var _proxyPassBusy=false;
+async function backfillVideoProxies(maxN){
+  try{
+    if(_proxyPassBusy)return 0;
+    if(!window.WG_FB_READY||!WG_AUTH.currentUser)return 0;
+    if(!navigator.onLine)return 0;
+    if(typeof isOwner==='function'&&!isOwner())return 0;                       // owner's machine does the work, not Ruth's
+    try{ if(window.matchMedia&&window.matchMedia('(pointer:coarse)').matches)return 0; }catch(e){}  // phone/tablet → skip
+    _proxyPassBusy=true;
+    var cap=maxN||3, made=0;
+    var pending=socPool().filter(function(m){ return m&&isVideoItem(m)&&m.videoUrl&&!m.previewUrl; });
+    for(var i=0;i<pending.length && made<cap;i++){
+      var m=pending[i];
+      var ok=await _canDecodeVideoUrl(m.videoUrl);
+      if(ok!==false)continue;                                                  // plays fine, or unknown → leave it alone
+      var url=await ensurePlayableProxy(m);                                    // converts once, uploads, stamps previewUrl
+      if(url)made++;
+    }
+    if(made){ try{ commit(); if(typeof render==='function')render(); }catch(e){} }
+    return made;
+  }catch(e){ return 0; }
+  finally{ _proxyPassBusy=false; }
 }
 /* small standalone gate so backfill never fires more than 2 big video uploads at once */
 var _vgActive=0, _vgQ=[];
@@ -3665,6 +3730,7 @@ async function fbSyncStart(){
     if(typeof render==='function')render();
     if(typeof ensureSyncPill==='function')ensureSyncPill();
     setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} },1200); // push any device-only photos + videos to the backbone now that we're online
+    setTimeout(function(){ try{backfillVideoProxies();}catch(e){} },20000); // then quietly pre-build H.264 copies for any video this browser can't play (desktop only) — so they're ready BEFORE anyone opens them
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
 /* Manual one-shot pull — for Ruth's "Check for new posts" button when she's been
