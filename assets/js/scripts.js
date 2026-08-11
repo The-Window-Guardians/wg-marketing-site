@@ -1852,11 +1852,22 @@ async function poolAddFiles(fileList,folder){
           if(_sig)it.sig=_sig;
           addToPool(it);
           if(!isVideo){ try{ VTHUMB[rec.id]=await encodePhoto(raw); }catch(_t){} } // offline image → still cache a thumbnail
-          if(isVideo){ // publish to the public bucket so the TEAM gets it (not just this device)
+          if(isVideo){
+            // POSTER FIRST — grab a frame here on the device that just recorded it. An iPhone decodes
+            // its own HEVC natively, so this is the ONE place a thumbnail is guaranteed to work; a
+            // desktop can't decode HEVC and would show a blank tile forever. Store it in the cloud
+            // so every device gets a picture even before the clip is playable there.
+            try{ const _p=await videoThumb(rec.blob||raw); if(_p){ VTHUMB[rec.id]=_p; thumbCachePut(rec.id,_p); storeGridThumb(rec.id,_p); } }catch(_t){}
+            // publish to the public bucket so the TEAM gets it (not just this device).
+            // Through the global gate: without it a 6-wide batch fires 6 huge uploads at once,
+            // saturates the connection and strands them — the #1 cause of videos that never appear.
             let vok=false;
             try{
-              const vurl=await publishVideoPublic(rec.id,rec.blob||raw,raw.type||'video/mp4');
-              if(vurl){ it.videoUrl=vurl; it._ut=Date.now(); vidShared++; vok=true; }
+              await _vidGateGlobal();
+              try{
+                const vurl=await publishVideoPublic(rec.id,rec.blob||raw,raw.type||'video/mp4');
+                if(vurl){ it.videoUrl=vurl; it._ut=Date.now(); vidShared++; vok=true; }
+              } finally { _vidReleaseGlobal(); }
             }catch(e){}
             if(!vok)vidFailed++;
           }
@@ -1975,6 +1986,37 @@ async function backfillFullRes(maxN){
   }catch(e){ return 0; }
   finally{ _fullResBusy=false; }
 }
+/* THUMBNAIL REPAIR for videos already in the library. Nothing ever generated a poster for videos
+   (uploads skipped it and cloudThumbBackfill deliberately excludes them), which is why so many
+   video tiles are blank. Grab a frame and store it in the cloud so EVERY device shows a picture.
+   Prefers the local original — an iPhone decodes its own HEVC natively, so running this on the
+   phone fixes clips a desktop can never make a poster for. Silent, capped, resumable. */
+var _vidThumbBusy=false;
+async function backfillVideoThumbs(maxN){
+  try{
+    if(_vidThumbBusy)return 0;
+    if(!window.WG_FB_READY||!WG_AUTH.currentUser||!navigator.onLine)return 0;
+    _vidThumbBusy=true;
+    var cap=maxN||6, made=0;
+    var pending=socPool().filter(function(m){ return m&&isVideoItem(m)&&!m._vidThumb&&!VTHUMB[m.id]; });
+    for(var i=0;i<pending.length && made<cap;i++){
+      var m=pending[i], poster=null;
+      try{
+        var ex=await cloudThumbGet(m.id);                                   // already has one in the cloud?
+        if(ex&&ex.dataUrl){ VTHUMB[m.id]=ex.dataUrl; m._vidThumb=true; m._ut=Date.now(); continue; }
+      }catch(e){}
+      try{ var rec=await fileGet(m.id); if(rec&&rec.blob)poster=await videoThumb(rec.blob); }catch(e){}   // local original (phone: HEVC ok)
+      if(!poster && m.previewUrl){ try{ var pr=await fetch(m.previewUrl); if(pr.ok)poster=await videoThumb(await pr.blob()); }catch(e){} } // H.264 proxy decodes anywhere
+      if(!poster)continue;                                                  // desktop + HEVC-only original → leave for the phone/proxy
+      VTHUMB[m.id]=poster; try{ thumbCachePut(m.id,poster); }catch(e){}
+      try{ await storeGridThumb(m.id,poster); }catch(e){}
+      m._vidThumb=true; m._ut=Date.now(); made++;
+    }
+    if(made){ try{ commit(); if(typeof rerenderCal==='function')rerenderCal(); else if(typeof render==='function')render(); }catch(e){} }
+    return made;
+  }catch(e){ return 0; }
+  finally{ _vidThumbBusy=false; }
+}
 /* Can THIS browser genuinely DECODE this video? canPlayType() lies about HEVC (Chrome reports
    "maybe" for video/mp4 then fails), so we probe for real — metadata only, never the whole clip.
    Returns true (plays) / false (cannot decode) / null (unknown: offline, slow, timed out).
@@ -2021,7 +2063,7 @@ async function backfillVideoProxies(maxN){
 var _vgActive=0, _vgQ=[];
 function _vidGateGlobal(){ return new Promise(function(res){ if(_vgActive<2){_vgActive++;res();} else _vgQ.push(res); }); }
 function _vidReleaseGlobal(){ _vgActive=Math.max(0,_vgActive-1); const n=_vgQ.shift(); if(n){_vgActive++;n();} }
-if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} try{backfillFullRes();}catch(e){} }); }
+if(typeof window!=='undefined'){ window.addEventListener('online',function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} try{backfillFullRes();}catch(e){} try{backfillVideoThumbs();}catch(e){} }); }
 function poolSetStatus(ids,status){const set=new Set(ids);socPool().forEach(m=>{if(set.has(m.id)){m.status=status;m._ut=Date.now();}});} // bump _ut so a status change (used/available/posted) can't be reverted by a stale cloud copy
 function poolArchiveForPost(p){poolSetStatus((p.media||[]).map(m=>m.id),'posted');}
 function poolReleaseForPost(p){ // a draft got deleted → its content returns to the pool (but keep photos a saved job still holds)
@@ -3784,6 +3826,7 @@ async function fbSyncStart(){
     if(typeof ensureSyncPill==='function')ensureSyncPill();
     setTimeout(function(){ try{backfillLocalPhotos();}catch(e){} try{backfillLocalVideos();}catch(e){} },1200); // push any device-only photos + videos to the backbone now that we're online
     setTimeout(function(){ try{backfillFullRes();}catch(e){} },6000);       // repair any photo that had to be saved small on a weak signal — push the real original up now
+    setTimeout(function(){ try{backfillVideoThumbs();}catch(e){} },9000);   // give blank video tiles a real picture (works best on the phone that shot them)
     setTimeout(function(){ try{backfillVideoProxies();}catch(e){} },20000); // then quietly pre-build H.264 copies for any video this browser can't play (desktop only) — so they're ready BEFORE anyone opens them
   }catch(e){ /* network/rules issue — stay on the local cache */ }
 }
