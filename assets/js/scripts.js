@@ -1516,7 +1516,7 @@ function snippetBar(kind,getText,setText){
     const save=el('button','snipsave','📌 Save current');
     save.onclick=()=>{ const txt=(getText()||'').trim(); if(!txt){toast('Nothing to save yet');return;}
       if(socSnips().some(s=>s.kind===kind&&s.text===txt)){toast('Already saved');return;}
-      socSnips().push({id:'sn_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),kind:kind,text:txt,_ct:Date.now()}); commit(); redraw(); toast('Saved — tap it to reuse anytime'); };
+      socSnips().push({id:'sn_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),kind:kind,text:txt,_ct:Date.now()}); commit(); redraw(); toast('Saved ✓'); };
     wrap.appendChild(save);
   };
   redraw();
@@ -1533,7 +1533,7 @@ function hashGroupPicker(getText,setText){
   const editId={v:null}; // id of the user group currently being edited (null = creating new)
   const fill=()=>{
     const hasUser=hashGroupsUser().length;
-    sel.innerHTML='<option value="">'+(hasUser?'📁 Your hashtag groups — pick to add in…':'📁 No saved groups yet — tap “New” to make one')+'</option>'
+    sel.innerHTML='<option value="">📁 Hashtag groups…</option>'
       +(DEFAULT_HASH_GROUPS.length?('<optgroup label="Built-in">'+DEFAULT_HASH_GROUPS.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'')
       +(hasUser?('<optgroup label="Your groups">'+hashGroupsUser().map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')+'</optgroup>'):'');
   };
@@ -2504,7 +2504,7 @@ function startBaFromSelection(sel){
   if(groups.length<=1){ openBaBuilder(sel); return; }           // single job → review/name in the builder
   let made=0; groups.forEach(g=>{ if(g.length){ createBaJobAuto(g); made++; } }); // multi-location → auto-split
   POOL_SEL.clear(); rerenderCal();
-  toast('Split into '+made+' jobs by location — open any to rename or fix labels');
+  toast('Split into '+made+' jobs by location ✓');
 }
 /* builder: group photos into a job; tagging before/after is OPTIONAL */
 function openBaBuilder(items){
@@ -2521,9 +2521,9 @@ function openBaBuilder(items){
   const b=$('#cmpBody');
   const num=nextBaNum();
   const autoName=jobAutoName(items);
-  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name <span class="muted" style="font-weight:600">— auto-named; edit it if you want (e.g. an address)</span></label>';
+  const nf=el('div','cmp-field');nf.innerHTML='<label>Job name</label>';
   const ni=el('input','cmp-in');ni.value=autoName;ni.placeholder='Job '+num+' — or type an address';nf.appendChild(ni);b.appendChild(nf);
-  const hint=el('div','cmp-field');hint.innerHTML='<label>Photos in this job <span class="muted" style="font-weight:600">— we guessed Before/After by order; tap any photo to fix (Ruth sees the labels when she posts)</span></label>';
+  const hint=el('div','cmp-field');hint.innerHTML='<label>Photos — tap a label to fix Before/After</label>';
   const grid=el('div','bagrid');
   items.forEach(m=>{
     const cell=el('div','bacell');
@@ -2584,7 +2584,7 @@ function openJobPicker(item){
   const srch=el('input','cmp-in');srch.type='search';srch.placeholder='🔍 Search your jobs…';srch.style.cssText='width:100%;margin:0 0 10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;box-sizing:border-box';
   srch.oninput=()=>{ const q=(srch.value||'').toLowerCase().trim(); let any=false; b.querySelectorAll('.jobpick').forEach(function(opt){ const lab=((opt.querySelector('.jp-label')||{}).textContent||'').toLowerCase(); const hit=!q||lab.indexOf(q)>=0; opt.style.display=hit?'':'none'; if(hit)any=true; }); const nm=b.querySelector('.jp-none'); if(nm)nm.style.display=(q&&!any)?'':'none'; };
   b.appendChild(srch);
-  b.appendChild(el('div','jp-none muted','No jobs match — tap “＋ Create a new job” above.')).style.cssText='display:none;font-size:12.5px;padding:4px 2px';
+  b.appendChild(el('div','jp-none muted','No jobs match.')).style.cssText='display:none;font-size:12.5px;padding:4px 2px';
   setTimeout(function(){try{srch.focus();}catch(e){}},60);
   // JOIN an existing job you made — each gets a thumbnail + photo count so you can tell them apart at a glance
   manualNames.forEach(function(gname){
@@ -2737,8 +2737,6 @@ function renderSavedJobs(container){
       grid.appendChild(cell);
     });
     body.appendChild(grid);
-    const hint=el('div','muted','Tick ✓ to pick just some photos (none ticked = all) · tap a photo to preview · tap its pill to set Before / After');hint.style.cssText='font-size:11.5px;margin:8px 0 4px';
-    body.appendChild(hint);
     const foot=el('div','rcactions');
     updatePostBtn();
     post.onclick=()=>{const chosen=jobSel.size?its.filter(x=>jobSel.has(x.id)):its;if(!chosen.length)return;post.disabled=true;const cw=currentWeek();const p=newPost(cw?cw.id:1);p.media=chosen.map(x=>({id:x.id,name:x.name,role:x.role||''}));const cb=chosen.filter(x=>x.role==='before').length,ca=chosen.filter(x=>x.role==='after').length;p.type=(cb||ca)?'beforeafter':(chosen.length>1?'carousel':'photo');p.fromJob=j.id;if(j.name)p.jobNote=j.name;openComposer(p,true);};
@@ -3445,7 +3443,7 @@ async function buildMyWeek(count){
   const usedIds=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>usedIds.add(x.id)); });
   // ONLY named (yellow 📁) jobs are "free game" for the AI — a job you titled is one you've vetted.
   const fresh=poolAvailable().filter(m=>poolIsMain(m)&&isPhoto(m)&&!!m.cgroup&&!usedIds.has(m.id));
-  if(!fresh.length){toast('No named jobs yet — rename a job (it turns yellow 📁) to make it free-game for the AI, then try again.');return 0;}
+  if(!fresh.length){toast('No named jobs yet — rename a job first.');return 0;}
   const groups=[]; const manualMap={};
   fresh.forEach(m=>{ (manualMap[m.cgroup]=manualMap[m.cgroup]||[]).push(m); });
   const groupTown=function(items){ for(var i=0;i<items.length;i++){ var m=items[i]; if(m&&m.zip){ var zt=townFromZip(m.zip); if(zt)return zt; } } var w=(items.find(function(m){return m&&m.town;})||{}).town||''; return String(w).replace(/\s+township$/i,'').trim(); }; // ZIP → real town, never township
@@ -3461,7 +3459,7 @@ async function buildMyWeek(count){
   groups.sort(function(a,b){ var sa=isStarJob(a.title)?1:0, sb=isStarJob(b.title)?1:0; if(sa!==sb)return sb-sa; /* ⭐ starred jobs first */ var ra=recentRank(a.title), rb=recentRank(b.title); if(ra!==rb)return ra-rb; return richness(b)-richness(a); });
   const planned=socPosts().filter(p=>p.status==='draft'||p.status==='approved').length;
   const target=(typeof count==='number'&&count>0) ? Math.min(count, groups.length) : Math.max(1, Math.min(groups.length, (planned>=5?3:5-planned)));
-  const ok=await uiConfirm('I’ll look at your newest photos and draft '+target+' post'+(target>1?'s':'')+' for you to review (about '+(target*2)+'¢). Nothing posts automatically — they land in “Your posts” as drafts you can edit or delete.',{title:'Build my week?',confirmText:'Build '+target});
+  const ok=await uiConfirm('Draft '+target+' post'+(target>1?'s':'')+' from your newest photos (~'+(target*2)+'¢)? Nothing posts automatically.',{title:'Build my week?',confirmText:'Build '+target});
   if(!ok)return 0;
   toast('🪄 Building '+target+' post'+(target>1?'s':'')+'… give it a few seconds');
   const cw=currentWeek(); const wk=cw?cw.id:1;
@@ -3546,12 +3544,6 @@ function aiHashtagOptions(p){
     (aiHashtags(town,p.pillar)+prodTag).trim(),
     ('#WindowGuardians #BucksCountyPA'+cityTag+' '+workTag+prodTag+' '+season.tag+' #localcontractor').replace(/\s+/g,' ').trim()
   ];
-}
-function aiRuthNote(p){
-  const plats=SOC_PLATFORMS.filter(x=>p.platforms&&p.platforms[x.id]).map(x=>x.t).join(' + ')||'Instagram + Facebook';
-  const when=p.time?` at ${p.time}`:'';
-  const town=effectiveTown(p);
-  return `Post to ${plats}${when}. Set location to ${town||'the job town'}. Paste caption + hashtags as written. Done.`;
 }
 /* completeness — which strategic fields are still missing on a post */
 function postGaps(p){
@@ -4079,10 +4071,10 @@ function logActivity(text){ if(!ST)return; if(!Array.isArray(ST.activity))ST.act
 function activityCard(){
   var acts=(ST&&Array.isArray(ST.activity))?ST.activity.slice().sort(function(a,b){return (b.at||0)-(a.at||0);}):[];
   var d=el('details','card pad');d.style.marginTop='12px';
-  var sum=el('summary','seoacc-sum');sum.innerHTML='<div class="chip" style="background:var(--blue-soft)">🔔</div><div class="seoacc-tt"><h3>Recent activity</h3><small>'+(acts.length?('Latest: '+esc(acts[0].who)+' — '+esc(acts[0].text)+' · '+agoShort(acts[0].at)):'Team actions show up here')+'</small></div><span class="seoacc-ar">▾</span>';
+  var sum=el('summary','seoacc-sum');sum.innerHTML='<div class="chip">🔔</div><div class="seoacc-tt"><h3>Recent activity</h3><small>'+(acts.length?('Latest: '+esc(acts[0].who)+' — '+esc(acts[0].text)+' · '+agoShort(acts[0].at)):'')+'</small></div><span class="seoacc-ar">▾</span>';
   d.appendChild(sum);
   var body=el('div','seoacc-body');
-  if(!acts.length){ body.appendChild(el('p','muted','Nothing yet — approvals, posts and blog updates will appear here.')); }
+  if(!acts.length){ body.appendChild(el('p','muted','Nothing yet.')); }
   else { acts.slice(0,14).forEach(function(a){ var r=el('div','actrow');r.innerHTML='<span class="actwho">'+esc(a.who)+'</span> <span class="acttxt">'+esc(a.text)+'</span> <span class="actago">'+agoShort(a.at)+'</span>';body.appendChild(r); }); }
   d.appendChild(body);return d;
 }
@@ -4092,11 +4084,10 @@ function contentHealthCard(){
   var photos=pool.filter(function(m){return !isVideoItem(m);});
   var synced=photos.filter(poolSynced).length, deviceOnly=photos.length-synced, vids=pool.filter(isVideoItem).length;
   var c=el('div','card pad');c.style.marginTop='12px';
-  c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🛡️</div><div><h3>Content backup</h3><small>Where your photos &amp; videos live</small></div></div>'+
+  c.innerHTML='<div class="sec-title"><div class="chip">🛡️</div><div><h3>Content backup</h3></div></div>'+
     '<div class="healthrow"><span class="hgood">✅ '+synced+' photo'+(synced===1?'':'s')+' shared</span>'+
     (deviceOnly?'<span class="hwarn">⏳ '+deviceOnly+' syncing</span>':'')+
-    (vids?'<span class="hnote">🎬 '+vids+' video'+(vids===1?'':'s')+' · Google Drive</span>':'')+'</div>'+
-    '<p class="muted" style="font-size:12px;margin:6px 0 0">Shared photos are safe on the team backbone — visible on every device. Videos are shared through your Google Drive folder.</p>';
+    (vids?'<span class="hnote">🎬 '+vids+' video'+(vids===1?'':'s')+' · Google Drive</span>':'')+'</div>';
   return c;
 }
 function av(role,cls){const p=personOf(role);return `<div class="${cls||'av'}" style="background:${p.bg};color:${p.c}">${p.av}</div>`}
@@ -4420,12 +4411,12 @@ function roleNote(){return S.role==='all'?'':` · showing <b>${PEOPLE[S.role].na
 function viewSocialDashboard(v){
   // A poster's whole world (e.g. Ruth): pick a ready post and run it.
   if(isPoster()){
-    v.appendChild(el('div','page-head',`<h2>Ready to Post</h2><p>Everything here is approved and good to go. Pick one, copy the caption + hashtags, post it, mark it done. New to a step? Check your <b>Guide</b>.</p>`));
+    v.appendChild(el('div','page-head',`<h2>Ready to Post</h2>`));
     ruthQueue(v);
     return;
   }
   // Sebastian's home: the consistency pulse, then his content library.
-  v.appendChild(el('div','page-head',`<h2>Home</h2><p>Drop photos + a note, fill the post once, approve it — it lands in the posting queue. Make as many as you want; they all live below.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Home</h2>`));
   v.appendChild(cadenceBanner());
   socLibrary(v);
 }
@@ -5351,7 +5342,7 @@ function viewDashboard(v){
   const right=el('div','grid');right.style.gap='16px';
   const prog=el('div','card pad');
   const op=overallPct('all');
-  prog.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📈</div><div><h3>Overall progress</h3><small>All roles · 12 weeks</small></div></div>
+  prog.innerHTML=`<div class="sec-title"><div class="chip">📈</div><div><h3>Overall progress</h3><small>All roles · 12 weeks</small></div></div>
     <div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:30px;font-weight:800" data-overall-num>${op}%</b><span class="muted">complete</span></div>
     <div class="bar green" style="margin:8px 0 14px"><i data-overall style="width:${op}%"></i></div>
     ${ORDER.map(r=>{const x=roleDone(r);const p=x.t?Math.round(x.d/x.t*100):0;return `<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:3px"><span>${av(r,'av').replace('width:26px;height:26px','')} ${PEOPLE[r].name}</span><span class="muted" data-role-count="${r}">${x.d}/${x.t}</span></div><div class="bar"><i data-role-bar="${r}" style="width:${p}%"></i></div></div>`}).join('')}`;
@@ -5396,7 +5387,7 @@ function nudgeCard(){
   const card=el('div','card pad nudge');
   const cw=currentWeek();
   if(!cw){
-    card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🧭</div><div><h3>Your guide</h3><small>Quarter complete</small></div></div>
+    card.innerHTML=`<div class="sec-title"><div class="chip">🧭</div><div><h3>Your guide</h3><small>Quarter complete</small></div></div>
       <p class="nq">All 12 weeks are done. Open the <b>Scorecard</b> to compile the 90-day numbers and set Q4 priorities.</p>${nudgeFoot()}`;
     return card;
   }
@@ -5415,7 +5406,7 @@ function nudgeCard(){
     q=(typeof n==='function'?n(cw):n)||`Pick your name (top-right) for your role. Big picture: ${PROG.shipLine}`;
     const runway=socRunway(),streak=socStreak();
     prog=`<div class="nprog"><b>${runway}</b> posts approved &amp; ready${streak>=1?` · <b>${streak}-week</b> streak 🔥`:''}</div>`;
-    card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🧭</div><div><h3>Your guide${r!=='all'?` · ${PEOPLE[r].name}`:''}</h3><small>${when}</small></div></div>
+    card.innerHTML=`<div class="sec-title"><div class="chip">🧭</div><div><h3>Your guide${r!=='all'?` · ${PEOPLE[r].name}`:''}</h3><small>${when}</small></div></div>
       <p class="nq">${q}</p>${prog}${nudgeFoot()}`;
     return card;
   }
@@ -5434,7 +5425,7 @@ function nudgeCard(){
       q=(typeof n==='function'?n(cw):n)||`What’s the one Week ${cw.id} thing you can move forward right now?`;
     }
   }
-  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🧭</div><div><h3>Your guide${r!=='all'?` · ${PEOPLE[r].name}`:''}</h3><small>${when}</small></div></div>
+  card.innerHTML=`<div class="sec-title"><div class="chip">🧭</div><div><h3>Your guide${r!=='all'?` · ${PEOPLE[r].name}`:''}</h3><small>${when}</small></div></div>
     <p class="nq">${q}</p>${prog}${nudgeFoot()}`;
   return card;
 }
@@ -5670,11 +5661,11 @@ function refreshDFiles(fl,key,editable,onChange){
 /* ---------- THE PLAN ---------- */
 /* ---------- SOCIAL: Cadence & Consistency (replaces the 12-week task plan) ---------- */
 function viewSocialPlan(v){
-  v.appendChild(el('div','page-head',`<h2>Cadence</h2><p>Forget complicated. The whole plan is one habit: <b>post 5 times a week, any 5 days.</b> Consistency beats perfection — a steady feed is what puts Window Guardians on the shortlist.${roleNote()}</p>`));
+  v.appendChild(el('div','page-head',`<h2>Cadence</h2>`));
 
   // the one rule
   const rule=el('div','card pad');rule.style.borderTop='3px solid var(--orange)';
-  rule.innerHTML=`<div class="bigrule"><div class="brnum">5</div><div><div class="brt">posts a week</div><div class="brs">any 5 days — weekday or weekend, doesn’t matter. Bank a few ahead so a busy day never breaks the streak.</div></div></div>`;
+  rule.innerHTML=`<div class="bigrule"><div class="brnum">5</div><div><div class="brt">posts a week</div><div class="brs">any 5 days</div></div></div>`;
   v.appendChild(rule);
 
   // live cadence banner (this week / streak / runway)
@@ -5683,7 +5674,7 @@ function viewSocialPlan(v){
   // weekly consistency tracker
   const cw=currentWeek();const cwId=cw?cw.id:((WEEKS[WEEKS.length-1]&&WEEKS[WEEKS.length-1].id)||1);
   const track=el('div','card pad');track.style.marginTop='12px';
-  track.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📈</div><div><h3>Consistency tracker</h3><small>Did we hit 5 each week? Green = goal met.</small></div></div>`;
+  track.innerHTML=`<div class="sec-title"><div class="chip">📈</div><div><h3>Consistency tracker</h3></div></div>`;
   const rows=el('div','ctrack');
   WEEKS.filter(w=>w.id<=cwId+1).forEach(w=>{
     const posted=weekPosts(w.id).filter(p=>p.status==='posted').length;
@@ -5701,12 +5692,12 @@ function viewSocialPlan(v){
 
   // starter categories
   const cats=el('div','card pad');cats.style.marginTop='12px';
-  cats.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🗂️</div><div><h3>What to post — starter categories</h3><small>Rotate through these so the feed stays varied. Rename or change these anytime.</small></div></div>`;
+  cats.innerHTML=`<div class="sec-title"><div class="chip">🗂️</div><div><h3>What to post — starter categories</h3></div></div>`;
   SOC_PILLARS.forEach(p=>cats.appendChild(el('div','catrow',`<span class="cati">${p.icon}</span><span class="catt"><b>${esc(p.t)}</b><small>${esc(p.d||'')}</small></span>`)));
   v.appendChild(cats);
 
   // Ruth's posting tips
-  v.appendChild(ruthTipsCard());
+  
 }
 function ruthTipsCard(){
   const c=el('div','card pad');c.style.marginTop='12px';c.style.borderTop='3px solid var(--navy)';
@@ -5717,7 +5708,7 @@ function ruthTipsCard(){
 function socTrackerCard(){
   const cw=currentWeek();const cwId=cw?cw.id:((WEEKS[WEEKS.length-1]&&WEEKS[WEEKS.length-1].id)||1);
   const track=el('div','card pad');track.style.marginTop='12px';
-  track.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📈</div><div><h3>Consistency tracker</h3><small>Did we hit 5 each week? Green = goal met.</small></div></div>`;
+  track.innerHTML=`<div class="sec-title"><div class="chip">📈</div><div><h3>Consistency tracker</h3></div></div>`;
   const rows=el('div','ctrack');
   WEEKS.filter(w=>w.id<=cwId+1).forEach(w=>{
     const posted=weekPosts(w.id).filter(p=>p.status==='posted').length;
@@ -5733,7 +5724,7 @@ function socTrackerCard(){
 }
 function socCategoriesCard(){
   const cats=el('div','card pad');cats.style.marginTop='12px';
-  cats.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">🗂️</div><div><h3>Your categories</h3><small>Rotate through these so the feed stays varied.</small></div></div>`;
+  cats.innerHTML=`<div class="sec-title"><div class="chip">🗂️</div><div><h3>Your categories</h3></div></div>`;
   SOC_PILLARS.forEach(p=>cats.appendChild(el('div','catrow',`<span class="cati">${p.icon}</span><span class="catt"><b>${esc(p.t)}</b><small>${esc(p.d||'')}</small></span>`)));
   return cats;
 }
@@ -5806,11 +5797,11 @@ function bump(kp,d){if(isContributor()){toast('Builders update the numbers — C
 
 /* ---------- GUIDES ---------- */
 function viewRuthGuide(v){
-  v.appendChild(el('div','page-head',`<h2>Your Guide</h2><p>Everything you need to post like a pro — best times, where to tag the location, and the simple 3-step flow.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Your Guide</h2><p>Best times, location tagging, and the 3-step flow.</p>`));
 
   // how this works
   const how=el('div','card pad');how.style.borderTop='3px solid var(--orange)';
-  how.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">✅</div><div><h3>How this works</h3><small>Three steps, every time</small></div></div>
+  how.innerHTML=`<div class="sec-title"><div class="chip">✅</div><div><h3>How this works</h3><small>Three steps, every time</small></div></div>
     <div class="chk"><span class="b" style="color:var(--orange)">1</span><span>Open <b>Post queue</b> and pick a post that's ready.</span></div>
     <div class="chk"><span class="b" style="color:var(--orange)">2</span><span><b>Copy</b> the caption and hashtags, and <b>download</b> the photo(s)/video.</span></div>
     <div class="chk"><span class="b" style="color:var(--orange)">3</span><span>Post it on each platform, set the location, then tap the green <b>✅ Mark as posted</b> button — it disappears from your list so you always know what’s left.</span></div>`;
@@ -6232,7 +6223,7 @@ function aiBrainCard(){
 /* Settings card: paste your GoHighLevel inbound-webhook URL so approved posts can be pushed to GHL. */
 function ghlCard(){
   const card=el('div','card pad');card.style.marginBottom='16px';
-  card.appendChild(el('div','sec-title',`<div class="chip" style="background:var(--blue-soft)">📤</div><div><h3>Post to GoHighLevel</h3><small>Push approved posts to your GHL Social Planner</small></div>`));
+  card.appendChild(el('div','sec-title',`<div class="chip">📤</div><div><h3>Post to GoHighLevel</h3><small>Push approved posts to your GHL Social Planner</small></div>`));
   const p=el('p','',`Paste your GoHighLevel <b>inbound-webhook URL</b> here. Then on any approved post you’ll get a <b>“📤 Send to GoHighLevel”</b> button that fires the caption + hashtags + details into your GHL workflow. (In GHL: create a Workflow → trigger “Inbound Webhook” → copy its URL.)`);
   p.style.cssText='color:var(--ink2);font-size:13.5px;margin:2px 0 10px';card.appendChild(p);
   const row=el('div','');row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center';
@@ -6326,7 +6317,7 @@ function viewSettings(v){
 
   const fut=el('div','card pad');
   if(window.WG_FB_READY){
-    fut.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>What's on now</h3><small>Live features + what's still coming</small></div></div>
+    fut.innerHTML=`<div class="sec-title"><div class="chip">✅</div><div><h3>What's on now</h3><small>Live features + what's still coming</small></div></div>
       <ul class="future-list">
         <li><span class="lk">✅</span><div><b>Live shared data</b> — a change or upload by one person appears on everyone's dashboard in seconds. <b>On.</b></div></li>
         <li><span class="lk">✅</span><div><b>Per-member access</b> — you assign who's on Social vs SEO; members only see what you assign. <b>On.</b></div></li>
@@ -6467,7 +6458,7 @@ function viewAudit(v){
     v.appendChild(card);
   });
   const as=el('div','card pad');as.style.marginBottom='16px';
-  as.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>Assets to leverage</h3><small>Don’t rebuild — amplify</small></div></div>${ASSETS.map(x=>`<div class="chk"><span class="b" style="color:var(--green)">✓</span><span>${esc(x)}</span></div>`).join('')}`;
+  as.innerHTML=`<div class="sec-title"><div class="chip">✅</div><div><h3>Assets to leverage</h3><small>Don’t rebuild — amplify</small></div></div>${ASSETS.map(x=>`<div class="chk"><span class="b" style="color:var(--green)">✓</span><span>${esc(x)}</span></div>`).join('')}`;
   v.appendChild(as);
   const cv=el('div','callout blue');
   cv.innerHTML=`<div class="eyebrow" style="color:var(--navy)">What this crawl couldn’t see</div><p style="margin-top:6px">${esc(VERIFY_NOTE)}</p>`;
@@ -6485,7 +6476,7 @@ function socGuide(icon,bg,title,desc,badge,body,open){
   return d;
 }
 function viewSocialGuides(v){
-  v.appendChild(el('div','page-head',`<h2>The Social Playbook</h2><p>The whole operating manual in one place — the five content pillars, Sebastian’s phone capture system, Ruth’s paste-and-post kit, the handoff sheet, and a 33-post content bank. Keep it open while you run the week.</p>`));
+  v.appendChild(el('div','page-head',`<h2>The Social Playbook</h2><p>The whole operating manual in one place.</p>`));
 
   // One-time foundation
   const f=SOCIAL_FOUNDATION;
@@ -6570,7 +6561,7 @@ function viewSocialStrategy(v){
     fg.appendChild(c)});
   v.appendChild(fg);
   const sit=el('div','card pad');sit.style.marginTop='12px';sit.style.borderTop='3px solid var(--green)';
-  sit.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>Where you stand</h3><small>The gap is visibility, not reputation</small></div></div><p style="color:var(--ink2)">${esc(j.situation)}</p>`;
+  sit.innerHTML=`<div class="sec-title"><div class="chip">✅</div><div><h3>Where you stand</h3><small>The gap is visibility, not reputation</small></div></div><p style="color:var(--ink2)">${esc(j.situation)}</p>`;
   v.appendChild(sit);
   const ig=el('div','callout red');ig.style.marginTop='12px';
   ig.innerHTML=`<div class="eyebrow" style="color:var(--red)">What to ignore</div><p style="margin-top:6px">${esc(j.ignore)}</p>`;
@@ -6632,7 +6623,7 @@ function viewSocialAudit(v){
   gp.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--red-soft)">⚠️</div><div><h3>The gaps</h3><small>What’s holding the reputation back</small></div></div><p style="color:var(--ink2)">${esc(a.gaps)}</p>`;
   v.appendChild(gp);
   const wn=el('div','card pad');wn.style.borderTop='3px solid var(--green)';
-  wn.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">✅</div><div><h3>Fastest wins</h3><small>Available right now — no new content needed</small></div></div>${a.wins.map(x=>`<div class="chk"><span class="b" style="color:var(--green)">✓</span><span>${esc(x)}</span></div>`).join('')}`;
+  wn.innerHTML=`<div class="sec-title"><div class="chip">✅</div><div><h3>Fastest wins</h3><small>Available right now — no new content needed</small></div></div>${a.wins.map(x=>`<div class="chk"><span class="b" style="color:var(--green)">✓</span><span>${esc(x)}</span></div>`).join('')}`;
   v.appendChild(wn);
 }
 
@@ -6980,7 +6971,7 @@ function makeLinkedInVersion(src){
   try{ poolSetStatus(p.media.map(function(m){return m.id;}),'used'); }catch(e){} // keep the shared photos parked as "used"
   savePost(p);
   openComposer(p,true); // opens in LinkedIn mode (composer reads platform) — banner shows LinkedIn, AI writes B2B
-  toast('💼 LinkedIn version created from this post — same photos. Tap a mode to write it.');
+  toast('💼 LinkedIn version created ✓');
 }
 function postCard(p){
   const pl=pillar(p.pillar);const ty=postType(p.type);
@@ -7035,8 +7026,7 @@ function cadenceBanner(){
         <div class="cadstat"><b>${posted}</b><span>posted</span></div>
         <div class="cadstat"><b>${runway}</b><span>days covered</span></div>
         <div class="cadstat"><b>${streak}</b><span>week streak${streak>=1?' 🔥':''}</span></div>
-      </div></div>
-    <div class="cadhint">5 posts a week — any 5 days. Banking a few ahead is how you never miss.</div>`;
+      </div></div>`;
   return card;
 }
 let CAL_FILTER='all';
@@ -7045,12 +7035,11 @@ function ruthQueue(v){
   const ready=socPosts().filter(p=>p.status==='approved').sort((a,b)=>(a.date||'~').localeCompare(b.date||'~'));
   const posted=socPosts().filter(p=>p.status==='posted').length;
   const q=el('div','card pad');
-  q.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">📤</div><div><h3>Ready to post</h3><small><b>${ready.length}</b> waiting to post${posted?` · <b>${posted}</b> posted ✓`:''}</small></div></div>
-    <p class="muted" style="font-size:12.5px;margin:2px 0 6px">For each one: copy the caption + hashtags, download the photo/video, post it on your channels — then tap <b>✅ Mark as posted</b> and it leaves the list.</p>`;
+  q.innerHTML=`<div class="sec-title"><div class="chip">📤</div><div><h3>Ready to post</h3><small><b>${ready.length}</b> waiting to post${posted?` · <b>${posted}</b> posted ✓`:''}</small></div></div>
+    <p class="muted" style="font-size:12.5px;margin:2px 0 6px">Copy → post → ✅ Mark as posted.</p>`;
   if(!ready.length){
     const drafts=socPosts().filter(p=>p.status&&p.status!=='posted'&&p.status!=='approved').length;
-    const ctx = drafts ? `💡 ${drafts} post${drafts>1?'s are':' is'} still being finished — they’ll land here once Sebastian approves ${drafts>1?'them':'it'}.`
-      : '🎉 All caught up — nothing waiting. New posts Sebastian approves show up here automatically.';
+    const ctx = drafts ? `💡 ${drafts} waiting on Sebastian’s approval.` : '🎉 All caught up.';
     const emp=el('div');emp.style.marginTop='4px';
     emp.innerHTML=`<p class="muted">${ctx}</p>`;
     const rf=el('button','btn-set','🔄 Check for new posts');
@@ -7096,8 +7085,8 @@ function actionCenterCard(){
   if(unreadNotes) rows.push({icon:'💬',txt:unreadNotes+' note'+(unreadNotes>1?'s':'')+' from Bogdan to read',go:function(){ location.href=((PROGRAMS.seo&&PROGRAMS.seo.home)||'index.html'); }});
   if(inQueue) rows.push({icon:'📤',txt:inQueue+' post'+(inQueue>1?'s':'')+' waiting for Ruth to post',go:null});
   var c=el('div','card pad actionctr');
-  c.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⚡</div><div><h3>What needs you now</h3><small>'+(rows.length?'Tap an item to jump to it':'You’re all caught up')+'</small></div></div>';
-  if(!rows.length){ c.appendChild(el('p','muted','✅ Nothing waiting on you right now — nice.')); return c; }
+  if(!rows.length)return null;   // nothing waiting → no card at all
+  c.innerHTML='<div class="sec-title"><div class="chip">⚡</div><div><h3>What needs you now</h3></div></div>';
   rows.forEach(function(r){ var row=el('button','actrowbtn'); row.innerHTML='<span class="ac-ic">'+r.icon+'</span><span>'+esc(r.txt)+'</span>'+(r.go?'<span class="ac-arrow">→</span>':''); if(r.go)row.onclick=r.go; else row.disabled=true; c.appendChild(row); });
   return c;
 }
@@ -7134,9 +7123,9 @@ function socLibrary(v){
 
   // ---- ADD CONTENT (regular photos · before/after · video · optional Drive) ----
   const add=el('div','card pad');add.style.marginTop='12px';
-  add.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">⬆️</div><div><h3>Add content</h3><small>Upload straight from your phone or computer — it syncs to the whole team. iPhone HEIC is fine.</small></div></div>`;
+  add.innerHTML=`<div class="sec-title"><div class="chip">⬆️</div><div><h3>Add content</h3></div></div>`;
   const drop=el('label','dropzone');
-  drop.innerHTML=`<div class="dz-i">📥</div><div><b>Drag photos here</b><div class="muted" style="font-size:12.5px">or use the buttons below</div></div>`;
+  drop.innerHTML=`<div class="dz-i">📥</div><div><b>Drag photos here</b></div>`;
   const dropInp=el('input');dropInp.type='file';dropInp.accept='image/*,video/*,.heic,.heif,.mov';dropInp.multiple=true;dropInp.className='hidden';
   dropInp.onchange=async e=>{const had=e.target.files&&e.target.files.length;const n=await poolAddFiles(e.target.files,'');dropInp.value='';if(n){toast(n+' added to your content');rerenderCal();}else if(had)toast('Pick photo or video files (HEIC & MOV are fine).');};
   drop.appendChild(dropInp);
@@ -7156,32 +7145,20 @@ function socLibrary(v){
   btnrow.appendChild(mkUp('📷 Add photos','image/*,.heic,.heif','',null));
   btnrow.appendChild(mkUp('🎬 Upload video','video/*,.mov','',null));
   add.appendChild(btnrow);
-  add.appendChild(el('div','muted','Everything lands in Your content and groups by job location. Mark before/after right inside a job — no need to choose up front.')).style.cssText='font-size:11.5px;margin-top:8px';
   // optional: Google Drive bulk import (tucked small)
   if(ST.driveConnected){
-    add.appendChild(el('div','muted',ST.driveNeedsReconnect?'⚠️ Google sign-in expired — tap Sync to reconnect.':'Optional — bulk-import from your Google Drive folder:')).style.cssText='font-size:11.5px;margin-top:16px';
+    if(ST.driveNeedsReconnect)add.appendChild(el('div','muted','⚠️ Google sign-in expired — tap Sync to reconnect.')).style.cssText='font-size:11.5px;margin-top:16px';
     const gd=el('button','btn-set','🔄 Sync Google Drive');gd.style.cssText='margin-top:4px;font-size:12.5px;padding:6px 10px';
     gd.onclick=()=>gdSyncNow(true).then(()=>gdStartPolling());
     add.appendChild(gd);
   }else{
-    add.appendChild(el('div','muted','Optional — connect Google Drive to bulk-import a folder:')).style.cssText='font-size:11.5px;margin-top:16px';
     const gd=el('button','btn-set','🟢 Connect Google Drive');gd.style.cssText='margin-top:4px;font-size:12.5px;padding:6px 10px';
     gd.onclick=()=>gdConnect();
     add.appendChild(gd);
   }
   // ✨ AI post generation — Claude drafts posts from your tagged photos. Right under Add content.
-  if(typeof isOwner==='function'&&isOwner()){
-    const aiHint=el('div','muted','✨ Or let Claude draft posts from your tagged photos:');aiHint.style.cssText='font-size:12px;margin-top:16px';
-    add.appendChild(aiHint);
-    const aiRow=el('div');aiRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:6px';
-    const g1=el('button','btn-set primary','✨ Generate 1 post');g1.title='Claude drafts 1 post from your best-titled job (~2¢)';
-    g1.onclick=async()=>{const o=g1.textContent;g1.disabled=true;g1.textContent='🪄 Working…';try{await buildMyWeek(1);}catch(e){}g1.disabled=false;g1.textContent=o;};
-    const g3=el('button','btn-set primary','✨ Generate 3 posts');g3.title='Claude drafts 3 posts from your best-titled jobs (~6¢)';
-    g3.onclick=async()=>{const o=g3.textContent;g3.disabled=true;g3.textContent='🪄 Working…';try{await buildMyWeek(3);}catch(e){}g3.disabled=false;g3.textContent=o;};
-    aiRow.appendChild(g1);aiRow.appendChild(g3);add.appendChild(aiRow);
-  }
   v.appendChild(add);                       // Add content first — the #1 job is above the fold now
-  v.appendChild(_actionCard);               // then "what needs you now"
+  if(_actionCard)v.appendChild(_actionCard);  // then "what needs you now" (hidden when nothing's waiting)
   gdAutoResume();
 
   // ---- CONTENT POOL: tick pieces → make a post ----
@@ -7230,8 +7207,7 @@ function socLibrary(v){
   const allAvail=poolAll; // for resolving selections when making a post
   const grouped = (POOL_SRC!=='Videos'); // group every photo view by job location; only Videos stay flat
   const poolCard=el('div','card pad');poolCard.style.marginTop='12px';
-  const sub = POOL_SRC==='Videos'?'Your videos.':'📍 = grouped by GPS location · 📁 = a job you named · 🎬 = has video. Tag photos 🔴 Before · 🟡 During · 🟢 After. New jobs are added at the bottom.';
-  poolCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">🗂️</div><div><h3>Your content</h3><small>${sub}</small></div></div>`;
+  poolCard.innerHTML=`<div class="sec-title"><div class="chip">🗂️</div><div><h3>Your content</h3></div></div>`;
   // controls: the area switcher (Content · Finalized · Videos · legacy)
   const ctrls=el('div','poolctrls');
   {
@@ -7368,34 +7344,33 @@ function socLibrary(v){
     selAll.textContent=(items.length&&items.every(m=>sel.has(m.id)))?'◻ Unselect all':'✓ Select all';
     selAll.onclick=()=>{ const all=items.every(m=>sel.has(m.id)); items.forEach(m=>{ if(all)sel.delete(m.id); else sel.add(m.id); }); rerenderCal(); };
     foot.appendChild(selAll);
-    // ⬇ Download this job's photos — ticked ones if any are ticked, otherwise the whole group. Zip on desktop, share sheet on phone.
-    const dlGrp=el('button','btn-set','⬇ Download');dlGrp.title='Download the ticked photos, or all of this job if none are ticked';
-    dlGrp.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; downloadMediaItems(chosen.map(m=>({id:m.id,name:m.name,type:m.type})),dlGrp); };
-    foot.appendChild(dlGrp);
-    // Move ticked photos to a DIFFERENT job (or a new one). On real jobs only — Needs sorting has its own "Add to a job".
+    // Secondary actions live behind ONE ⋯ button — same handlers, out of the way. (Needs sorting
+    // keeps ＋ New job visible: filing photos is that group's whole job.)
+    const secondary=[];
+    secondary.push(['Download',()=>{ const chosen=pickChosen(); if(!chosen.length)return; downloadMediaItems(chosen.map(m=>({id:m.id,name:m.name,type:m.type})),null); }]);
     if(!opts.newGroup){
-      const mj=el('button','btn-set','📍 Move to a job');mj.title='Move the ticked photos to a different job (or create a new one)';
-      mj.onclick=()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos to move first (or “✓ Select all”).');return;} clearChosen(chosen); openJobPicker(chosen); };
-      foot.appendChild(mj);
+      secondary.push(['Move to a job',()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick photos first.');return;} clearChosen(chosen); openJobPicker(chosen); }]);
     }
-    // (Tag stages one photo at a time using the pills right on each thumbnail — no bulk "Tag all".)
     if(opts.newGroup){
       const ng=el('button','btn-set','＋ New job');
-      ng.onclick=async()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos for the job first (or “✓ Select all”).');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” ('+chosen.length+' photo'+(chosen.length>1?'s':'')+') — find it up in Your content.'); };
+      ng.onclick=async()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick photos first.');return;} const name=await uiPrompt('Name this new job (e.g. an address or the customer).', '', {title:'New job',placeholder:'e.g. 123 Maple St',confirmText:'Create'}); if(!name)return; chosen.forEach(m=>{m.cgroup=name;delete m.ungroup;m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast('Created job “'+name+'” ✓'); };
       foot.appendChild(ng);
-      const addJob=el('button','btn-set','📍 Add to a job');addJob.title='Add the ticked photos to a job you already have (or a GPS location job)';
-      addJob.onclick=()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick the photos to add first (or “✓ Select all”).');return;} clearChosen(chosen); openJobPicker(chosen); };
-      foot.appendChild(addJob);
+      secondary.push(['Add to a job',()=>{ const chosen=inGroup(); if(!chosen.length){toast('Tick photos first.');return;} clearChosen(chosen); openJobPicker(chosen); }]);
     }
     if(opts.moveToContent){
-      const mv=el('button','btn-set','↩ Move to Content');mv.title='Move these photos into your main Content folder';
-      mv.onclick=()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m.ungroup=true; if(m.locManual){delete m.lat;delete m.lng;delete m.locManual;} m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); }; // also drops a manually-copied location so it returns to Needs sorting
-      foot.appendChild(mv);
+      secondary.push(['Move to Content',()=>{ const chosen=pickChosen(); if(!chosen.length)return; chosen.forEach(m=>{m.folder='';delete m.cgroup;m.ungroup=true; if(m.locManual){delete m.lat;delete m.lng;delete m.locManual;} m._ut=Date.now();}); clearChosen(chosen); commit(); rerenderCal(); toast(chosen.length+' moved to your main Content'); }]); // also drops a manually-copied location so it returns to Needs sorting
     }
     if(typeof isOwner==='function'&&isOwner()){
-      const del=el('button','btn-set danger','🗑 Delete forever');
-      del.onclick=async()=>{const hadSel=inGroup().length>0;const pick=pickChosen();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(hadSel?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;clearChosen(delable);poolDeleteItems(delable.map(m=>m.id));};
-      foot.appendChild(del);
+      secondary.push(['🗑 Delete forever',async()=>{const hadSel=inGroup().length>0;const pick=pickChosen();const inUse=pick.filter(m=>socPosts().some(p=>p.status!=='posted'&&postMedia(p).some(x=>x.id===m.id)));const delable=pick.filter(m=>inUse.indexOf(m)<0);if(inUse.length)toast(inUse.length+' in use by a draft — remove there first.');if(!delable.length)return;const n=delable.length;if(!await uiConfirm('Delete '+n+' photo'+(n>1?'s':'')+(hadSel?' selected':' in this group')+'? You’ll have a few seconds to undo.',{title:'Delete '+n+'?',confirmText:'Delete',danger:true}))return;clearChosen(delable);poolDeleteItems(delable.map(m=>m.id));}]);
+    }
+    if(secondary.length){
+      const more=el('button','btn-set','⋯');more.title='More actions';more.setAttribute('aria-haspopup','true');
+      const menu=el('div','grpmenu');menu.style.display='none';
+      secondary.forEach(([label,fn])=>{ const b=el('button','grpmenu-item',label); b.onclick=(e)=>{e.stopPropagation();menu.style.display='none';fn();}; menu.appendChild(b); });
+      more.onclick=(e)=>{ e.stopPropagation(); const open=menu.style.display!=='none'; document.querySelectorAll('.grpmenu').forEach(m2=>m2.style.display='none'); menu.style.display=open?'none':'block'; };
+      const wrapMore=el('span');wrapMore.style.cssText='position:relative;display:inline-flex';
+      wrapMore.appendChild(more);wrapMore.appendChild(menu);
+      foot.appendChild(wrapMore);
     }
     body.appendChild(foot);
     d.appendChild(body);
@@ -7407,11 +7382,11 @@ function socLibrary(v){
       let msg;
       if(POOL_SRC==='main'&&baJobsAll.length){
         const j=baJobsAll.length;
-        msg='Your before/after work is under “🔀 Before &amp; After.” Switch the dropdown above to see your '+j+' job'+(j!==1?'s':'')+'.';
+        msg='Your '+j+' before/after job'+(j!==1?'s are':' is')+' in “🔀 Before &amp; After” (dropdown above).';
       } else {
         const totalElsewhere=poolAll.length;   // photos available in OTHER folders
-        if(totalElsewhere>0){ msg='No photos in this folder — your '+totalElsewhere+' photo'+(totalElsewhere>1?'s are':' is')+' in another folder. Switch the dropdown above (try “📷 Content” or “🔀 Before &amp; After”).'; }
-        else { msg=POOL_SRC==='Videos'?'No videos yet — add with “🎬 Upload video”.':POOL_SRC==='main'?'No content yet — add with “📷 Upload photos” or “🔀 Upload before/after”.':'Nothing here yet — add with “🔀 Upload before/after”.'; }
+        if(totalElsewhere>0){ msg='Empty — your '+totalElsewhere+' photo'+(totalElsewhere>1?'s are':' is')+' in another folder.'; }
+        else { msg='No content yet.'; }
       }
       poolCard.innerHTML+=`<p class="muted">${msg}</p>`;
     }
@@ -7447,7 +7422,6 @@ function socLibrary(v){
       }
       sum.appendChild(el('span','jobsum-t','📁 '+esc(gname)+' · '+items.length+(items.some(isVidItem)?'':' photo'+(items.length>1?'s':''))));
       vidBadge(sum,items);
-      if(isStarJob(gname))sum.appendChild(el('span','jobdone','★ AI first'));
       if(groupDone(items))sum.appendChild(el('span','jobdone','✓ tagged'));
       if(typeof isOwner==='function'&&isOwner()){ const ed=el('button','jobedit','✏️');ed.title='Rename job'; ed.onclick=function(e){e.preventDefault();e.stopPropagation();renameManualGroup(items,gname);}; sum.appendChild(ed); }
       sum.appendChild(peekStrip(items));
@@ -7480,7 +7454,7 @@ function socLibrary(v){
     let needGroup=null;
     if(noloc.length){
       const dN=el('details','jobgroup needsort');applyGroupOpen(dN,'needsort', _tiered.length===0); // always LAST; opens by default only when there are no groups at all
-      dN.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length} — no GPS on these (texts/screenshots). Tick some and tap “＋ New job”, or “Add to a job”.`));
+      dN.appendChild(el('summary','jobsum',`🗂️ Needs sorting · ${noloc.length}`));
       renderGroupBody(dN,noloc,{newGroup:true,moveToContent:(POOL_SRC!=='main'),perCell:function(cell,m){const add=el('button','addtojob','📍 Add to a job');add.onclick=(e)=>{e.stopPropagation();openJobPicker(m);};cell.appendChild(add);}});
       needGroup={key:'needsort', label:'Needs sorting', kind:'needsort', items:noloc, star:0, node:dN};
     }
@@ -7519,21 +7493,21 @@ function socLibrary(v){
         if(_galleryJustOpened){ _galleryJustOpened=false; setTimeout(function(){ try{ (document.querySelector('.backexp')||back).scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){} }, 60); }
       } else {
         if(GALLERY_OPEN)GALLERY_OPEN=null; // stale (deleted job) → fall back to the grid
-        if(!allGroups.length){ poolCard.appendChild(el('p','muted','Nothing here yet — upload some photos above.')); }
+        if(!allGroups.length){ poolCard.appendChild(el('p','muted','No photos yet.')); }
         else { const grid=el('div','expgrid'); allGroups.forEach(g=>grid.appendChild(makeTile(g))); poolCard.appendChild(grid); }
       }
     } else {
       // LIST view — tier headers + accordions (the existing filing layout, unchanged)
-      const TIER_LABEL={1:'✅ Ready for the AI — titled + every photo tagged',2:'🔧 In progress — finish the title or the tags',3:'🆕 New — just came in (newest at the bottom)'};
+      const TIER_LABEL={1:'✅ Ready',2:'🔧 In progress',3:'🆕 New'};const TIER_TIP={1:'Titled + every photo tagged — the AI builds from these',2:'Finish the title or the tags',3:'Just came in — newest at the bottom'};
       let _lastTier=null, _anyOpen=false;
       _tiered.forEach(function(g){
-        if(g.tier!==_lastTier){ _lastTier=g.tier; const h=el('div','');h.style.cssText='margin:14px 0 4px;font-weight:800;font-size:12.5px;color:var(--ink2)';h.textContent=TIER_LABEL[g.tier];poolCard.appendChild(h); }
+        if(g.tier!==_lastTier){ _lastTier=g.tier; const h=el('div','');h.style.cssText='margin:14px 0 4px;font-weight:800;font-size:12.5px;color:var(--ink2)';h.textContent=TIER_LABEL[g.tier];h.title=TIER_TIP[g.tier];poolCard.appendChild(h); }
         poolCard.appendChild(g.node); if(g.node.open)_anyOpen=true;
       });
       if(_tiered.length&&!_anyOpen)_tiered[0].node.open=true; // first load: open the top group only
       if(needGroup)poolCard.appendChild(needGroup.node);
     }
-    if(!_tiered.length&&!noloc.length)poolCard.appendChild(el('p','muted', POOL_KIND==='videos'?'No videos in this view — tap “Both” above, or add a video.':POOL_KIND==='photos'?'No photos in this view — tap “Both” above, or add photos.':'Nothing to group here.'));
+    if(!_tiered.length&&!noloc.length)poolCard.appendChild(el('p','muted', POOL_KIND==='videos'?'No videos here.':POOL_KIND==='photos'?'No photos here.':'Nothing here.'));
   }else{
     const grid=el('div','poolgrid');
     avail.forEach(m=>grid.appendChild(buildCell(m)));
@@ -7586,7 +7560,7 @@ function socLibrary(v){
   const postedItems=socPool().filter(m=>m.status==='posted').sort((a,b)=>(b.postedAt||0)-(a.postedAt||0));
   if(postedItems.length){
     const rc=el('details','card pad');rc.style.marginTop='12px';
-    const rsum=el('summary','seoacc-sum');rsum.innerHTML=`<div class="chip" style="background:var(--green-soft)">♻️</div><div class="seoacc-tt"><h3>Recently posted</h3><small>${postedItems.length} — tap Reuse to post one again (follow-up or correction)</small></div><span class="seoacc-ar">▾</span>`;
+    const rsum=el('summary','seoacc-sum');rsum.innerHTML=`<div class="chip">♻️</div><div class="seoacc-tt"><h3>Recently posted</h3><small>${postedItems.length}</small></div><span class="seoacc-ar">▾</span>`;
     rc.appendChild(rsum);
     const rbody=el('div','seoacc-body');
     const rgrid=el('div','poolgrid');
@@ -7599,7 +7573,7 @@ function socLibrary(v){
       cell.appendChild(img);cell.appendChild(ph);
       cell.appendChild(el('span','postedtag','POSTED'));
       const reuse=el('button','reusebtn','♻️ Reuse');
-      reuse.onclick=(e)=>{e.stopPropagation();m.status='available';delete m.purged;m._ut=Date.now();commit();toast('Back in Your content — tick it to make a new post');rerenderCal();};
+      reuse.onclick=(e)=>{e.stopPropagation();m.status='available';delete m.purged;m._ut=Date.now();commit();toast('Back in Your content ✓');rerenderCal();};
       cell.appendChild(reuse);
       cell.onclick=()=>openMediaPreview(m.id,m.name);
       rgrid.appendChild(cell);
@@ -7616,7 +7590,7 @@ function socLibrary(v){
   const postsCard=el('div','card pad');postsCard.style.marginTop='12px';
   postsCard.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--green-soft)">📝</div><div><h3>Your posts</h3><small>${fbDrafts.length} draft${fbDrafts.length===1?'':'s'} · ${fbQueued.length} in the queue · ${liPosts.length} LinkedIn</small></div></div>`;
   if(!active.length){
-    postsCard.innerHTML+=`<p class="muted">No posts yet. Tick some content above and tap “Make a post”.</p>`;
+    postsCard.innerHTML+=`<p class="muted">No posts yet.</p>`;
   }else{
     let _secN=0;
     const section=(title,sub,arr,accent)=>{ // each is its own clearly-separated section, divided by a line
@@ -7628,9 +7602,9 @@ function socLibrary(v){
       postsCard.appendChild(h);
       const g=el('div','library'); arr.forEach(p=>g.appendChild(postCard(p))); postsCard.appendChild(g);
     };
-    section('📝 Drafts','still being worked on, not in the queue yet',fbDrafts);
-    section('✅ Approved · in the queue','ready for Ruth to post',fbQueued);
-    section('💼 LinkedIn','company-page posts (drafts and queue)',liPosts,'#0a66c2');
+    section('📝 Drafts','',fbDrafts);
+    section('✅ Approved · in the queue','',fbQueued);
+    section('💼 LinkedIn','',liPosts,'#0a66c2');
   }
   // ✨ Build my week — owner taps it; Claude drafts a few posts from the newest photos to review (added AFTER innerHTML+= so the handler survives)
   if(typeof isOwner==='function'&&isOwner()){
@@ -7737,9 +7711,8 @@ function readyCard(p){
       <div class="rcfield"><label>Caption</label><div class="rctext">${esc(p.caption||'—')}</div></div>
       <div class="rcfield"><label>Hashtags</label><div class="rctext">${esc(p.hashtags||'—')}</div></div>
       ${p.platform==='li'
-        ? `<div class="rcloc">💼 <b>Post to the Window Guardians LinkedIn company page.</b> No location tag needed on LinkedIn. Copy the caption and hashtags, attach the photo, post.</div>`
-        : `<div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}</b>. On Instagram/Facebook tap <b>Add location</b> and choose “${esc(p.town||'your town')}, PA”. Google and Nextdoor are already local.</div>`}
-      <div class="rcnote">📋 ${esc(p.ruthNote||aiRuthNote(p))}</div>
+        ? ``
+        : `<div class="rcloc">📍 <b>Location: ${esc(p.town||'—')}, PA</b> — tag it on IG/FB.</div>`}
     </div>`;
   fillMediaRoles(p);                 // make sure Drive photos show their Before/After labels
   const mm=postMedia(p);
@@ -7810,15 +7783,11 @@ function readyCard(p){
     toast(missing.length?('Posted — but '+missing.length+' photo'+(missing.length>1?'s':'')+' still need to go out separately'):'Posted ✓ — nice! It’s off your list.');
     await purgePostedMedia(post);rerenderCal();
   };
-  const copyAll=el('button','btn-set primary','📋 Copy caption + hashtags');copyAll.title='Copies the caption and hashtags together, ready to paste';
+  const copyAll=el('button','btn-set','📋 Copy caption + hashtags');copyAll.title='Copies the caption and hashtags together, ready to paste';
   copyAll.onclick=()=>copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags');
   // Copy the caption+hashtags FIRST, then open the channel — one tap instead of two (and the toast confirms it copied)
   const _copyGo=(url)=>{ try{ copyOut(((p.caption||'')+(p.hashtags?('\n\n'+p.hashtags):'')).trim(),'Caption + hashtags'); }catch(e){} window.open(url,'_blank','noopener'); };
-  const ig=el('button','btn-set','📷 Instagram');ig.title='Copies the caption, then opens Instagram to paste';
-  ig.onclick=()=>_copyGo('https://www.instagram.com/');
-  const fb=el('button','btn-set','📘 Facebook');fb.title='Copies the caption, then opens Facebook to paste';
-  fb.onclick=()=>_copyGo('https://www.facebook.com/');
-  const bs=el('button','btn-set','🗂 Business Suite');bs.title='Copies the caption, then opens Business Suite (post to FB + IG in one place)';
+  const bs=el('button','btn-set','🗂 Business Suite');bs.title='Posts to FB + IG — copies the caption, then opens Business Suite';
   bs.onclick=()=>_copyGo('https://business.facebook.com/latest/home');
   // 🏷️ Tag reminder — the one thing she must do by hand on every post
   const rem=el('div','rcremind');
@@ -7831,11 +7800,9 @@ function readyCard(p){
   }
   const liBtn=el('button','btn-set','💼 Open LinkedIn');liBtn.title='Copies the caption, then opens the WG LinkedIn page to paste';liBtn.onclick=()=>_copyGo('https://www.linkedin.com/company/window-guardians/');
   foot.appendChild(copyAll);foot.appendChild(dlb);
-  if(p.platform==='li'){ foot.appendChild(liBtn); } else { foot.appendChild(ig);foot.appendChild(fb);foot.appendChild(bs); }
+  foot.appendChild(p.platform==='li'?liBtn:bs);
   foot.appendChild(done);
-  const dlhint=el('div','muted');dlhint.style.cssText='font-size:12px;margin:6px 2px 0;line-height:1.4';
-  dlhint.innerHTML='💡 <b>Save / share</b> grabs every photo at once. On your <b>computer</b> it downloads one <b>.zip</b>, double-click it to open all the photos. On your <b>phone</b> it opens the share sheet (Save to Photos, or send straight to '+(p.platform==='li'?'LinkedIn':'Instagram/Facebook')+'). If it says photos “aren’t synced yet,” <b>refresh</b> the page, wait ~10 seconds, then tap it again.';
-  const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);rb.appendChild(dlhint);
+  const rb=card.querySelector('.rcbody');rb.appendChild(rem);rb.appendChild(foot);
   return card;
 }
 function bumpPostsKpi(){ // keep the "Posts published" KPI in step with posted count
@@ -7850,7 +7817,7 @@ function socPostStrip(){
   const pct=Math.min(100,Math.round(planned/SOC_WEEKLY_GOAL*100));
   const runway=socRunway(), streak=socStreak();
   const card=el('div','card pad');card.style.marginTop='16px';
-  card.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--orange-soft)">🗓️</div><div><h3>This week’s posts</h3><small>5 a week — any 5 days. Consistency is the whole game.</small></div></div>
+  card.innerHTML=`<div class="sec-title"><div class="chip">🗓️</div><div><h3>This week’s posts</h3></div></div>
     <div class="cadnum" style="margin-top:6px"><b>${planned}</b> / ${SOC_WEEKLY_GOAL} <span>planned${posted?` · ${posted} posted`:''}</span></div>
     <div class="cadbar-track"><i style="width:${pct}%"></i></div>`;
   const foot=el('div');foot.style.cssText='display:flex;gap:16px;margin-top:12px;font-size:13px;color:var(--ink2);flex-wrap:wrap;align-items:center';
@@ -7895,7 +7862,7 @@ function openComposer(idOrPost,isNew){
   const setCategory=(id)=>{ if(!id)return; var hit=false; seg.querySelectorAll('.seg-b').forEach(x=>{var on=x.dataset.pid===id;x.classList.toggle('on',on);if(on)hit=true;}); if(hit)p.pillar=id; };
 
   // town (Ruth gets the "how to add the location" steps in her queue + guide)
-  const tf=el('div','cmp-field');tf.innerHTML='<label>Town <span class="muted" style="font-weight:600">— auto-filled from the photo location; Ruth tags this as the post location</span></label>';
+  const tf=el('div','cmp-field');tf.innerHTML='<label>Town</label>';
   // auto-fill the town from the photos' GPS-derived town so Sebastian doesn't retype it
   if(!p.town){ let _mt=''; postMedia(p).forEach(function(mm){ if(_mt)return; var pm=(typeof socPool==='function')?socPool().find(function(x){return x.id===mm.id;}):null; if(pm&&pm.town)_mt=pm.town; }); if(_mt)p.town=_mt; }
   const sel=el('select','cmp-in');{const ph=document.createElement('option');ph.value='';ph.textContent='— Pick a town —';if(!p.town)ph.selected=true;sel.appendChild(ph);}SOC_TOWNS.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(t===p.town)o.selected=true;sel.appendChild(o)});
@@ -7965,14 +7932,13 @@ function openComposer(idOrPost,isNew){
       grid.appendChild(cell);
     });
     // always-present add zone (multiple)
-    const drop=el('label','meddrop'+(arr.length?' small':''),arr.length?'＋ Add more':'📷 Tap to add photos or videos — pick several at once');
+    const drop=el('label','meddrop'+(arr.length?' small':''),arr.length?'＋ Add more':'📷 Add photos or videos');
     const inp=el('input');inp.type='file';inp.accept='image/*,video/*,.heic,.heif,.mov';inp.multiple=true;inp.className='hidden';
     inp.onchange=async e=>{const files=Array.from(e.target.files||[]);if(!files.length)return;
       if(files.some(isHeic))toast('iPhone photo — converting…');
       for(const raw of files){const f=await normalizeImage(raw);const rec=await fileAdd(f,p.week,S.role,'post.'+p.id);p.media.push({id:rec.id,name:rec.name});}
       scheduleDraft();renderMedia();toast(files.length>1?files.length+' files attached':'Media attached')};
     drop.appendChild(inp);grid.appendChild(drop);
-    if(arr.length>1)media.appendChild(el('div','medordernote','📋 Posting order — number 1 posts first. Drag the ⠿ handle to reorder.'));
     media.appendChild(grid);
     // Add more existing photos. If this post came from a JOB, scope to that job's OTHER photos
     // (quick + on-topic) — with a small fallback to browse all content if you need a different job.
@@ -7994,9 +7960,8 @@ function openComposer(idOrPost,isNew){
       if(scopedNow)avail=avail.filter(inJob);
       const postItems=postMedia(p).map(x=>socPool().find(z=>z.id===x.id)||{id:x.id,name:x.name}); // ones already on the post (so you can REMOVE them here too)
       const list=postItems.concat(avail.filter(m=>!inPost.has(m.id))).slice(0,80);
-      if(!list.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">'+(scopedNow?'No other photos left in this job.':'Nothing in your library yet — upload photos on the Home screen first.')+'</div>'; }
+      if(!list.length){ picker.innerHTML='<div class="muted" style="font-size:12.5px;padding:6px 2px">'+(scopedNow?'No other photos left in this job.':'Library is empty.')+'</div>'; }
       else {
-        picker.appendChild(el('div','muted',scopedNow?('From this job · tap to add · tap a ✓ one to remove'):'Tap to add · tap a ✓ one to remove it from the post')).style.cssText='font-size:11.5px;margin:2px 0 6px';
         const g=el('div','medgrid');
         list.forEach(m=>{
           const on=inPost.has(m.id);
@@ -8021,7 +7986,7 @@ function openComposer(idOrPost,isNew){
     // Before/After posts read backwards if unlabeled — nudge (not a hard block) when tags are missing
     const photos=arr.filter(m=>!/\.(mp4|mov|m4v|webm)$/i.test(m.name||''));
     if(baType && photos.length>=2 && !photos.some(m=>m.role)){
-      const hint=el('div','medhint','💡 Before/After post — tap “＋ tag” on each photo to mark Before vs After so Ruth posts them in the right order.');
+      const hint=el('div','medhint','💡 Tag each photo Before / After.');
       media.appendChild(hint);
     }
   };
@@ -8032,17 +7997,17 @@ function openComposer(idOrPost,isNew){
   nf.innerHTML='<label>🎯 Note to AI</label>';
   const na=el('textarea','cmp-in');na.rows=2;na.value=p.aiNote||'';na.placeholder='e.g. lean on the arched foyer window · push the no-paint AZEK trim · keep it short';
   const naStat=el('div','');naStat.style.cssText='font-size:11.5px;margin-top:4px;font-weight:700';
-  const naPaint=()=>{ if((na.value||'').trim()){ naStat.textContent='🎯 Note active — it’ll steer your next AI tap.'; naStat.style.color='var(--orange)'; } else { naStat.textContent=''; } };
+  const naPaint=()=>{ if((na.value||'').trim()){ naStat.textContent='🎯 Active'; naStat.style.color='var(--orange)'; } else { naStat.textContent=''; } };
   na.oninput=()=>{ p.aiNote=na.value; naPaint(); scheduleDraft(); };
   naPaint();
   nf.appendChild(na);nf.appendChild(naStat);b.appendChild(nf);
 
   // Caption — ONE box: write a ready-to-post caption, OR just tell Claude what you want; then pick an AI mode.
-  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption <span class="muted" style="font-weight:600">— write it ready to post, OR just tell Claude what you want (e.g. “bay windows we replaced in Langhorne”), then tap a mode below</span></label>';
+  const cf=el('div','cmp-field');cf.innerHTML='<label>Caption</label>';
   // This post's platform is fixed when it is created. The AI writes in that platform's voice. (Spin off a LinkedIn twin with the button below.)
   const aiPlatform=(p.platform==='li')?'li':'fb';
   const ptBanner=el('div','');ptBanner.style.cssText='font-size:12.5px;font-weight:700;margin:0 0 6px;padding:7px 10px;border-radius:8px;'+(aiPlatform==='li'?'background:#eef3fb;color:#0a66c2':'background:var(--green-soft,#eaf7ee);color:#137333');
-  ptBanner.innerHTML=(aiPlatform==='li')?'💼 LinkedIn post (company page). The AI writes a professional B2B post for property managers, owners and partners.':'📣 Facebook &amp; Instagram post. Your normal scroll-stopping voice.';
+  ptBanner.innerHTML=(aiPlatform==='li')?'💼 LinkedIn':'📣 Facebook &amp; Instagram';
   cf.appendChild(ptBanner);
   if(p.aiWarn){ const wb=el('div','aiwarn');wb.style.margin='6px 0';wb.innerHTML='⚠️ '+esc(p.aiWarn)+' ';const dx=el('button','linklike','Looks fine — dismiss');dx.onclick=()=>{p.aiWarn='';savePost(p);wb.remove();toast('Dismissed');};wb.appendChild(dx);cf.appendChild(wb); }
   const ca=el('textarea','cmp-in');ca.rows=4;ca.value=p.caption||'';ca.placeholder='Write your caption… or describe what you want and let Claude write it';
@@ -8089,7 +8054,6 @@ function openComposer(idOrPost,isNew){
     }
     if(d&&d.options&&d.options.length){
       if(d.warn)caOpts.appendChild(el('div','aiwarn','⚠️ '+esc(d.warn)));
-      caOpts.appendChild(el('div','sughdr','Tap one to use it:'));
       d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ca.value=txt;p.caption=txt;scheduleDraft();caOpts.innerHTML='';caOpts.dataset.open='0';toast('Swapped in — tweak as you like')};caOpts.appendChild(o)});
     } else { const why=(d&&d.message)?(' ('+d.message+')'):''; fillFallback('⚠️ AI offline'+why+' — built-in suggestions instead:'); }
   };
@@ -8101,12 +8065,12 @@ function openComposer(idOrPost,isNew){
   caBoldMax.onclick=()=>runAI('bold','💥 Claude is going FULL unhinged…',2);
   const caRow=el('div','sugrow');caRow.appendChild(caBest);caRow.appendChild(caTeach);caRow.appendChild(caProduct);caRow.appendChild(el('span','aicost','~1¢ · 3 options each'));
   const boldRow=el('div','sugrow');boldRow.style.marginTop='6px';const blab=el('span','muted','🔥 Edge:');blab.style.cssText='font-size:12px;align-self:center;margin-right:2px;font-weight:700';boldRow.appendChild(blab);boldRow.appendChild(caBoldMild);boldRow.appendChild(caBold);boldRow.appendChild(caBoldMax);
-  const dialRow=el('div','');dialRow.style.cssText='font-size:11.5px;color:var(--ink2);margin-top:7px';dialRow.textContent='💡 Empty caption = fresh ideas. Type a caption = the AI builds on your words.';
+  const dialRow=el('div','');dialRow.style.cssText='display:none';
   cf.appendChild(caRow);cf.appendChild(boldRow);cf.appendChild(dialRow);cf.appendChild(caOpts);
   b.appendChild(cf);
 
   // ③ hashtags — smart AI suggestions + reusable groups you can create/edit
-  const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags <span class="muted" style="font-weight:600">— tap 🤖 Smart hashtags, or add a saved group</span></label>';
+  const hf=el('div','cmp-field');hf.innerHTML='<label>Hashtags</label>';
   const ha=el('input','cmp-in');ha.value=p.hashtags||'';ha.placeholder='#WindowGuardians …';ha.oninput=()=>{p.hashtags=ha.value;scheduleDraft();};
   const haAI=el('button','btn-set ai-draft','🤖 Smart hashtags');haAI.title='Claude reads your post and suggests tailored hashtag sets. ~1¢ per tap.';
   const haOpts=el('div','sugbox');
@@ -8122,7 +8086,6 @@ function openComposer(idOrPost,isNew){
     if(haOpts.dataset.open!=='1')return;
     haOpts.innerHTML='';
     if(d&&d.options&&d.options.length){
-      haOpts.appendChild(el('div','sughdr','AI hashtag sets — tap one to use it:'));
       d.options.forEach(txt=>{const o=el('button','sugopt',esc(txt));o.onclick=()=>{ha.value=txt;p.hashtags=txt;scheduleDraft();haOpts.innerHTML='';haOpts.dataset.open='0';toast('Hashtags swapped in')};haOpts.appendChild(o)});
     } else {
       const why=(d&&d.message)?(' ('+d.message+')'):'';
@@ -8147,7 +8110,7 @@ function openComposer(idOrPost,isNew){
   const foot=el('div','cmp-foot');
   if(!isNew){const del=el('button','btn-set danger','Delete');del.onclick=async()=>{const ok=await uiConfirm('It’s removed everywhere (drafts + queue). The photos go back to your content so you can reuse them.',{title:'Delete this post?',confirmText:'Delete',danger:true});if(ok){poolReleaseForPost(p);delPostRec(p.id);closeComposer();rerenderCal();toast('Post deleted — photos back in your content')}};foot.appendChild(del);}
   const spacer=el('div');spacer.style.flex='1';foot.appendChild(spacer);
-  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');p.ruthNote=aiRuthNote(p);if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');try{await pTimeout(publishPostMedia(p),90000,'photo sync');}catch(e){save.disabled=false;toast('Photo sync was slow — saved as draft. Try Approve again. '+((e&&e.message)||''));}}savePost(p);closeComposer();rerenderCal();toast('Saved')};
+  const save=el('button','btn-set','Save draft');save.onclick=async()=>{const wasAppr=(p.status==='approved');p.status=p.status==='posted'?'posted':(wasAppr?'approved':'draft');if(wasAppr){save.disabled=true;toast('Saving + syncing photos…');try{await pTimeout(publishPostMedia(p),90000,'photo sync');}catch(e){save.disabled=false;toast('Photo sync was slow — saved as draft. Try Approve again. '+((e&&e.message)||''));}}savePost(p);closeComposer();rerenderCal();toast('Saved')};
   const appr=el('button','btn-set primary',p.status==='approved'?'✓ Approved — save':'Approve & send to queue');
   appr.onclick=async()=>{
     if(appr.disabled)return;
@@ -8165,7 +8128,7 @@ function openComposer(idOrPost,isNew){
         toast(allVid?'This post is video-only — video can’t sync to Ruth yet. Add a photo too, or send the video to her another way.':'None of the photos reached the cloud (not synced). Re-add them from your content, then approve.');
         return;
       }
-      p.status='approved';p.ruthNote=aiRuthNote(p);logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);captureApprovedExample(p);closeComposer();rerenderCal();
+      p.status='approved';logActivity('approved a post'+(p.town?' · '+p.town:''));savePost(p);captureApprovedExample(p);closeComposer();rerenderCal();
       if(failed.length){ const v=failed.filter(f=>f.skipReason==='video').length, o=failed.length-v;
         toast('⚠ Approved — but '+[v?(v+' video'+(v>1?'s':'')):'',o?(o+' photo'+(o>1?'s':'')):''].filter(Boolean).join(' + ')+' won’t reach Ruth'+(v?' (video can’t sync)':'')+'. Fix it and re-approve.');
       } else toast('Approved → posting queue ✓');
@@ -8230,15 +8193,15 @@ function viewUploader(v){
   if(amPoster()){
     v.appendChild(el('div','page-head',`<h2>Quick Upload</h2>`));
     const c=el('div','card pad');
-    c.innerHTML=`<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">📤</div><div><h3>You're set up to post</h3><small>This quick uploader is for adding new content.</small></div></div><p class="muted" style="font-size:14px;line-height:1.5">Your job is posting the approved content — head to your queue to grab what's ready and post it.</p>`;
+    c.innerHTML=`<div class="sec-title"><div class="chip">📤</div><div><h3>You're set up to post</h3></div></div>`;
     const a=el('a','upfull','Open my post queue →');a.setAttribute('href','social.html');
     c.appendChild(a); v.appendChild(c); return;
   }
 
-  v.appendChild(el('div','page-head',`<h2>Quick Upload</h2><p>Snap → upload → done. Goes straight to the team.</p>`));
+  v.appendChild(el('div','page-head',`<h2>Quick Upload</h2>`));
 
   const card=el('div','card pad');
-  const photo=el('button','upbtn big','<span class="upic">📷</span><span class="uptx"><b>Add Photos</b><small>Before, after, or finished — all of it. Groups by job automatically.</small></span>');
+  const photo=el('button','upbtn big','<span class="upic">📷</span><span class="uptx"><b>Add Photos</b></span>');
   photo.onclick=()=>uploaderPick('image/*,.heic,.heif','',false);
   card.appendChild(photo);
   if(UPLOAD_VIDEO_READY){
@@ -8253,7 +8216,7 @@ function viewUploader(v){
   const recent=UPLOAD_JUST.map(id=>pool.find(m=>m.id===id)).filter(Boolean).slice(0,12);
   if(recent.length){
     const rc=el('div','card pad');rc.style.marginTop='12px';
-    rc.innerHTML='<div class="sec-title"><div class="chip" style="background:var(--blue-soft)">✅</div><div><h3>Just added</h3><small>Your latest uploads — already shared with the team.</small></div></div>';
+    rc.innerHTML='<div class="sec-title"><div class="chip">✅</div><div><h3>Just added</h3><small>Shared with the team ✓</small></div></div>';
     const g=el('div','upstrip');
     recent.forEach(m=>{
       const isVid=/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
@@ -8595,3 +8558,6 @@ if(window.WG_FB_READY){
   renderGate();
   if(Store.load()&&S.uid){enterApp()}
 }
+
+// grpmenu click-away — tapping anywhere else closes any open per-job ⋯ menu
+document.addEventListener('click',function(){ document.querySelectorAll('.grpmenu').forEach(function(m){ m.style.display='none'; }); });
