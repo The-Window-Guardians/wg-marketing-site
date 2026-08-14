@@ -7202,6 +7202,12 @@ function socLibrary(v){
   if(!validSrc[POOL_SRC])POOL_SRC='main';
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
   // media-type filter (Both · Photos · Videos). The legacy "Videos" folder always shows all its videos.
+  // SELF-HEALING: if the sticky filter would hide EVERYTHING while content exists (e.g. it was left
+  // on 🎬 Videos and the videos are gone), snap back to Both — a filter must never strand the library.
+  if(POOL_KIND!=='all' && POOL_SRC!=='Videos' && srcItems.length
+     && !srcItems.some(m => POOL_KIND==='videos' ? isVidItem(m) : !isVidItem(m))){
+    POOL_KIND='all'; try{localStorage.setItem('wg_pool_kind','all');}catch(e){}
+  }
   const avail = (POOL_KIND==='all' || POOL_SRC==='Videos') ? srcItems
               : srcItems.filter(m => POOL_KIND==='videos' ? isVidItem(m) : !isVidItem(m));
   const allAvail=poolAll; // for resolving selections when making a post
