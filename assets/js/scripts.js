@@ -2006,11 +2006,15 @@ async function backfillVideoThumbs(maxN){
         if(ex&&ex.dataUrl){ VTHUMB[m.id]=ex.dataUrl; m._vidThumb=true; m._ut=Date.now(); continue; }
       }catch(e){}
       try{ var rec=await fileGet(m.id); if(rec&&rec.blob)poster=await videoThumb(rec.blob); }catch(e){}   // local original (phone: HEVC ok)
-      if(!poster && m.previewUrl){ try{ var pr=await fetch(m.previewUrl); if(pr.ok)poster=await videoThumb(await pr.blob()); }catch(e){} } // H.264 proxy decodes anywhere
-      if(!poster)continue;                                                  // desktop + HEVC-only original → leave for the phone/proxy
-      VTHUMB[m.id]=poster; try{ thumbCachePut(m.id,poster); }catch(e){}
-      try{ await storeGridThumb(m.id,poster); }catch(e){}
-      m._vidThumb=true; m._ut=Date.now(); made++;
+      if(poster){
+        VTHUMB[m.id]=poster; try{ thumbCachePut(m.id,poster); }catch(e){}
+        try{ await storeGridThumb(m.id,poster); }catch(e){}
+        m._vidThumb=true; m._ut=Date.now(); made++;
+      } else {
+        poster=await videoPosterFromItem(m);   // streams ONE frame from the R2 proxy/original (no full download) + caches everywhere
+        if(!poster)continue;                   // HEVC-only original on a desktop → the phone or the H.264 proxy will cover it
+        made++;
+      }
     }
     if(made){ try{ commit(); if(typeof rerenderCal==='function')rerenderCal(); else if(typeof render==='function')render(); }catch(e){} }
     return made;
@@ -6649,13 +6653,16 @@ function calWeeks(){ // current + next (rolling 2-week buffer)
 }
 /* grab a single frame from a video blob as a JPEG data-URL (null if the browser
    can't decode it — e.g. iPhone HEVC .mov). */
-function videoThumb(blob){
+function videoThumb(src){ // src = Blob OR a direct URL string (R2 serves Range + CORS, so a URL streams just the first frames — no full download)
   return new Promise((resolve)=>{
-    const url=URL.createObjectURL(blob);
+    const isUrl=(typeof src==='string');
+    const url=isUrl?src:URL.createObjectURL(src);
     const v=document.createElement('video');
-    v.muted=true;v.playsInline=true;v.preload='metadata';v.src=url;
+    v.muted=true;v.playsInline=true;v.preload='metadata';
+    if(isUrl)v.crossOrigin='anonymous';   // keeps the canvas untainted so toDataURL works on /img/… URLs
+    v.src=url;
     let done=false;
-    const finish=(val)=>{if(done)return;done=true;try{URL.revokeObjectURL(url)}catch(e){}resolve(val)};
+    const finish=(val)=>{if(done)return;done=true;if(!isUrl){try{URL.revokeObjectURL(url)}catch(e){}}try{v.removeAttribute('src');v.load()}catch(e){}resolve(val)};
     const grab=()=>{
       try{const w=v.videoWidth,h=v.videoHeight; if(!w||!h)return finish(null);
         const c=document.createElement('canvas');c.width=240;c.height=Math.round(240*h/w);
@@ -6665,8 +6672,20 @@ function videoThumb(blob){
     };
     v.onloadeddata=()=>{try{v.currentTime=Math.min(0.1,(v.duration||1)/3)}catch(e){grab()}};
     v.onseeked=grab; v.onerror=()=>finish(null);
-    setTimeout(()=>finish(null),5000);
+    setTimeout(()=>finish(null),isUrl?9000:5000);   // network streams get a little longer than local blobs
   });
+}
+/* Best-effort poster for a video POOL ITEM, wherever its bytes live. Order: the H.264 preview proxy
+   (decodable on every browser) → the cloud original (works when it's a normal MP4; HEVC .mov will
+   just fail fast and return null). On success the poster is cached to memory + this device + the
+   shared cloud, so every OTHER device gets a picture without redoing the work. */
+async function videoPosterFromItem(m){
+  if(!m||!m.id)return null;
+  let poster=null;
+  if(m.previewUrl){ try{ poster=await videoThumb(m.previewUrl); }catch(e){} }
+  if(!poster&&m.videoUrl){ try{ poster=await videoThumb(m.videoUrl); }catch(e){} }
+  if(poster){ VTHUMB[m.id]=poster; try{thumbCachePut(m.id,poster)}catch(e){} try{storeGridThumb(m.id,poster)}catch(e){} if(!m._vidThumb){m._vidThumb=true;m._ut=Date.now();} }
+  return poster;
 }
 /* Last-resort thumbnail: pull the real image straight from Google Drive (Google's thumbnailLink
    frequently 403s when used as an <img src>). Only runs when Drive is already connected. Caches
@@ -6761,6 +6780,10 @@ async function thumbInto(img,mediaId){
       const tn=await cloudThumbGet(mediaId); if(tn&&tn.dataUrl){VTHUMB[mediaId]=tn.dataUrl;thumbCachePut(mediaId,tn.dataUrl);img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=tn.dataUrl;return;} // ~80% smaller than the full image; cached for next reload
       const c=await cloudFileGet(mediaId); if(c&&c.dataUrl){VTHUMB[mediaId]=c.dataUrl;thumbCachePut(mediaId,c.dataUrl);img.onerror=()=>{img.style.display='none'};img.onload=()=>{img.style.display='block'};img.src=c.dataUrl;storeGridThumb(mediaId,c.dataUrl);return;} // self-heal: small cloud thumb + device cache so this is the LAST heavy load for this photo
       const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;   // Drive-synced photo with no local blob
+      if(pm&&isVideoItem(pm)){ // video that lives only in the cloud → stream ONE frame from R2 for the tile (proxy first, then the original)
+        const vp=await videoPosterFromItem(pm);
+        if(vp){img.onload=()=>{img.style.display='block'};img.src=vp;return;}
+      }
       if(pm&&pm.driveThumb){img.onload=()=>{img.style.display='block'};img.onerror=()=>{img.onerror=null;driveFetchInto(img,pm,mediaId);};img.src=pm.driveThumb;return;} // Google thumb 403s → fall through to a real Drive fetch
       if(pm&&pm.driveId){driveFetchInto(img,pm,mediaId);}
       return; }
@@ -6771,7 +6794,11 @@ async function thumbInto(img,mediaId){
       img.onerror=()=>{img.style.display='none';try{URL.revokeObjectURL(img.src)}catch(e){}};
       img.src=URL.createObjectURL(blob);
     } else if(/video/.test(rec.type)||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||'')){
-      const d=await videoThumb(rec.blob);
+      let d=await videoThumb(rec.blob);
+      if(!d){ // local original is HEVC and this browser can't decode it → stream a frame from the cloud copy instead
+        const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;
+        if(pm)d=await videoPosterFromItem(pm);
+      } else { VTHUMB[mediaId]=d; try{thumbCachePut(mediaId,d)}catch(e){} try{storeGridThumb(mediaId,d)}catch(e){} }
       if(d){img.src=d;img.style.display='block';}
     }
   }catch(e){}
