@@ -1895,6 +1895,7 @@ async function poolAddFiles(fileList,folder){
   if(imgFailed)setTimeout(function(){toast('📷 '+imgFailed+' photo'+(imgFailed>1?'s':'')+' saved on this device — they’ll sync to the team automatically when you’re back online.')},900);
   if(imgFailed)setTimeout(function(){try{backfillLocalPhotos();}catch(e){}},1500);
   if(vidFailed)setTimeout(function(){try{backfillLocalVideos();}catch(e){}},4000); // auto-retry stranded videos a few seconds later
+  if(vidShared||vidFailed)setTimeout(function(){try{backfillVideoThumbs();}catch(e){}},6000); // and give any posterless upload its picture
   return addedN;
 }
 /* Is this content safely on the shared backbone (so every device + the team can see it)?
@@ -1986,6 +1987,28 @@ async function backfillFullRes(maxN){
   }catch(e){ return 0; }
   finally{ _fullResBusy=false; }
 }
+/* LAST-RESORT poster: decode ONE frame with ffmpeg.wasm — the same H.265 software decoder that powers
+   "Make it play", so it works for iPhone HEVC on a Windows desktop where the <video> tag can't.
+   Desktop-only (the 30MB wasm is too heavy to load on phones just for a thumbnail — phones decode
+   their own HEVC natively anyway). Input-seek (-ss before -i) keeps it to the first GOP = quick. */
+async function ffmpegPoster(blob){
+  try{
+    if(!blob||!blob.size||blob.size>400*1024*1024) return null;
+    if(/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||'')) return null;
+    var ff=await loadFFmpeg();
+    var fetchFile=window.FFmpegUtil.fetchFile;
+    var t=Date.now().toString(36);
+    var inN='pin_'+t+(/webm/i.test(blob.type)?'.webm':/mp4/i.test(blob.type)?'.mp4':'.mov');
+    var outN='pout_'+t+'.jpg';
+    await ff.writeFile(inN, await fetchFile(blob));
+    await ff.exec(['-ss','0.1','-i',inN,'-frames:v','1','-vf',"scale='min(560,iw)':-2",'-q:v','5',outN]);
+    var data=await ff.readFile(outN);
+    try{ await ff.deleteFile(inN); await ff.deleteFile(outN); }catch(e){}
+    if(!data||!data.length) return null;
+    var jb=new Blob([data.buffer||data],{type:'image/jpeg'});
+    return await new Promise(function(res){ var fr=new FileReader(); fr.onload=function(){res(fr.result)}; fr.onerror=function(){res(null)}; fr.readAsDataURL(jb); });
+  }catch(e){ return null; }
+}
 /* THUMBNAIL REPAIR for videos already in the library. Nothing ever generated a poster for videos
    (uploads skipped it and cloudThumbBackfill deliberately excludes them), which is why so many
    video tiles are blank. Grab a frame and store it in the cloud so EVERY device shows a picture.
@@ -1997,26 +2020,26 @@ async function backfillVideoThumbs(maxN){
     if(_vidThumbBusy)return 0;
     if(!window.WG_FB_READY||!WG_AUTH.currentUser||!navigator.onLine)return 0;
     _vidThumbBusy=true;
-    var cap=maxN||6, made=0;
+    var cap=maxN||10, made=0, remaining=0;
     var pending=socPool().filter(function(m){ return m&&isVideoItem(m)&&!m._vidThumb&&!VTHUMB[m.id]; });
-    for(var i=0;i<pending.length && made<cap;i++){
-      var m=pending[i], poster=null;
+    for(var i=0;i<pending.length;i++){
+      if(made>=cap){ remaining++; continue; }
+      var m=pending[i], poster=null, rec=null;
       try{
         var ex=await cloudThumbGet(m.id);                                   // already has one in the cloud?
-        if(ex&&ex.dataUrl){ VTHUMB[m.id]=ex.dataUrl; m._vidThumb=true; m._ut=Date.now(); continue; }
+        if(ex&&ex.dataUrl){ VTHUMB[m.id]=ex.dataUrl; try{thumbCachePut(m.id,ex.dataUrl)}catch(e){} m._vidThumb=true; m._ut=Date.now(); continue; }
       }catch(e){}
-      try{ var rec=await fileGet(m.id); if(rec&&rec.blob)poster=await videoThumb(rec.blob); }catch(e){}   // local original (phone: HEVC ok)
-      if(poster){
-        VTHUMB[m.id]=poster; try{ thumbCachePut(m.id,poster); }catch(e){}
-        try{ await storeGridThumb(m.id,poster); }catch(e){}
-        m._vidThumb=true; m._ut=Date.now(); made++;
-      } else {
-        poster=await videoPosterFromItem(m);   // streams ONE frame from the R2 proxy/original (no full download) + caches everywhere
-        if(!poster)continue;                   // HEVC-only original on a desktop → the phone or the H.264 proxy will cover it
-        made++;
-      }
+      try{ rec=await fileGet(m.id); if(rec&&rec.blob)poster=await videoThumb(rec.blob); }catch(e){}   // local original (phone: HEVC ok)
+      if(!poster){ try{ poster=await videoPosterFromItem(m); if(poster){made++;continue;} }catch(e){} } // streams ONE frame from the R2 proxy/original + caches everywhere
+      if(!poster && rec && rec.blob){ try{ poster=await ffmpegPoster(rec.blob); }catch(e){} }         // desktop + HEVC: ffmpeg's own H.265 decoder
+      if(!poster){ remaining++; continue; }
+      VTHUMB[m.id]=poster; try{ thumbCachePut(m.id,poster); }catch(e){}
+      try{ await storeGridThumb(m.id,poster); }catch(e){}
+      m._vidThumb=true; m._ut=Date.now(); made++;
     }
     if(made){ try{ commit(); if(typeof rerenderCal==='function')rerenderCal(); else if(typeof render==='function')render(); }catch(e){} }
+    // keep trickling until every video has a picture (progress this round = there's likely more to do)
+    if(made&&remaining) setTimeout(function(){ try{backfillVideoThumbs(maxN);}catch(e){} },2500);
     return made;
   }catch(e){ return 0; }
   finally{ _vidThumbBusy=false; }
@@ -6663,7 +6686,7 @@ function videoThumb(src){ // src = Blob OR a direct URL string (R2 serves Range 
     };
     v.onloadeddata=()=>{try{v.currentTime=Math.min(0.1,(v.duration||1)/3)}catch(e){grab()}};
     v.onseeked=grab; v.onerror=()=>finish(null);
-    setTimeout(()=>finish(null),isUrl?9000:5000);   // network streams get a little longer than local blobs
+    setTimeout(()=>finish(null),isUrl?9000:8000);   // big clips on busy phones need the extra seconds
   });
 }
 /* Best-effort poster for a video POOL ITEM, wherever its bytes live. Order: the H.264 preview proxy
@@ -6786,9 +6809,11 @@ async function thumbInto(img,mediaId){
       img.src=URL.createObjectURL(blob);
     } else if(/video/.test(rec.type)||/\.(mp4|mov|m4v|webm)$/i.test(rec.name||'')){
       let d=await videoThumb(rec.blob);
-      if(!d){ // local original is HEVC and this browser can't decode it → stream a frame from the cloud copy instead
-        const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;
-        if(pm)d=await videoPosterFromItem(pm);
+      if(!d){ // local original is HEVC and this browser can't decode it
+        const tn=await cloudThumbGet(mediaId);                        // another device may have saved the poster already
+        if(tn&&tn.dataUrl){ d=tn.dataUrl; VTHUMB[mediaId]=d; try{thumbCachePut(mediaId,d)}catch(e){} }
+        if(!d){ const pm=(typeof socPool==='function')?socPool().find(x=>x.id===mediaId):null;
+          if(pm)d=await videoPosterFromItem(pm); }                    // stream a frame from the cloud copy
       } else { VTHUMB[mediaId]=d; try{thumbCachePut(mediaId,d)}catch(e){} try{storeGridThumb(mediaId,d)}catch(e){} }
       if(d){img.src=d;img.style.display='block';}
     }
