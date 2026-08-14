@@ -7202,12 +7202,15 @@ function socLibrary(v){
   if(!validSrc[POOL_SRC])POOL_SRC='main';
   const srcItems = POOL_SRC==='main' ? poolAll.filter(isMain) : poolAll.filter(m=>m.folder===POOL_SRC);
   // media-type filter (Both · Photos · Videos). The legacy "Videos" folder always shows all its videos.
-  // SELF-HEALING: if the sticky filter would hide EVERYTHING while content exists (e.g. it was left
-  // on 🎬 Videos and the videos are gone), snap back to Both — a filter must never strand the library.
-  if(POOL_KIND!=='all' && POOL_SRC!=='Videos' && srcItems.length
+  // SELF-HEALING — LOAD-TIME ONLY: if the filter REMEMBERED from last visit would hide everything
+  // (e.g. it was left on 🎬 Videos and the videos are gone), snap back to Both. Runs at most once per
+  // page load and NEVER after a deliberate tap — otherwise tapping 🎬 Videos with none left would
+  // instantly bounce back to Both and the button feels dead/stuck.
+  if(!window._KIND_HEALED && POOL_KIND!=='all' && POOL_SRC!=='Videos' && srcItems.length
      && !srcItems.some(m => POOL_KIND==='videos' ? isVidItem(m) : !isVidItem(m))){
     POOL_KIND='all'; try{localStorage.setItem('wg_pool_kind','all');}catch(e){}
   }
+  window._KIND_HEALED=true; // first library render done — from here on, what you tap is what you get
   const avail = (POOL_KIND==='all' || POOL_SRC==='Videos') ? srcItems
               : srcItems.filter(m => POOL_KIND==='videos' ? isVidItem(m) : !isVidItem(m));
   const allAvail=poolAll; // for resolving selections when making a post
@@ -7244,8 +7247,8 @@ function socLibrary(v){
     const ktog=el('div','viewtog kindtog');
     const mkK=(val,label)=>{const b=el('button',POOL_KIND===val?'on':'',label);b.onclick=()=>{POOL_KIND=val;try{localStorage.setItem('wg_pool_kind',val);}catch(e){}GALLERY_OPEN=null;rerenderCal();};return b;};
     ktog.appendChild(mkK('all','Both'));
-    ktog.appendChild(mkK('photos','📷 Photos'+(_nPh?' ('+_nPh+')':'')));
-    ktog.appendChild(mkK('videos','🎬 Videos'+(_nVi?' ('+_nVi+')':'')));
+    ktog.appendChild(mkK('photos','📷 Photos ('+_nPh+')'));
+    ktog.appendChild(mkK('videos','🎬 Videos ('+_nVi+')'));
     ctrls.appendChild(ktog);
   }
   // Gallery / List view toggle (grouped photo views only)
@@ -7386,7 +7389,8 @@ function socLibrary(v){
     const showingJobs=(POOL_SRC==='Before & After'&&baJobsAll.length); // jobs already rendered just above
     if(!showingJobs){
       let msg;
-      if(POOL_SRC==='main'&&baJobsAll.length){
+      if(POOL_KIND!=='all'&&srcItems.length){ msg=POOL_KIND==='videos'?'No videos here.':'No photos here.'; } // the media filter is why it's empty — don't blame folders
+      else if(POOL_SRC==='main'&&baJobsAll.length){
         const j=baJobsAll.length;
         msg='Your '+j+' before/after job'+(j!==1?'s are':' is')+' in “🔀 Before &amp; After” (dropdown above).';
       } else {
