@@ -7188,6 +7188,29 @@ function socLibrary(v){
   const isVidItem=m=>/\.(mp4|mov|m4v|webm)$/i.test(m.name||'')||/^video\//.test(m.type||'');
   const isMain=m=>(!m.folder||m.folder==='Drive'); // photos AND videos together in the main view — videos group into jobs like any photo
   { let _vm=0; socPool().forEach(m=>{ if(m&&m.folder==='Videos'){ m.folder=''; m._ut=Date.now(); _vm++; } }); if(_vm)commit(); } // one-time: pull old Videos-folder uploads into the main view
+  // VIDEO FRESH START (2026-08-13, per Sebastian): wipe every video from the shared library — photos untouched.
+  // A TIMESTAMP fence (not a plain flag): everything filmed before the fence is removed, so if an old
+  // device's state syncs back a "ghost" video later, the next render wipes it again. New uploads
+  // (addedAt after the fence) are never touched. Metadata is kept in ST._videoWipeBackup_v1 and the
+  // cloud files stay in the bucket (unlisted), so nothing is truly unrecoverable.
+  {
+    if(!ST._videoWipe_v1) ST._videoWipe_v1=Date.now();                       // plant the fence once, synced to the whole team
+    const _fence=ST._videoWipe_v1;
+    const _dead=socPool().filter(m=>m&&isVidItem(m)&&(m.addedAt||0)<_fence);
+    if(_dead.length){
+      ST._videoWipeBackup_v1=(ST._videoWipeBackup_v1||[]).concat(_dead.map(m=>({id:m.id,name:m.name||'',videoUrl:m.videoUrl||'',previewUrl:m.previewUrl||'',addedAt:m.addedAt||0})));
+      const _deadIds=new Set(_dead.map(m=>m.id));
+      const pool=socPool(); for(let i=pool.length-1;i>=0;i--){ if(_deadIds.has(pool[i].id)) pool.splice(i,1); }
+      socPosts().forEach(p=>{ if(p.status==='posted')return;                 // posted history stays as a record
+        const before=(Array.isArray(p.media)?p.media.length:0);
+        if(before){ p.media=p.media.filter(x=>!(x&&_deadIds.has(x.id))); if(!p.media.length) p._wipedEmpty=true; } });
+      { const posts=socPosts(); for(let i=posts.length-1;i>=0;i--){ if(posts[i]._wipedEmpty) posts.splice(i,1); } } // a queued post that WAS a video → gone with it
+      _deadIds.forEach(id=>{ delete VTHUMB[id];
+        try{ db().then(d=>{ try{ const st=d.transaction('files','readwrite').objectStore('files'); st.delete(id); st.delete('th_'+id); }catch(e){} }); }catch(e){} });
+      commit();
+      toast('🗑 Cleared '+_dead.length+' video'+(_dead.length>1?'s':'')+' — fresh start');
+    }
+  }
   // hide any photo already sitting in a draft/approved post (however it got there — generator OR a manual add),
   // so it never double-shows in its job folder. Remove it from the post and it reappears here.
   const _inDraftPost=new Set(); socPosts().forEach(p=>{ if(p.status!=='posted') postMedia(p).forEach(x=>x&&x.id&&_inDraftPost.add(x.id)); });
