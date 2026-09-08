@@ -3299,7 +3299,7 @@ async function mediaToB64(id,maxPx,opts){
     if(!src)return null;
     // For http(s) sources (R2 photos), request CORS so drawing to a canvas never taints it — our
     // /img route sends Access-Control-Allow-Origin:* so this works even from a custom domain.
-    var img=await new Promise(function(res,rej){ var im=new Image(); if(/^https?:/i.test(src))im.crossOrigin='anonymous'; im.onload=function(){res(im);}; im.onerror=rej; im.src=src; });
+    var img=await new Promise(function(res,rej){ var im=new Image(), settled=false; var tmr=setTimeout(function(){ if(settled)return; settled=true; rej(new Error('img decode timeout')); },15000); /* a stalled <img> (slow R2, event never fires) must never hang the AI build */ if(/^https?:/i.test(src))im.crossOrigin='anonymous'; im.onload=function(){ if(settled)return; settled=true; clearTimeout(tmr); res(im); }; im.onerror=function(){ if(settled)return; settled=true; clearTimeout(tmr); rej(new Error('img error')); }; im.src=src; });
     var w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; if(!w||!h){ if(revoke)try{URL.revokeObjectURL(src)}catch(e){} return null; }
     var sc=Math.min(1,maxPx/Math.max(w,h)), cw=Math.max(1,Math.round(w*sc)), ch=Math.max(1,Math.round(h*sc));
     var cv=document.createElement('canvas'); cv.width=cw; cv.height=ch; cv.getContext('2d').drawImage(img,0,0,cw,ch);
@@ -3446,11 +3446,11 @@ async function aiFullPostLive(p,bold){
   var ctx=text+' '+(p.jobNote||'');
   var grounding=[productLine(ctx)].concat(tradeFacts(ctx)).filter(Boolean).join(' ');
   var images=await postImagesB64(p,4);
-  var r=await fetch('/ai-caption',{
+  var r=await pTimeout(fetch('/ai-caption',{
     method:'POST',
     headers:{'content-type':'application/json'},
     body:JSON.stringify({mode:'fullpost',caption:text,jobNote:p.jobNote||'',town:effectiveTown(p)||'',type:(p.type||'photo'),grounding:grounding,brain:brainText(),voice:voiceText(),note:(p.aiNote||''),bold:!!bold,images:images})
-  });
+  }),90000,'AI post'); // never let a stalled request freeze "Build my week" — 90s is well past the ~10-15s a real call takes
   return await r.json();
 }
 /* "Build my week" — owner taps it; Claude looks at the newest GROUPED photos and drafts a few
@@ -7644,7 +7644,7 @@ function socLibrary(v){
   // ✨ Build my week — owner taps it; Claude drafts a few posts from the newest photos to review (added AFTER innerHTML+= so the handler survives)
   if(typeof isOwner==='function'&&isOwner()){
     const bw=el('button','btn-set primary');bw.textContent='✨ Build my week with AI';bw.style.cssText='margin:4px 0 12px';bw.title='Claude looks at your newest photos and drafts a few posts for you to review — nothing posts automatically. ~2¢ each.';
-    bw.onclick=async()=>{ const old=bw.textContent; bw.disabled=true; bw.textContent='🪄 Building…'; try{ await buildMyWeek(); }catch(e){} bw.disabled=false; bw.textContent=old; };
+    bw.onclick=async()=>{ const old=bw.textContent; bw.disabled=true; bw.textContent='🪄 Building…'; try{ await buildMyWeek(); }catch(e){ toast('Build hit a snag — try again.'); } finally { bw.disabled=false; bw.textContent=old; } }; // finally: the button ALWAYS returns from "Building…", even if something inside throws
     postsCard.insertBefore(bw, postsCard.querySelector('.sec-title').nextSibling);
   }
   v.appendChild(postsCard);
