@@ -1460,8 +1460,9 @@ async function publishPostMedia(post){
     const id=m.id; delete m.failedToPublish; delete m.skipReason;          // recompute fresh each approve
     if(!id){skipped++;continue;}
     if(m.videoUrl){done++;continue;}                                        // video already on the public bucket
-    { const pm0=socPool().find(x=>x.id===id);                               // video uploaded at add-time (maybe on ANOTHER device) → reuse its bucket URL, works even with no local copy here
-      if(pm0&&pm0.videoUrl){ m.videoUrl=pm0.videoUrl; done++; continue; } }
+    { const pm0=socPool().find(x=>x.id===id);                               // the pool record is the source of truth for "already shared with the team"
+      if(pm0&&pm0.videoUrl){ m.videoUrl=pm0.videoUrl; done++; continue; }   // video uploaded at add-time (maybe on ANOTHER device) → reuse its bucket URL, works with no local copy here
+      if(pm0&&(pm0.imgUrl||pm0.cloud===true)){ done++; continue; } }        // photo ALREADY on the backbone (imgUrl/cloud flag) → counts even with no local blob on THIS device (the Build-my-week / cross-device approve bite)
     if(id.indexOf('pf_')===0||id.indexOf('hf_')===0){done++;continue;}      // already cloud
     try{ const ex=await pTimeout(WG_DB.collection('workspaces').doc('wg').collection('poolfiles').doc(id).get(),12000,'check');
          if(ex.exists&&ex.data()&&ex.data().dataUrl){done++;continue;} }catch(e){}  // already published (bounded so a slow read can't stall approval)
@@ -7007,7 +7008,7 @@ function postCard(p){
   card.innerHTML=`<div class="pcimg"><img alt="" style="display:none"><span class="pcph">${pl.icon}</span><span class="pctype">${ty.icon} ${esc(ty.t)}</span>${mm.length>1?`<span class="pccount">📎 ${mm.length}</span>`:''}</div>
     <div class="pcbody">
       <div class="pcmeta">${p.platform==='li'?'<span class="pchip" style="background:#eef3fb;color:#0a66c2">💼 LinkedIn</span>':''}<span class="pchip">${pl.icon} ${esc(pl.t)}</span>${statusPill(p.status)}</div>
-      <div class="pctown">📍 ${esc(p.town||'—')}${p.date?` · ${esc(p.date)}${p.time?' '+esc(p.time):''}`:''}</div>
+      <div class="pctown">📍 ${esc(p.town||'—')}</div>
       <div class="pccap">${cap?esc(cap.slice(0,90))+(cap.length>90?'…':''):'<span class=\"muted\">No caption yet</span>'}</div>
       ${p.aiWarn?`<div class="pcwarn" title="${esc(p.aiWarn)}">⚠️ check photos</div>`:''}
       ${p.status==='draft'?`<div class="pcfoot"><span class="pcgap">${postReady(p)?'<span class=\"rdy\">✓ ready to approve</span>':'<span class=\"muted\">'+postGaps(p).length+' to add before approving</span>'}</span></div>`:''}
@@ -7742,7 +7743,7 @@ function readyCard(p){
   const card=el('div','readycard');
   card.innerHTML=`<div class="rcimg"><img alt="" style="display:none"><span class="pcph">${pl.icon}</span><span class="pctype">${ty.icon} ${esc(ty.t)}</span></div>
     <div class="rcbody">
-      <div class="pcmeta">${p.platform==='li'?'<span class="pchip" style="background:#eef3fb;color:#0a66c2">💼 LinkedIn</span>':''}<span class="pchip">${pl.icon} ${esc(pl.t)}</span><span class="muted" style="font-size:12px">${esc(ty.t)}${p.date?' · '+esc(p.date)+(p.time?' '+esc(p.time):''):''}</span></div>
+      <div class="pcmeta">${p.platform==='li'?'<span class="pchip" style="background:#eef3fb;color:#0a66c2">💼 LinkedIn</span>':''}<span class="pchip">${pl.icon} ${esc(pl.t)}</span><span class="muted" style="font-size:12px">${esc(ty.t)}</span></div>
       <div class="rcfield"><label>Caption</label><div class="rctext">${esc(p.caption||'—')}</div></div>
       <div class="rcfield"><label>Hashtags</label><div class="rctext">${esc(p.hashtags||'—')}</div></div>
       ${p.platform==='li'
@@ -8135,11 +8136,7 @@ function openComposer(idOrPost,isNew){
   hf.appendChild(haOpts);
   b.appendChild(hf);
 
-  // date + time
-  const dr=el('div','cmp-row');
-  const df=el('div','cmp-field');df.innerHTML='<label>Date</label>';df.appendChild(dateField(p.date||'',(v)=>{p.date=v;}));dr.appendChild(df);
-  const tff=el('div','cmp-field');tff.innerHTML='<label>Time</label>';const ti=el('input','cmp-in');ti.type='time';ti.value=p.time||'11:00';ti.onchange=()=>p.time=ti.value;tff.appendChild(ti);dr.appendChild(tff);
-  b.appendChild(dr);
+  // (Date + time removed — post any day, no scheduling. Nothing on a post shows a date anymore.)
 
   // footer
   const foot=el('div','cmp-foot');
