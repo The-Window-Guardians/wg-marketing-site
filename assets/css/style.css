@@ -700,12 +700,14 @@ details.jobgroup.done>summary{background:var(--green-soft)}
 .rcnote{font-size:13px;color:var(--ink2);background:var(--amber-soft);border-radius:8px;padding:7px 10px}
 .rcactions{display:flex;gap:8px;flex-wrap:wrap}
 /* composer modal */
-.cmp-ov{position:fixed;inset:0;z-index:70;background:#0b1830cc;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto}
-.cmp-box{background:var(--card);border-radius:16px;width:100%;max-width:580px;box-shadow:0 24px 70px #0007;margin:auto}
-.cmp-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);border-radius:16px 16px 0 0}
+.cmp-ov{position:fixed;inset:0;z-index:70;background:#0b1830cc;display:flex;align-items:center;justify-content:center;padding:24px}
+/* Compact modal: header fixed on top, body scrolls INSIDE, footer pinned at the bottom — so
+   "Approve & send to queue" is ALWAYS on screen instead of buried at the end of a tall column. */
+.cmp-box{background:var(--card);border-radius:16px;width:100%;max-width:580px;box-shadow:0 24px 70px #0007;display:flex;flex-direction:column;max-height:calc(100dvh - 48px);overflow:hidden}
+.cmp-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);background:var(--card);border-radius:16px 16px 0 0;flex:0 0 auto}
 .cmp-head h3{font-size:17px;margin:0}
 .cmp-x{border:none;background:var(--bg);width:32px;height:32px;border-radius:9px;cursor:pointer;font-size:15px;color:var(--ink2)}
-.cmp-body{padding:18px 20px}
+.cmp-body{padding:18px 20px;overflow-y:auto;flex:1 1 auto;min-height:0}
 .cmp-field{margin-bottom:16px}
 .cmp-field>label{display:block;font-size:12px;font-weight:800;letter-spacing:.04em;color:var(--ink2);margin-bottom:6px}
 .cmp-in{width:100%;border:1px solid var(--line2);border-radius:9px;padding:9px 11px;font-size:14px;font-family:inherit;color:var(--ink);background:#fff}
@@ -834,7 +836,7 @@ input[type="date"].cmp-in,input[type="time"].cmp-in{-webkit-appearance:none;appe
 .ks-top b{font-size:20px;font-weight:800;color:var(--ink)}
 .ks-top b small{font-size:12px;color:var(--faint);font-weight:700}
 .ava{flex-shrink:0}
-.cmp-foot{display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+.cmp-foot{display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding:14px 20px calc(14px + env(safe-area-inset-bottom,0px));margin:8px -20px -18px;position:sticky;bottom:-18px;background:var(--card);flex-wrap:wrap;z-index:2}
 @media(max-width:760px){
   .calslots{grid-template-columns:1fr}
   .readycard{flex-direction:column}
